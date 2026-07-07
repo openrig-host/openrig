@@ -1,0 +1,26 @@
+# Build outputs
+x64/
+Debug/
+Release/
+out/
+build/
+**/Builds/
+*.obj
+*.exe
+*.pdb
+*.user
+*.suo
+.vs/
+
+# Local backups
+Source_BACKUP*/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*~
+
+# OS
+.DS_Store
+Thumbs.db
