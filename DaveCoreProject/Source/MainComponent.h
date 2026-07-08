@@ -8,6 +8,7 @@
 #include "SamplerComponent.h"
 #include "SetupMidiTriggers.h"
 #include "LoadingOverlay.h"
+#include "SetupBuilderOverlay.h"
 #include "Logger.h"
 #include "LibraryPanel.h"
 #include "MidiLearnBus.h"
@@ -87,6 +88,7 @@ private:
   std::unique_ptr<LoadingOverlay> loadingOverlay;
   std::unique_ptr<ConfigModalOverlay> configOverlay;
   std::unique_ptr<LibraryPanel> libraryPanel;
+  std::unique_ptr<SetupBuilderOverlay> setupBuilderOverlay;
   
   int currentSetupIndex = 0;
 
@@ -99,6 +101,7 @@ private:
   juce::String setupFilePaths[numSetupButtons];
   juce::TextButton saveSetBtn{"SAVE SET"};
   juce::TextButton loadSetBtn{"LOAD SET"};
+  juce::TextButton setupBuilderBtn{"BUILD SETUP"};
 
   // Scene (Preset) management buttons
   juce::TextButton addSceneBtn{"+ SCENE"};
@@ -107,6 +110,7 @@ private:
   juce::TextButton deleteSceneBtn{"DELETE"};
   juce::OwnedArray<juce::TextButton> sceneButtons;
   void refreshSceneButtons();
+  void showSetupBuilderOverlay();
 
   // Collapsible library sidebar
   juce::TextButton toggleLibraryBtn{"<<"};

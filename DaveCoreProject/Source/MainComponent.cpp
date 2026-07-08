@@ -741,12 +741,16 @@ void MainComponent::setupHeaderButtons() {
 void MainComponent::setupSetupButtons() {
   addAndMakeVisible(saveSetBtn);
   addAndMakeVisible(loadSetBtn);
+  addAndMakeVisible(setupBuilderBtn);
   
   saveSetBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::darkgreen);
   loadSetBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::darkorange);
+  setupBuilderBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xFF00E5FF));
+  setupBuilderBtn.setColour(juce::TextButton::textColourOffId, juce::Colours::black);
   
   saveSetBtn.onClick = [this] { saveSetToFile(); };
   loadSetBtn.onClick = [this] { loadSetFromFile(); };
+  setupBuilderBtn.onClick = [this] { showSetupBuilderOverlay(); };
 
   // Scene management buttons
   addAndMakeVisible(addSceneBtn);
@@ -987,6 +991,26 @@ void MainComponent::showConfigOverlay() {
                                 configOverlay->getHeight());
 }
 
+void MainComponent::showSetupBuilderOverlay() {
+  if (!setupBuilderOverlay) {
+    SetupBuilderOverlay::Actions a;
+    a.onBuildComplete = [this](const juce::File& file) {
+      setupBuilderOverlay.reset();
+      resized();
+      loadRigFromFile(file);
+    };
+    a.onClose = [this] {
+      setupBuilderOverlay.reset();
+      resized();
+    };
+    setupBuilderOverlay = std::make_unique<SetupBuilderOverlay>(a);
+    addAndMakeVisible(setupBuilderOverlay.get());
+  }
+  setupBuilderOverlay->centreWithSize(setupBuilderOverlay->getWidth(),
+                                      setupBuilderOverlay->getHeight());
+  setupBuilderOverlay->toFront(true);
+}
+
 void MainComponent::changeListenerCallback(juce::ChangeBroadcaster* source) {
   if (source == &deviceManager) {
     saveAudioSettings();
@@ -1083,6 +1107,7 @@ void MainComponent::resized() {
   // Save/Load Set buttons on left
   saveSetBtn.setBounds(presetRow.removeFromLeft(70).reduced(2));
   loadSetBtn.setBounds(presetRow.removeFromLeft(70).reduced(2));
+  setupBuilderBtn.setBounds(presetRow.removeFromLeft(90).reduced(2));
 
   // Setup buttons fill rest
   int btnWidth = presetRow.getWidth() / numSetupButtons;
@@ -1180,6 +1205,8 @@ void MainComponent::resized() {
     midiEffectsOverlay->centreWithSize(620, 410);
   if (samplerOverlay)
     samplerOverlay->centreWithSize(720, 600);
+  if (setupBuilderOverlay)
+    setupBuilderOverlay->centreWithSize(400, 480);
 }
 
 void MainComponent::hideLoadingOverlay() { loadingOverlay.reset(); }
