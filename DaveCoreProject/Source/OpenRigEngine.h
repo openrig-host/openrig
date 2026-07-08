@@ -54,21 +54,21 @@ public:
       avSetMmThread = (PAvSetMmThreadCharacteristicsW)GetProcAddress(avrtModule, "AvSetMmThreadCharacteristicsW");
     }
 #endif
-    // Manually adding the formats we need instead of using addDefaultFormats()
-    // This bypasses the "deleted function" error caused by the headless module.
 #if JUCE_PLUGINHOST_VST3
     formatManager.addFormat(std::make_unique<juce::VST3PluginFormat>());
 #endif
 
+    std::fill(std::begin(stressTestLastNote), std::end(stressTestLastNote), -1);
+
     slots.clear();
-    for (int i = 0; i < 10; ++i) {
+    for (int i = 0; i < OpenRigConstants::kNumSlots; ++i) {
       if (i == 0) {
         slots.push_back(std::make_unique<RackSlot>("Monitor In"));
         slots.back()->setInputChannelIndex(0); // Hardware In 1
       } else if (i == 1) {
         slots.push_back(std::make_unique<RackSlot>("CK88"));
         slots.back()->setInputChannelIndex(OpenRigConstants::kKeyboardInputChannel); // Hardware In 11 (CK88)
-      } else if (i == 9) {
+      } else if (i == OpenRigConstants::kNumSlots - 1) {
         slots.push_back(std::make_unique<RackSlot>("Accordion"));
         slots.back()->setInputChannelIndex(12); // Hardware In 13 (Accordion)
       } else {
@@ -688,7 +688,7 @@ public:
             stressTestPhase += numSamples;
             if (stressTestPhase >= samplesPerTrigger) {
                 stressTestPhase = std::fmod(stressTestPhase, samplesPerTrigger);
-                for (int c = 0; c < 10; ++c) {
+                for (int c = 0; c < OpenRigConstants::kNumSlots; ++c) {
                     if (stressTestLastNote[c] >= 0) {
                         midi.addEvent(juce::MidiMessage::noteOff(1, stressTestLastNote[c]), 0);
                         stressTestLastNote[c] = -1;
@@ -2396,7 +2396,7 @@ private:
 #endif
 
   double stressTestPhase = 0.0;
-  int stressTestLastNote[10] = {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1};
+  int stressTestLastNote[OpenRigConstants::kNumSlots];
 
 public:
   std::atomic<bool> stressTestActive{false};

@@ -4,6 +4,7 @@
 #include "RigLibrary.h"
 #include "RigSerializer.h"
 #include "BoutiqueLookAndFeel.h"
+#include "OpenRigConstants.h"
 
 class StripRowComponent : public juce::Component {
 public:
@@ -235,7 +236,7 @@ private:
         juce::Array<juce::var> channelsArr;
 
         int midiChannel = 1;
-        for (int i = 0; i < 10; ++i) {
+        for (int i = 0; i < OpenRigConstants::kNumSlots; ++i) {
             if (i < chosenStrips.size()) {
                 auto stripFile = chosenStrips[i];
                 auto stripJson = juce::JSON::parse(stripFile);
@@ -276,7 +277,7 @@ private:
         auto* defaultScene = new juce::DynamicObject();
         defaultScene->setProperty("name", "INIT PRESET");
         juce::Array<juce::var> statesArr;
-        for (int i = 0; i < 10; ++i) {
+        for (int i = 0; i < OpenRigConstants::kNumSlots; ++i) {
             auto* stateObj = new juce::DynamicObject();
             stateObj->setProperty("bypassed", true);
             stateObj->setProperty("level", 0.8f);
