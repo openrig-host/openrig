@@ -114,7 +114,9 @@ public:
                 if (africa == 1) {
                     addHarmonyNote(note - 5, vel, pos);
                 } else if (africa == 2) {
-                    addHarmonyNote(note - 5, vel, pos);
+                    const int offsets[12] = { -3, -3, -4, -4, -4, -3, -3, -3, -4, -4, -3, -3 };
+                    int pc = note % 12;
+                    addHarmonyNote(note + offsets[pc], vel, pos);
                 } else if (africa == 3) {
                     int transposed = note - 1;
                     bool isPart1 = (note >= 48);
@@ -149,7 +151,9 @@ public:
                 if (africa == 1) {
                     releaseHarmonyNote(note - 5, pos);
                 } else if (africa == 2) {
-                    releaseHarmonyNote(note - 5, pos);
+                    const int offsets[12] = { -3, -3, -4, -4, -4, -3, -3, -3, -4, -4, -3, -3 };
+                    int pc = note % 12;
+                    releaseHarmonyNote(note + offsets[pc], pos);
                 } else if (africa == 3) {
                     int transposed = note - 1;
                     bool isPart1 = (note >= 48);
