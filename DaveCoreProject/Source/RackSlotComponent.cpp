@@ -144,7 +144,7 @@ RackSlotComponent::RackSlotComponent(RackSlot &s, int index, juce::LookAndFeel &
 
   addAndMakeVisible(inputSelector);
   inputSelector.setTooltip("Select hardware input channel");
-  inputSelector.addItem("No Input", 1);
+  inputSelector.addItem("---", 1);
   inputSelector.setSelectedId(1, juce::dontSendNotification);
   inputSelector.onChange = [this]() {
     slot.setInputChannelIndex(inputSelector.getSelectedId() - 2);
@@ -220,6 +220,7 @@ RackSlotComponent::RackSlotComponent(RackSlot &s, int index, juce::LookAndFeel &
 
   addAndMakeVisible(ccButton);
   ccButton.setButtonText("CC");
+  ccButton.setTooltip("CC Parameter Mappings");
   ccButton.setColour(juce::TextButton::buttonColourId,
                      juce::Colours::darkorange);
   ccButton.onClick = [this] {
@@ -243,7 +244,7 @@ RackSlotComponent::RackSlotComponent(RackSlot &s, int index, juce::LookAndFeel &
 
   addAndMakeVisible(noteRangeButton);
   noteRangeButton.setButtonText("NR");
-  noteRangeButton.setTooltip("Set Note Range (Low/High)");
+  noteRangeButton.setTooltip("Note Range Filter");
   noteRangeButton.setColour(juce::TextButton::buttonColourId,
                             juce::Colours::darkviolet);
   noteRangeButton.onClick = [this] {
@@ -253,7 +254,7 @@ RackSlotComponent::RackSlotComponent(RackSlot &s, int index, juce::LookAndFeel &
 
   addAndMakeVisible(customizeButton);
   customizeButton.setButtonText("DYN");
-  customizeButton.setTooltip("Open Channel Strip");
+  customizeButton.setTooltip("Dynamics (EQ/Comp/HPF)");
   customizeButton.setColour(juce::TextButton::buttonColourId,
                             juce::Colours::darkslategrey);
   customizeButton.onClick = [this] {
@@ -400,6 +401,7 @@ void RackSlotComponent::timerCallback() {
 
   bool stateChanged = false;
   int numBtns = isReturn ? 2 : 3;
+  bool anyPlugin = false;
   for (int i = 0; i < 3; ++i) {
     if (i >= numBtns) {
       slotBtns[i].setVisible(false);
@@ -417,9 +419,15 @@ void RackSlotComponent::timerCallback() {
                                                : name);
     }
     bool hasPlugin = slot.getPluginInstance(i) != nullptr;
+    if (hasPlugin)
+      anyPlugin = true;
     slotBtns[i].setColour(juce::TextButton::buttonColourId,
                           hasPlugin ? juce::Colours::green.darker(0.3f)
                                     : juce::Colours::darkgrey);
+  }
+  if (anyPlugin != cachedHasAnyPlugin) {
+    cachedHasAnyPlugin = anyPlugin;
+    stateChanged = true;
   }
   if (slot.isBypassed() != prevBypassed) {
     prevBypassed = slot.isBypassed();
@@ -558,6 +566,30 @@ void RackSlotComponent::paint(juce::Graphics &g) {
   g.drawText(slot.getName(), 2, 100, getWidth() - 4, 18,
              juce::Justification::centred, true);
 
+  // Active VST slot highlight: tint populated slot boxes with track color
+  if (cachedHasAnyPlugin && !slot.isBypassed()) {
+    juce::Colour trackColor =
+        hasCustomColor ? customColor : juce::Colour(0xff00e5ff);
+    for (int i = 0; i < 3; ++i) {
+      if (slot.getPluginInstance(i) != nullptr) {
+        auto sb = slotBtns[i].getBounds().toFloat().expanded(1.0f);
+        g.setColour(trackColor.withAlpha(0.12f));
+        g.fillRoundedRectangle(sb, 3.0f);
+        g.setColour(trackColor.withAlpha(0.6f));
+        g.drawRoundedRectangle(sb, 3.0f, 1.0f);
+      }
+    }
+  }
+
+  // Return strip: fill vacant slot button area with a static label
+  if (isReturn) {
+    g.setColour(juce::Colours::white.withAlpha(0.25f));
+    g.setFont(juce::Font(11.0f, juce::Font::bold));
+    auto vacantArea = slotBtns[2].getBounds();
+    if (!vacantArea.isEmpty())
+      g.drawText("RETURN", vacantArea, juce::Justification::centred, true);
+  }
+
   int meterWidth = 12;
   int centerX = getWidth() / 2 - meterWidth / 2;
   auto faderBounds = channelSlider.getBounds();
@@ -631,6 +663,9 @@ void RackSlotComponent::drawVerticalMeter(juce::Graphics &g, juce::Rectangle<int
 void RackSlotComponent::resized() {
   auto bounds = getLocalBounds();
 
+  const int rowHeight = 18;
+
+  // Top area: 3 slot buttons + input selector
   auto topArea = bounds.removeFromTop(105);
   for (int i = 0; i < 3; ++i) {
     auto row = topArea.removeFromTop(20).reduced(2, 1);
@@ -638,20 +673,30 @@ void RackSlotComponent::resized() {
         row.removeFromRight((int)(row.getWidth() * 0.25f)));
     slotBtns[i].setBounds(row);
   }
-  inputSelector.setBounds(topArea.removeFromTop(20).reduced(2, 1));
+  auto inputRow = topArea.removeFromTop(20).reduced(2, 1);
+  inputSelector.setBounds(inputRow);
+  // MIDI LED next to input selector (right edge, 8x8 chassis bezel)
+  midiLed.setBounds(inputRow.getRight() - 10, inputRow.getY() + 6, 8, 8);
 
-  midiLed.setBounds((getWidth() - 8) / 2, 42, 8, 8);
-
+  // Bottom area: routing buttons (MUTE, FOH, IEM)
   auto buttonArea = bounds.removeFromBottom(60);
   int btnHeight = 20;
-
   bypassButton.setBounds(buttonArea.removeFromTop(btnHeight).reduced(2, 1));
   fohRoutingBtn.setBounds(buttonArea.removeFromTop(btnHeight).reduced(2, 1));
   iemRoutingBtn.setBounds(buttonArea.removeFromTop(btnHeight).reduced(2, 1));
 
+  // CC / NR / DYN control row - side by side in 3 equal columns (width / 3)
+  auto ctrlRow = bounds.removeFromBottom(rowHeight);
+  int colWidth = ctrlRow.getWidth() / 3;
+  ccButton.setBounds(ctrlRow.removeFromLeft(colWidth).reduced(1, 1));
+  noteRangeButton.setBounds(ctrlRow.removeFromLeft(colWidth).reduced(1, 1));
+  customizeButton.setBounds(ctrlRow.reduced(1, 1));
+
+  // Fader area (remaining space, identical Y for instrument and return strips)
   auto faderArea = bounds.reduced(2, 0);
 
-  auto linkBtnArea = faderArea.removeFromTop(18);
+  // Link button + learn buttons at top of fader area
+  auto linkBtnArea = faderArea.removeFromTop(rowHeight);
   linkButton.setBounds(linkBtnArea.reduced(4, 0));
   {
     auto learnArea = linkBtnArea.reduced(2, 1);
@@ -660,22 +705,19 @@ void RackSlotComponent::resized() {
     iemLearnBtn.setBounds(learnArea);
   }
 
-  noteRangeLabel.setBounds(2, faderArea.getY() + 36, getWidth() - 4, 14);
+  // Note range label below link area
+  noteRangeLabel.setBounds(2, faderArea.getY(), getWidth() - 4, 14);
 
+  // Side buttons + center fader
   int centerX = getWidth() / 2;
   int sideWidth = centerX - 14;
   int rightX = getWidth() - sideWidth - 2;
   int centerY = faderArea.getY() + faderArea.getHeight() / 2;
 
-  int splitWidth = sideWidth / 2 - 1;
-  ccButton.setBounds(2, faderArea.getY() + 10, splitWidth, 24);
-  noteRangeButton.setBounds(2 + splitWidth + 2, faderArea.getY() + 10, splitWidth, 24);
-  arpButton.setBounds(2, centerY - 12, sideWidth, 24);
-  samplerButton.setBounds(2, faderArea.getBottom() - 34, sideWidth, 24);
-
-  customizeButton.setBounds(rightX, faderArea.getY() + 10, sideWidth, 24);
-  saveStripBtn.setBounds(rightX, centerY - 12, sideWidth, 24);
-  loadStripBtn.setBounds(rightX, faderArea.getBottom() - 34, sideWidth, 24);
+  arpButton.setBounds(2, centerY - 24, sideWidth, 24);
+  samplerButton.setBounds(2, centerY + 4, sideWidth, 24);
+  saveStripBtn.setBounds(rightX, centerY - 24, sideWidth, 24);
+  loadStripBtn.setBounds(rightX, centerY + 4, sideWidth, 24);
 
   if (isAccordion) {
     int knobSize = 40;

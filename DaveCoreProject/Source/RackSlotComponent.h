@@ -110,6 +110,7 @@ private:
   bool prevIemEnabled = false;
   int prevLowNote = -1;
   int prevHighNote = -1;
+  bool cachedHasAnyPlugin = false;
 
   using LearnBus = OpenRig::MidiLearnBus;
   void armFaderLearn(bool isFoh);

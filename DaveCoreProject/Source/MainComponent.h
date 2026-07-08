@@ -99,6 +99,13 @@ private:
   juce::TextButton saveSetBtn{"SAVE SET"};
   juce::TextButton loadSetBtn{"LOAD SET"};
 
+  // Scene (Preset) management buttons
+  juce::TextButton addSceneBtn{"+ SCENE"};
+  juce::TextButton saveSceneBtn{"SAVE SCENE"};
+  juce::TextButton renameSceneBtn{"RENAME"};
+  juce::OwnedArray<juce::TextButton> sceneButtons;
+  void refreshSceneButtons();
+
   // Collapsible library sidebar
   juce::TextButton toggleLibraryBtn{"<<"};
   bool libraryVisible = true;

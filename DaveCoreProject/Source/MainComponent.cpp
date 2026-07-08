@@ -152,6 +152,9 @@ MainComponent::MainComponent() {
   // Add audio callback
   deviceManager.addAudioCallback(this);
 
+  // Initialize scene buttons from default scenes
+  refreshSceneButtons();
+
   LOG_INFO("OpenRig initialized successfully");
 }
 
@@ -744,8 +747,74 @@ void MainComponent::setupSetupButtons() {
   
   saveSetBtn.onClick = [this] { saveSetToFile(); };
   loadSetBtn.onClick = [this] { loadSetFromFile(); };
-  
+
+  // Scene management buttons
+  addAndMakeVisible(addSceneBtn);
+  addAndMakeVisible(saveSceneBtn);
+  addAndMakeVisible(renameSceneBtn);
+
+  addSceneBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::teal);
+  saveSceneBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::darkgreen);
+  renameSceneBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::darkslategrey);
+
+  addSceneBtn.onClick = [this] {
+    engine.createNewScene("NEW PRESET");
+    refreshSceneButtons();
+  };
+
+  saveSceneBtn.onClick = [this] {
+    engine.saveCurrentStateToScene(engine.getCurrentSceneIndex());
+  };
+
+  renameSceneBtn.onClick = [this] {
+    int idx = engine.getCurrentSceneIndex();
+    if (idx < 0 || idx >= engine.getNumScenes())
+      return;
+    auto *alert = new juce::AlertWindow("Rename Scene", "Enter new name:",
+                                        juce::AlertWindow::QuestionIcon);
+    alert->addTextEditor("name", engine.getSceneName(idx));
+    alert->addButton("Rename", 1, juce::KeyPress(juce::KeyPress::returnKey));
+    alert->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+    alert->enterModalState(true,
+        juce::ModalCallbackFunction::create([this, idx, alert](int result) {
+          if (result == 1) {
+            juce::String newName = alert->getTextEditorContents("name");
+            if (newName.isNotEmpty()) {
+              engine.renameScene(idx, newName);
+              refreshSceneButtons();
+            }
+          }
+          delete alert;
+        }));
+  };
+
   loadButtonMappings();
+}
+
+void MainComponent::refreshSceneButtons() {
+  sceneButtons.clear();
+  int numScenes = engine.getNumScenes();
+  for (int i = 0; i < numScenes; ++i) {
+    auto *btn = new juce::TextButton(engine.getSceneName(i));
+    btn->setClickingTogglesState(true);
+    btn->setRadioGroupId(9999, juce::dontSendNotification);
+    btn->setColour(juce::TextButton::buttonColourId,
+                   juce::Colour(0xFF3A3D42));
+    btn->setColour(juce::TextButton::buttonOnColourId,
+                   juce::Colour(0xFF00E5FF));
+    int sceneIdx = i;
+    btn->onClick = [this, sceneIdx] {
+      engine.loadScene(sceneIdx);
+      for (int j = 0; j < sceneButtons.size(); ++j)
+        sceneButtons[j]->setToggleState(j == sceneIdx,
+                                        juce::dontSendNotification);
+    };
+    if (i == engine.getCurrentSceneIndex())
+      btn->setToggleState(true, juce::dontSendNotification);
+    addAndMakeVisible(btn);
+    sceneButtons.add(btn);
+  }
+  resized();
 }
 
 void MainComponent::setupMasterSection() {
@@ -1005,6 +1074,18 @@ void MainComponent::resized() {
     setupButtons[i].setBounds(presetRow.removeFromLeft(btnWidth).reduced(1));
   }
 
+  // Header area - Row 3: scene (preset) buttons
+  auto sceneRow = r.removeFromTop(30);
+  addSceneBtn.setBounds(sceneRow.removeFromLeft(70).reduced(2));
+  saveSceneBtn.setBounds(sceneRow.removeFromLeft(80).reduced(2));
+  renameSceneBtn.setBounds(sceneRow.removeFromLeft(60).reduced(2));
+  if (!sceneButtons.isEmpty()) {
+    int sceneBtnWidth = sceneRow.getWidth() / sceneButtons.size();
+    for (int i = 0; i < sceneButtons.size(); ++i) {
+      sceneButtons[i]->setBounds(sceneRow.removeFromLeft(sceneBtnWidth).reduced(1));
+    }
+  }
+
   r.removeFromTop(10); // spacer
 
   // MIDI Monitor panel (slides open when toggled)
@@ -1098,33 +1179,42 @@ void MainComponent::loadRigAsync(const juce::File &file, int buttonIndexForHighl
                      "Loading " + file.getFileNameWithoutExtension() + "...");
 
   int highlight = buttonIndexForHighlight;
-  transitioner->transitionToFile(file,
-      OpenRig::RigTransitioner::Callbacks{
-          [this](juce::String progress) { setLoadingMessage(progress); },
-          [this, highlight, fileName = file.getFileNameWithoutExtension()](bool ok, juce::String message, int) {
-              hideLoadingOverlay();
-              if (ok) {
-                  setupNameLabel.setText(fileName, juce::dontSendNotification);
-                  for (auto *comp : rackSlotComponents)
-                      comp->repaint();
-                  repaint();
-                  if (highlight >= 0 && highlight < numSetupButtons) {
-                      for (int i = 0; i < numSetupButtons; ++i)
-                          setupButtons[i].setToggleState(i == highlight,
-                                                         juce::dontSendNotification);
-                  }
-                  midiMonitorLabel.setText("RIG: " + message,
-                                           juce::dontSendNotification);
-              } else {
-                  // Rollback-by-construction: current rig is untouched.
-                  juce::AlertWindow::showMessageBoxAsync(
-                      juce::MessageBoxIconType::WarningIcon, "Rig Load Failed",
-                      message + "\n\nThe current rig is unchanged.");
-                  LOG_ERROR("Failed to load rig: " + message + " file: " +
-                            fileName);
-              }
-          }
-      });
+
+  // Defer the transition slightly to guarantee that the message thread paints
+  // the LoadingOverlay before heavy VST builds block the event loop.
+  juce::Timer::callAfterDelay(50, [this, file, highlight]() {
+    if (!transitioner)
+      return;
+
+    transitioner->transitionToFile(file,
+        OpenRig::RigTransitioner::Callbacks{
+            [this](juce::String progress) { setLoadingMessage(progress); },
+            [this, highlight, fileName = file.getFileNameWithoutExtension()](bool ok, juce::String message, int) {
+                hideLoadingOverlay();
+                if (ok) {
+                    setupNameLabel.setText(fileName, juce::dontSendNotification);
+                    for (auto *comp : rackSlotComponents)
+                        comp->repaint();
+                    repaint();
+                    refreshSceneButtons();
+                    if (highlight >= 0 && highlight < numSetupButtons) {
+                        for (int i = 0; i < numSetupButtons; ++i)
+                            setupButtons[i].setToggleState(i == highlight,
+                                                           juce::dontSendNotification);
+                    }
+                    midiMonitorLabel.setText("RIG: " + message,
+                                             juce::dontSendNotification);
+                } else {
+                    // Rollback-by-construction: current rig is untouched.
+                    juce::AlertWindow::showMessageBoxAsync(
+                        juce::MessageBoxIconType::WarningIcon, "Rig Load Failed",
+                        message + "\n\nThe current rig is unchanged.");
+                    LOG_ERROR("Failed to load rig: " + message + " file: " +
+                              fileName);
+                }
+            }
+        });
+  });
 }
 
 void MainComponent::assignJsonToButton(int buttonIndex) {
