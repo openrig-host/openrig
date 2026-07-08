@@ -822,13 +822,30 @@ void MainComponent::refreshSceneButtons() {
                    juce::Colour(0xFF3A3D42));
     btn->setColour(juce::TextButton::buttonOnColourId,
                    juce::Colour(0xFF00E5FF));
+
+    // Show assigned PC in tooltip if set
+    int assignedPC = engine.getSceneMidiPC(i);
+    int assignedCh = engine.getSceneMidiChannel(i);
+    if (assignedPC >= 0) {
+      juce::String tip = "PC " + juce::String(assignedPC);
+      if (assignedCh > 0) tip += " / Ch " + juce::String(assignedCh);
+      btn->setTooltip(tip);
+      // Tint button slightly to indicate it has a trigger
+      btn->setColour(juce::TextButton::buttonColourId,
+                     juce::Colour(0xFF2D3A42));
+    }
+
     int sceneIdx = i;
     btn->onClick = [this, sceneIdx] {
+      engine.saveCurrentStateToScene(engine.getCurrentSceneIndex());
       engine.loadScene(sceneIdx);
       for (int j = 0; j < sceneButtons.size(); ++j)
         sceneButtons[j]->setToggleState(j == sceneIdx,
                                         juce::dontSendNotification);
     };
+
+    btn->addMouseListener(this, false);
+
     if (i == engine.getCurrentSceneIndex())
       btn->setToggleState(true, juce::dontSendNotification);
     addAndMakeVisible(btn);
@@ -1565,6 +1582,52 @@ void MainComponent::setLoadingMessage(const juce::String &message) {
 }
 
 void MainComponent::mouseDown(const juce::MouseEvent &e) {
-  juce::ignoreUnused(e);
+  for (int i = 0; i < sceneButtons.size(); ++i) {
+    if (e.originalComponent == sceneButtons[i]) {
+      if (e.mods.isRightButtonDown()) {
+        int sceneIdx = i;
+        auto* btn = sceneButtons[i];
+
+        juce::PopupMenu menu;
+        int currentPC = engine.getSceneMidiPC(sceneIdx);
+        if (currentPC >= 0) {
+          int currentCh = engine.getSceneMidiChannel(sceneIdx);
+          juce::String info = "MIDI Trigger: PC " + juce::String(currentPC);
+          if (currentCh > 0) info += " / Ch " + juce::String(currentCh);
+          menu.addItem(-1, info, false, false);
+          menu.addSeparator();
+        }
+        menu.addItem(1, "Assign MIDI Trigger (Learn)...");
+        if (currentPC >= 0)
+          menu.addItem(2, "Clear MIDI Trigger");
+
+        menu.showMenuAsync(juce::PopupMenu::Options{}.withTargetComponent(btn),
+          [this, sceneIdx](int result) {
+            if (result == 1) {
+              // Show learn dialog — waits for next incoming Program Change
+              auto* alert = new juce::AlertWindow(
+                "MIDI Learn",
+                "Send a Program Change from your controller now...",
+                juce::AlertWindow::InfoIcon);
+              alert->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+
+              // Arm the learn bus to intercept the next PC
+              sceneMidiLearnArmed = sceneIdx;
+              alert->enterModalState(true,
+                juce::ModalCallbackFunction::create([this](int) {
+                  sceneMidiLearnArmed = -1;
+                }));
+              sceneLearnAlert = alert;
+
+            } else if (result == 2) {
+              engine.clearSceneMidiTrigger(sceneIdx);
+              engine.exportRigToJson(); // trigger auto-save
+              refreshSceneButtons();
+            }
+          });
+      }
+      return;
+    }
+  }
 }
 

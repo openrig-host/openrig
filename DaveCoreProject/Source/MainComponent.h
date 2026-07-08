@@ -212,6 +212,23 @@ private:
       }
     }
 
+    // Scene MIDI trigger learn — intercept next PC if armed
+    if (msg.isProgramChange() && sceneMidiLearnArmed >= 0) {
+      int learnedPC = msg.getProgramChangeNumber();
+      int learnedCh = msg.getChannel();
+      int targetScene = sceneMidiLearnArmed;
+      juce::MessageManager::callAsync([this, targetScene, learnedPC, learnedCh]() {
+        engine.setSceneMidiTrigger(targetScene, learnedPC, learnedCh);
+        sceneMidiLearnArmed = -1;
+        if (sceneLearnAlert != nullptr) {
+          sceneLearnAlert->exitModalState(0);
+          sceneLearnAlert = nullptr;
+        }
+        refreshSceneButtons();
+      });
+      return;
+    }
+
     // Direct MIDI Trigger matching for Setups
     if (msg.isProgramChange()) {
       int pgNum = msg.getProgramChangeNumber();
@@ -224,8 +241,20 @@ private:
         return;
       }
 
+      // Check if any scene has this PC assigned as a trigger
+      int sceneByTrigger = engine.findSceneForProgram(pgNum, channel);
+      if (sceneByTrigger >= 0) {
+        juce::MessageManager::callAsync([this, sceneByTrigger]() {
+          engine.saveCurrentStateToScene(engine.getCurrentSceneIndex());
+          engine.loadScene(sceneByTrigger);
+          refreshSceneButtons();
+        });
+        return;
+      }
+
       // If it doesn't trigger a setup switch, use the PC number to select the scene index inside the current setup
       juce::MessageManager::callAsync([this, pgNum]() {
+        engine.saveCurrentStateToScene(engine.getCurrentSceneIndex());
         if (pgNum >= 0 && pgNum < engine.getNumScenes()) {
           engine.loadScene(pgNum);
           refreshSceneButtons();
@@ -315,6 +344,10 @@ private:
   // because the CallOutBox owns/deletes it and may dismiss it at any time; the
   // MIDI-thread callback must never dereference a raw owning pointer.
   juce::Component::SafePointer<NoteRangeComponent> activeNoteRangeLearner;
+
+  // Scene MIDI trigger learn state
+  int sceneMidiLearnArmed = -1;  // scene index being learned, -1 = not armed
+  juce::AlertWindow* sceneLearnAlert = nullptr;
 
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)
 };

@@ -86,6 +86,8 @@ void LibraryList::listBoxItemClicked(int row, const juce::MouseEvent &e) {
       menu.addItem(1, "Learn MIDI Trigger");
     }
     menu.addItem(2, "Clear MIDI Trigger");
+    menu.addSeparator();
+    menu.addItem(4, "Delete Setup");
     
     menu.showMenuAsync(juce::PopupMenu::Options(), [this, row](int result) {
       if (result == 1) {
@@ -97,6 +99,18 @@ void LibraryList::listBoxItemClicked(int row, const juce::MouseEvent &e) {
       } else if (result == 3) {
         learningFile = juce::File{};
         repaint();
+      } else if (result == 4) {
+        auto file = files[row];
+        juce::AlertWindow::showOkCancelBox(
+            juce::MessageBoxIconType::WarningIcon, "Delete Setup",
+            "Are you sure you want to permanently delete '" + file.getFileNameWithoutExtension() + "'?",
+            "Delete", "Cancel", nullptr,
+            juce::ModalCallbackFunction::create([this, file](int confirmResult) {
+              if (confirmResult == 1) {
+                file.deleteFile();
+                refresh();
+              }
+            }));
       }
     });
   }

@@ -13,6 +13,9 @@ public:
   bool useModernStyle = true;
 
   BoutiqueLookAndFeel() {
+    // Set default Sans-Serif Typeface for a clean, premium visual design (fixes "vibe codey" default fonts)
+    setDefaultSansSerifTypefaceName("Segoe UI");
+
     // Set some professional colors
     setColour(juce::Slider::thumbColourId, juce::Colours::white);
     setColour(juce::Slider::trackColourId,

@@ -571,7 +571,7 @@ void RackSlotComponent::paint(juce::Graphics &g) {
 
   // Draw Stage-Readable Strip Name
   g.setColour(slot.isBypassed() ? juce::Colours::white.withAlpha(0.4f) : juce::Colours::white);
-  g.setFont(juce::Font(13.0f, juce::Font::bold));
+  g.setFont(juce::FontOptions(13.0f, juce::Font::bold));
   g.drawText(slot.getName(), 2, 100, getWidth() - 4, 18,
              juce::Justification::centred, true);
 
@@ -593,7 +593,7 @@ void RackSlotComponent::paint(juce::Graphics &g) {
   // Return strip: fill vacant slot button area with a static label
   if (isReturn) {
     g.setColour(juce::Colours::white.withAlpha(0.25f));
-    g.setFont(juce::Font(11.0f, juce::Font::bold));
+    g.setFont(juce::FontOptions(11.0f, juce::Font::bold));
     auto vacantArea = slotBtns[2].getBounds();
     if (!vacantArea.isEmpty())
       g.drawText("RETURN", vacantArea, juce::Justification::centred, true);
@@ -704,18 +704,14 @@ void RackSlotComponent::resized() {
   // Fader area (remaining space, identical Y for instrument and return strips)
   auto faderArea = bounds.reduced(2, 0);
 
-  // Link button + learn buttons at bottom of fader area
-  auto linkBtnArea = faderArea.removeFromBottom(rowHeight);
-  linkButton.setBounds(linkBtnArea.reduced(4, 0));
-  {
-    auto learnArea = linkBtnArea.reduced(2, 1);
-    int half = learnArea.getWidth() / 2;
-    fohLearnBtn.setBounds(learnArea.removeFromLeft(half));
-    iemLearnBtn.setBounds(learnArea);
-  }
+  // Position the note range label explicitly below the strip name (y = 100)
+  noteRangeLabel.setBounds(2, 116, getWidth() - 4, 14);
 
-  // Note range label below link area
-  noteRangeLabel.setBounds(2, faderArea.getY(), getWidth() - 4, 14);
+  // Shift the start of the faderArea down to y = 132 to clear the label
+  if (faderArea.getY() < 132) {
+    int delta = 132 - faderArea.getY();
+    faderArea.removeFromTop(delta);
+  }
 
   // Side buttons + center fader
   int centerX = getWidth() / 2;

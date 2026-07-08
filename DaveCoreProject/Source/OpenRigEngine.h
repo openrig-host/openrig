@@ -158,10 +158,58 @@ public:
     if (index >= 0 && index < (int)scenes.size()) {
       auto &scene = scenes[index];
       for (size_t i = 0; i < slots.size() && i < scene.slotStates.size(); ++i) {
-        slots[i]->setBypass(scene.slotStates[i].bypassed);
-        slots[i]->setChannelLevel(scene.slotStates[i].channelLevel);
-        slots[i]->setFohEnabled(scene.slotStates[i].fohEnabled);
-        slots[i]->setIemEnabled(scene.slotStates[i].iemEnabled);
+        auto* slot = slots[i].get();
+        const auto& st = scene.slotStates[i];
+        
+        slot->setBypass(st.bypassed);
+        slot->setFohLevel(st.fohLevel);
+        slot->setIemLevel(st.iemLevel);
+        slot->setFohEnabled(st.fohEnabled);
+        slot->setIemEnabled(st.iemEnabled);
+        slot->setFadersLinked(st.fadersLinked);
+        slot->setAux1Send(st.aux1Send);
+        slot->setAux2Send(st.aux2Send);
+        slot->setIemOffset(st.iemOffset);
+        slot->setTransposeOctaves(st.transposeOctaves);
+        slot->setTransposeSemitones(st.transposeSemitones);
+        slot->setNoteRange(st.lowNote, st.highNote);
+
+        // DSP
+        auto& dsp = slot->getStrip();
+        dsp.gateEnabled.store(st.gateEnabled);
+        dsp.gateThreshold.store(st.gateThreshold);
+        dsp.eqEnabled.store(st.eqEnabled);
+        dsp.hpfFreq.store(st.hpfFreq);
+        dsp.lowShelfGain.store(st.lowShelfGain);
+        dsp.highShelfGain.store(st.highShelfGain);
+        dsp.compEnabled.store(st.compEnabled);
+        dsp.compAmount.store(st.compAmount);
+        dsp.chorusEnabled.store(st.chorusEnabled);
+        dsp.chorusRate.store(st.chorusRate);
+        dsp.chorusMix.store(st.chorusMix);
+        dsp.reverbEnabled.store(st.reverbEnabled);
+        dsp.reverbSize.store(st.reverbSize);
+        dsp.reverbMix.store(st.reverbMix);
+
+        // Arpeggiator
+        auto& arp = slot->getArpeggiator();
+        arp.enabled.store(st.arpEnabled);
+        arp.bpm.store(st.arpBpm);
+        arp.octavesUp.store(st.arpOctavesUp);
+        arp.octavesDown.store(st.arpOctavesDown);
+        arp.gate.store(st.arpGate);
+        arp.patternIdx.store(st.arpPatternIdx);
+
+        // Harmonizer
+        auto& harm = slot->getHarmonizer();
+        harm.enabled.store(st.harmEnabled);
+        harm.octavesUp.store(st.harmOctavesUp);
+        harm.octavesDown.store(st.harmOctavesDown);
+        harm.africaMode.store(st.harmAfricaMode);
+        harm.harmonyTargetSlot.store(st.harmTargetSlot);
+
+        // Sampler
+        slot->getSampler().enabled.store(st.samplerEnabled);
       }
       currentSceneIndex = index;
     }
@@ -171,6 +219,43 @@ public:
   juce::String getSceneName(int index) const { return scenes[index].name; }
   int getCurrentSceneIndex() const { return currentSceneIndex; }
 
+  // Per-scene MIDI trigger accessors
+  int getSceneMidiPC(int index) const {
+    if (index >= 0 && index < (int)scenes.size())
+      return scenes[index].midiProgramChange;
+    return -1;
+  }
+  int getSceneMidiChannel(int index) const {
+    if (index >= 0 && index < (int)scenes.size())
+      return scenes[index].midiChannel;
+    return 0;
+  }
+  void setSceneMidiTrigger(int index, int pc, int channel) {
+    if (index >= 0 && index < (int)scenes.size()) {
+      scenes[index].midiProgramChange = pc;
+      scenes[index].midiChannel = channel;
+    }
+  }
+  void clearSceneMidiTrigger(int index) {
+    if (index >= 0 && index < (int)scenes.size()) {
+      scenes[index].midiProgramChange = -1;
+      scenes[index].midiChannel = 0;
+    }
+  }
+
+  // Returns the scene index that has been assigned the given PC + channel,
+  // or -1 if none found. channel 0 = match any channel.
+  int findSceneForProgram(int pc, int channel) const {
+    for (int i = 0; i < (int)scenes.size(); ++i) {
+      const auto& sc = scenes[i];
+      if (sc.midiProgramChange == pc) {
+        if (sc.midiChannel == 0 || channel == 0 || sc.midiChannel == channel)
+          return i;
+      }
+    }
+    return -1;
+  }
+
   void saveCurrentStateToScene(int index) {
     if (index >= 0 && index < (int)scenes.size()) {
       auto &scene = scenes[index];
@@ -178,9 +263,56 @@ public:
       for (auto &slot : slots) {
         SlotState st;
         st.bypassed = slot->isBypassed();
-        st.channelLevel = slot->getChannelLevel();
+        st.fohLevel = slot->getFohLevel();
+        st.iemLevel = slot->getIemLevel();
         st.fohEnabled = slot->isFohEnabled();
         st.iemEnabled = slot->isIemEnabled();
+        st.fadersLinked = slot->areFadersLinked();
+        st.aux1Send = slot->getAux1Send();
+        st.aux2Send = slot->getAux2Send();
+        st.iemOffset = slot->getIemOffset();
+        st.transposeOctaves = slot->getTransposeOctaves();
+        st.transposeSemitones = slot->getTransposeSemitones();
+        st.lowNote = slot->getLowNote();
+        st.highNote = slot->getHighNote();
+
+        // DSP
+        const auto& dsp = slot->getStrip();
+        st.gateEnabled = dsp.gateEnabled.load();
+        st.gateThreshold = dsp.gateThreshold.load();
+        st.eqEnabled = dsp.eqEnabled.load();
+        st.hpfFreq = dsp.hpfFreq.load();
+        st.lowShelfGain = dsp.lowShelfGain.load();
+        st.highShelfGain = dsp.highShelfGain.load();
+        st.compEnabled = dsp.compEnabled.load();
+        st.compAmount = dsp.compAmount.load();
+        st.chorusEnabled = dsp.chorusEnabled.load();
+        st.chorusRate = dsp.chorusRate.load();
+        st.chorusMix = dsp.chorusMix.load();
+        st.reverbEnabled = dsp.reverbEnabled.load();
+        st.reverbSize = dsp.reverbSize.load();
+        st.reverbMix = dsp.reverbMix.load();
+
+        // Arpeggiator
+        const auto& arp = slot->getArpeggiator();
+        st.arpEnabled = arp.enabled.load();
+        st.arpBpm = arp.bpm.load();
+        st.arpOctavesUp = arp.octavesUp.load();
+        st.arpOctavesDown = arp.octavesDown.load();
+        st.arpGate = arp.gate.load();
+        st.arpPatternIdx = arp.patternIdx.load();
+
+        // Harmonizer
+        const auto& harm = slot->getHarmonizer();
+        st.harmEnabled = harm.enabled.load();
+        st.harmOctavesUp = harm.octavesUp.load();
+        st.harmOctavesDown = harm.octavesDown.load();
+        st.harmAfricaMode = harm.africaMode.load();
+        st.harmTargetSlot = harm.harmonyTargetSlot.load();
+
+        // Sampler
+        st.samplerEnabled = slot->getSampler().enabled.load();
+
         scene.slotStates.push_back(st);
       }
     }
@@ -197,9 +329,56 @@ public:
     for (auto &slot : slots) {
       SlotState st;
       st.bypassed = slot->isBypassed();
-      st.channelLevel = slot->getChannelLevel();
+      st.fohLevel = slot->getFohLevel();
+      st.iemLevel = slot->getIemLevel();
       st.fohEnabled = slot->isFohEnabled();
       st.iemEnabled = slot->isIemEnabled();
+      st.fadersLinked = slot->areFadersLinked();
+      st.aux1Send = slot->getAux1Send();
+      st.aux2Send = slot->getAux2Send();
+      st.iemOffset = slot->getIemOffset();
+      st.transposeOctaves = slot->getTransposeOctaves();
+      st.transposeSemitones = slot->getTransposeSemitones();
+      st.lowNote = slot->getLowNote();
+      st.highNote = slot->getHighNote();
+
+      // DSP
+      const auto& dsp = slot->getStrip();
+      st.gateEnabled = dsp.gateEnabled.load();
+      st.gateThreshold = dsp.gateThreshold.load();
+      st.eqEnabled = dsp.eqEnabled.load();
+      st.hpfFreq = dsp.hpfFreq.load();
+      st.lowShelfGain = dsp.lowShelfGain.load();
+      st.highShelfGain = dsp.highShelfGain.load();
+      st.compEnabled = dsp.compEnabled.load();
+      st.compAmount = dsp.compAmount.load();
+      st.chorusEnabled = dsp.chorusEnabled.load();
+      st.chorusRate = dsp.chorusRate.load();
+      st.chorusMix = dsp.chorusMix.load();
+      st.reverbEnabled = dsp.reverbEnabled.load();
+      st.reverbSize = dsp.reverbSize.load();
+      st.reverbMix = dsp.reverbMix.load();
+
+      // Arpeggiator
+      const auto& arp = slot->getArpeggiator();
+      st.arpEnabled = arp.enabled.load();
+      st.arpBpm = arp.bpm.load();
+      st.arpOctavesUp = arp.octavesUp.load();
+      st.arpOctavesDown = arp.octavesDown.load();
+      st.arpGate = arp.gate.load();
+      st.arpPatternIdx = arp.patternIdx.load();
+
+      // Harmonizer
+      const auto& harm = slot->getHarmonizer();
+      st.harmEnabled = harm.enabled.load();
+      st.harmOctavesUp = harm.octavesUp.load();
+      st.harmOctavesDown = harm.octavesDown.load();
+      st.harmAfricaMode = harm.africaMode.load();
+      st.harmTargetSlot = harm.harmonyTargetSlot.load();
+
+      // Sampler
+      st.samplerEnabled = slot->getSampler().enabled.load();
+
       newScene.slotStates.push_back(st);
     }
     scenes.push_back(newScene);
@@ -850,6 +1029,8 @@ public:
 
   // --- Persistence (JSON / var) ---
   juce::String exportRigToJson() {
+    saveCurrentStateToScene(currentSceneIndex);
+
     auto *rig = new juce::DynamicObject();
     rig->setProperty("version", 2);
     rig->setProperty("schemaVersion", 2);
@@ -996,14 +1177,61 @@ public:
     for (const auto &scene : scenes) {
       auto *sceneObj = new juce::DynamicObject();
       sceneObj->setProperty("name", scene.name);
+      sceneObj->setProperty("midiProgramChange", scene.midiProgramChange);
+      sceneObj->setProperty("midiChannel", scene.midiChannel);
 
       juce::Array<juce::var> states;
       for (const auto &st : scene.slotStates) {
         auto *stateObj = new juce::DynamicObject();
         stateObj->setProperty("bypassed", st.bypassed);
-        stateObj->setProperty("level", (double)st.channelLevel);
+        stateObj->setProperty("level", (double)st.fohLevel); // Backward compatibility
+        stateObj->setProperty("fohLevel", (double)st.fohLevel);
+        stateObj->setProperty("iemLevel", (double)st.iemLevel);
         stateObj->setProperty("foh", st.fohEnabled);
         stateObj->setProperty("iem", st.iemEnabled);
+        stateObj->setProperty("fadersLinked", st.fadersLinked);
+        stateObj->setProperty("aux1Send", (double)st.aux1Send);
+        stateObj->setProperty("aux2Send", (double)st.aux2Send);
+        stateObj->setProperty("iemOffset", (double)st.iemOffset);
+        stateObj->setProperty("transposeOctaves", st.transposeOctaves);
+        stateObj->setProperty("transposeSemitones", st.transposeSemitones);
+        stateObj->setProperty("lowNote", st.lowNote);
+        stateObj->setProperty("highNote", st.highNote);
+
+        // DSP
+        stateObj->setProperty("gateEnabled", st.gateEnabled);
+        stateObj->setProperty("gateThreshold", (double)st.gateThreshold);
+        stateObj->setProperty("eqEnabled", st.eqEnabled);
+        stateObj->setProperty("hpfFreq", (double)st.hpfFreq);
+        stateObj->setProperty("eqLow", (double)st.lowShelfGain);
+        stateObj->setProperty("eqHigh", (double)st.highShelfGain);
+        stateObj->setProperty("compEnabled", st.compEnabled);
+        stateObj->setProperty("compAmount", (double)st.compAmount);
+        stateObj->setProperty("chorusEnabled", st.chorusEnabled);
+        stateObj->setProperty("chorusRate", (double)st.chorusRate);
+        stateObj->setProperty("chorusMix", (double)st.chorusMix);
+        stateObj->setProperty("reverbEnabled", st.reverbEnabled);
+        stateObj->setProperty("reverbSize", (double)st.reverbSize);
+        stateObj->setProperty("reverbMix", (double)st.reverbMix);
+
+        // Arpeggiator
+        stateObj->setProperty("arpEnabled", st.arpEnabled);
+        stateObj->setProperty("arpBpm", (double)st.arpBpm);
+        stateObj->setProperty("arpOctavesUp", st.arpOctavesUp);
+        stateObj->setProperty("arpOctavesDown", st.arpOctavesDown);
+        stateObj->setProperty("arpGate", (double)st.arpGate);
+        stateObj->setProperty("arpPatternIdx", st.arpPatternIdx);
+
+        // Harmonizer
+        stateObj->setProperty("harmEnabled", st.harmEnabled);
+        stateObj->setProperty("harmOctavesUp", st.harmOctavesUp);
+        stateObj->setProperty("harmOctavesDown", st.harmOctavesDown);
+        stateObj->setProperty("harmAfricaMode", st.harmAfricaMode);
+        stateObj->setProperty("harmTargetSlot", st.harmTargetSlot);
+
+        // Sampler
+        stateObj->setProperty("samplerEnabled", st.samplerEnabled);
+
         states.add(juce::var(stateObj));
       }
       sceneObj->setProperty("states", states);
@@ -1263,15 +1491,61 @@ public:
       for (int i = 0; i < sceneArr->size(); ++i) {
         auto sv = sceneArr->getReference(i);
         Scene newScene(sv.getProperty("name", "Scene").toString());
+        newScene.midiProgramChange = sv.getProperty("midiProgramChange", -1);
+        newScene.midiChannel = sv.getProperty("midiChannel", 0);
 
         if (auto *stateArr = sv.getProperty("states", juce::var()).getArray()) {
           for (int s = 0; s < stateArr->size(); ++s) {
             auto stv = stateArr->getReference(s);
             SlotState st;
             st.bypassed = stv.getProperty("bypassed", false);
-            st.channelLevel = (float)stv.getProperty("level", 0.8);
+            st.fohLevel = (float)stv.getProperty("fohLevel", stv.getProperty("level", 0.8));
+            st.iemLevel = (float)stv.getProperty("iemLevel", st.fohLevel);
             st.fohEnabled = stv.getProperty("foh", true);
             st.iemEnabled = stv.getProperty("iem", true);
+            st.fadersLinked = stv.getProperty("fadersLinked", true);
+            st.aux1Send = (float)stv.getProperty("aux1Send", 0.0);
+            st.aux2Send = (float)stv.getProperty("aux2Send", 0.0);
+            st.iemOffset = (float)stv.getProperty("iemOffset", 1.0);
+            st.transposeOctaves = stv.getProperty("transposeOctaves", 0);
+            st.transposeSemitones = stv.getProperty("transposeSemitones", 0);
+            st.lowNote = stv.getProperty("lowNote", 0);
+            st.highNote = stv.getProperty("highNote", 127);
+
+            // DSP
+            st.gateEnabled = stv.getProperty("gateEnabled", false);
+            st.gateThreshold = (float)stv.getProperty("gateThreshold", -60.0);
+            st.eqEnabled = stv.getProperty("eqEnabled", false);
+            st.hpfFreq = (float)stv.getProperty("hpfFreq", 20.0);
+            st.lowShelfGain = (float)stv.getProperty("eqLow", 0.0);
+            st.highShelfGain = (float)stv.getProperty("eqHigh", 0.0);
+            st.compEnabled = stv.getProperty("compEnabled", false);
+            st.compAmount = (float)stv.getProperty("compAmount", 0.0);
+            st.chorusEnabled = stv.getProperty("chorusEnabled", false);
+            st.chorusRate = (float)stv.getProperty("chorusRate", 1.0);
+            st.chorusMix = (float)stv.getProperty("chorusMix", 0.0);
+            st.reverbEnabled = stv.getProperty("reverbEnabled", false);
+            st.reverbSize = (float)stv.getProperty("reverbSize", 0.5);
+            st.reverbMix = (float)stv.getProperty("reverbMix", 0.0);
+
+            // Arpeggiator
+            st.arpEnabled = stv.getProperty("arpEnabled", false);
+            st.arpBpm = (float)stv.getProperty("arpBpm", 120.0);
+            st.arpOctavesUp = stv.getProperty("arpOctavesUp", 1);
+            st.arpOctavesDown = stv.getProperty("arpOctavesDown", 0);
+            st.arpGate = (float)stv.getProperty("arpGate", 0.9);
+            st.arpPatternIdx = stv.getProperty("arpPatternIdx", 0);
+
+            // Harmonizer
+            st.harmEnabled = stv.getProperty("harmEnabled", false);
+            st.harmOctavesUp = stv.getProperty("harmOctavesUp", 1);
+            st.harmOctavesDown = stv.getProperty("harmOctavesDown", 0);
+            st.harmAfricaMode = stv.getProperty("harmAfricaMode", 0);
+            st.harmTargetSlot = stv.getProperty("harmTargetSlot", -1);
+
+            // Sampler
+            st.samplerEnabled = stv.getProperty("samplerEnabled", false);
+
             newScene.slotStates.push_back(st);
           }
         }
@@ -1482,7 +1756,7 @@ public:
         for (const auto& st : scene.slotStates) {
             OpenRig::SlotState slotState;
             slotState.bypassed = st.bypassed;
-            slotState.channelLevel = st.channelLevel;
+            slotState.channelLevel = st.fohLevel;
             slotState.fohEnabled = st.fohEnabled;
             slotState.iemEnabled = st.iemEnabled;
             sc.slotStates.push_back(slotState);
@@ -2028,7 +2302,8 @@ private:
       // selected
       bool isHardwareInput = (slots[i]->getInputChannelIndex() >= 0);
       st.bypassed = !isHardwareInput && (i != 1);
-      st.channelLevel = 0.8f;
+      st.fohLevel = 0.8f;
+      st.iemLevel = 0.8f;
       st.fohEnabled = (slots[i]->getName() != "Monitor In");
       st.iemEnabled = true;
       s1.slotStates.push_back(st);
@@ -2039,7 +2314,8 @@ private:
     for (int i = 0; i < (int)slots.size(); ++i) {
       SlotState st;
       st.bypassed = (i != 1 && i != 2);
-      st.channelLevel = (i == 2) ? 0.9f : 0.4f;
+      st.fohLevel = (i == 2) ? 0.9f : 0.4f;
+      st.iemLevel = (i == 2) ? 0.9f : 0.4f;
       st.fohEnabled = true;
       st.iemEnabled = true;
       s2.slotStates.push_back(st);
@@ -2050,7 +2326,8 @@ private:
     for (int i = 0; i < (int)slots.size(); ++i) {
       SlotState st;
       st.bypassed = (i != 3);
-      st.channelLevel = 0.8f;
+      st.fohLevel = 0.8f;
+      st.iemLevel = 0.8f;
       st.fohEnabled = true;
       st.iemEnabled = true;
       s3.slotStates.push_back(st);
