@@ -752,10 +752,12 @@ void MainComponent::setupSetupButtons() {
   addAndMakeVisible(addSceneBtn);
   addAndMakeVisible(saveSceneBtn);
   addAndMakeVisible(renameSceneBtn);
+  addAndMakeVisible(deleteSceneBtn);
 
   addSceneBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::teal);
   saveSceneBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::darkgreen);
   renameSceneBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::darkslategrey);
+  deleteSceneBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::darkred);
 
   addSceneBtn.onClick = [this] {
     engine.createNewScene("NEW PRESET");
@@ -786,6 +788,20 @@ void MainComponent::setupSetupButtons() {
           }
           delete alert;
         }));
+  };
+
+  deleteSceneBtn.onClick = [this] {
+    int idx = engine.getCurrentSceneIndex();
+    if (idx >= 0 && idx < engine.getNumScenes()) {
+      if (engine.getNumScenes() <= 1) {
+        juce::AlertWindow::showMessageBoxAsync(
+            juce::MessageBoxIconType::InfoIcon, "Delete Scene",
+            "Cannot delete the last remaining scene.");
+        return;
+      }
+      engine.deleteScene(idx);
+      refreshSceneButtons();
+    }
   };
 
   loadButtonMappings();
@@ -1079,6 +1095,7 @@ void MainComponent::resized() {
   addSceneBtn.setBounds(sceneRow.removeFromLeft(70).reduced(2));
   saveSceneBtn.setBounds(sceneRow.removeFromLeft(80).reduced(2));
   renameSceneBtn.setBounds(sceneRow.removeFromLeft(60).reduced(2));
+  deleteSceneBtn.setBounds(sceneRow.removeFromLeft(60).reduced(2));
   if (!sceneButtons.isEmpty()) {
     int sceneBtnWidth = sceneRow.getWidth() / sceneButtons.size();
     for (int i = 0; i < sceneButtons.size(); ++i) {

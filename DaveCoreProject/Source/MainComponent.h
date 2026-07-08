@@ -104,6 +104,7 @@ private:
   juce::TextButton addSceneBtn{"+ SCENE"};
   juce::TextButton saveSceneBtn{"SAVE SCENE"};
   juce::TextButton renameSceneBtn{"RENAME"};
+  juce::TextButton deleteSceneBtn{"DELETE"};
   juce::OwnedArray<juce::TextButton> sceneButtons;
   void refreshSceneButtons();
 
@@ -218,6 +219,15 @@ private:
         });
         return;
       }
+
+      // If it doesn't trigger a setup switch, use the PC number to select the scene index inside the current setup
+      juce::MessageManager::callAsync([this, pgNum]() {
+        if (pgNum >= 0 && pgNum < engine.getNumScenes()) {
+          engine.loadScene(pgNum);
+          refreshSceneButtons();
+        }
+      });
+      return;
     } else if (msg.isController() && msg.getControllerValue() > 64) {
       int ccNum = msg.getControllerNumber();
       int channel = msg.getChannel();

@@ -205,6 +205,18 @@ public:
     scenes.push_back(newScene);
   }
 
+  void deleteScene(int index) {
+    if (scenes.size() <= 1)
+      return;
+    if (index >= 0 && index < (int)scenes.size()) {
+      scenes.erase(scenes.begin() + index);
+      if (currentSceneIndex >= (int)scenes.size()) {
+        currentSceneIndex = (int)scenes.size() - 1;
+      }
+      loadScene(currentSceneIndex);
+    }
+  }
+
   struct SlotProcessJob : public juce::ThreadPoolJob {
     OpenRigEngine &engine;
     int slotIdx;

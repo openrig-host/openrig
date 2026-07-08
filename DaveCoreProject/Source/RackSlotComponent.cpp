@@ -704,8 +704,8 @@ void RackSlotComponent::resized() {
   // Fader area (remaining space, identical Y for instrument and return strips)
   auto faderArea = bounds.reduced(2, 0);
 
-  // Link button + learn buttons at top of fader area
-  auto linkBtnArea = faderArea.removeFromTop(rowHeight);
+  // Link button + learn buttons at bottom of fader area
+  auto linkBtnArea = faderArea.removeFromBottom(rowHeight);
   linkButton.setBounds(linkBtnArea.reduced(4, 0));
   {
     auto learnArea = linkBtnArea.reduced(2, 1);
