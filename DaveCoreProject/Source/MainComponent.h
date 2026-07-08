@@ -65,6 +65,7 @@ private:
   juce::AudioDeviceManager deviceManager;
   OpenRigEngine engine;
   BoutiqueLookAndFeel boutiqueLookAndFeel;
+  juce::TooltipWindow tooltipWindow{this};
 
   juce::ImageButton aboutBtn;
   juce::ImageButton settingsGearBtn;

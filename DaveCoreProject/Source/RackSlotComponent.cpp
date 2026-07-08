@@ -153,6 +153,7 @@ RackSlotComponent::RackSlotComponent(RackSlot &s, int index, juce::LookAndFeel &
   addAndMakeVisible(fohRoutingBtn);
   fohRoutingBtn.setClickingTogglesState(true);
   fohRoutingBtn.setButtonText("FOH");
+  fohRoutingBtn.setTooltip("FOH Send: Routes this channel's signal to the Front of House mix.");
   fohRoutingBtn.setColour(juce::TextButton::buttonOnColourId,
                           juce::Colours::limegreen);
   fohRoutingBtn.getProperties().set("useToggleSwitch", true);
@@ -170,6 +171,7 @@ RackSlotComponent::RackSlotComponent(RackSlot &s, int index, juce::LookAndFeel &
   addAndMakeVisible(iemRoutingBtn);
   iemRoutingBtn.setClickingTogglesState(true);
   iemRoutingBtn.setButtonText("IEM");
+  iemRoutingBtn.setTooltip("IEM Send: Routes this channel's signal to your In-Ear Monitors mix.");
   iemRoutingBtn.setColour(juce::TextButton::buttonOnColourId,
                           juce::Colours::mediumblue);
   iemRoutingBtn.getProperties().set("useToggleSwitch", true);
@@ -187,6 +189,7 @@ RackSlotComponent::RackSlotComponent(RackSlot &s, int index, juce::LookAndFeel &
 
   addAndMakeVisible(bypassButton);
   bypassButton.setButtonText("MUTE");
+  bypassButton.setTooltip("Mute Channel: Instantly cuts all audio output for this track.");
   bypassButton.setClickingTogglesState(true);
   bypassButton.setColour(juce::TextButton::buttonOnColourId,
                          juce::Colours::red);
@@ -220,7 +223,7 @@ RackSlotComponent::RackSlotComponent(RackSlot &s, int index, juce::LookAndFeel &
 
   addAndMakeVisible(ccButton);
   ccButton.setButtonText("CC");
-  ccButton.setTooltip("CC Parameter Mappings");
+  ccButton.setTooltip("CC Mapping: Opens the assignment manager for mapping MIDI continuous controllers.");
   ccButton.setColour(juce::TextButton::buttonColourId,
                      juce::Colours::darkorange);
   ccButton.onClick = [this] {
@@ -244,7 +247,7 @@ RackSlotComponent::RackSlotComponent(RackSlot &s, int index, juce::LookAndFeel &
 
   addAndMakeVisible(noteRangeButton);
   noteRangeButton.setButtonText("NR");
-  noteRangeButton.setTooltip("Note Range Filter");
+  noteRangeButton.setTooltip("Note Range: Restricts this channel strip to a specific key range on your controller.");
   noteRangeButton.setColour(juce::TextButton::buttonColourId,
                             juce::Colours::darkviolet);
   noteRangeButton.onClick = [this] {
@@ -254,7 +257,7 @@ RackSlotComponent::RackSlotComponent(RackSlot &s, int index, juce::LookAndFeel &
 
   addAndMakeVisible(customizeButton);
   customizeButton.setButtonText("DYN");
-  customizeButton.setTooltip("Dynamics (EQ/Comp/HPF)");
+  customizeButton.setTooltip("Dynamics (DYN): Opens the channel strip processor (Gate, EQ, Compressor).");
   customizeButton.setColour(juce::TextButton::buttonColourId,
                             juce::Colours::darkslategrey);
   customizeButton.onClick = [this] {
@@ -265,7 +268,7 @@ RackSlotComponent::RackSlotComponent(RackSlot &s, int index, juce::LookAndFeel &
   addAndMakeVisible(arpButton);
   arpButton.setButtonText("MIDI");
   arpButton.setColour(juce::TextButton::buttonColourId, juce::Colours::purple.brighter(0.2f));
-  arpButton.setTooltip("Open Arpeggiator");
+  arpButton.setTooltip("MIDI FX: Opens the built-in arpeggiator controls.");
   arpButton.onClick = [this] {
     if (onShowArpeggiator)
       onShowArpeggiator();
@@ -308,6 +311,12 @@ RackSlotComponent::RackSlotComponent(RackSlot &s, int index, juce::LookAndFeel &
   noteRangeLabel.setColour(juce::Label::textColourId, juce::Colours::orange);
   noteRangeLabelListener.owner = this;
   noteRangeLabel.addMouseListener(&noteRangeLabelListener, false);
+
+  // Register right-click help listeners on control buttons
+  for (auto *b : {&ccButton, &noteRangeButton, &customizeButton, &arpButton,
+                  &samplerButton, &bypassButton, &fohRoutingBtn, &iemRoutingBtn,
+                  &saveStripBtn, &loadStripBtn, &fohLearnBtn, &iemLearnBtn})
+    b->addMouseListener(this, false);
 
   startTimer(50);
 }
@@ -780,14 +789,83 @@ void RackSlotComponent::mouseDoubleClick(const juce::MouseEvent &e) {
 }
 
 void RackSlotComponent::mouseDown(const juce::MouseEvent &e) {
-  if (!e.mods.isRightButtonDown() && e.y <= 8) {
-    showColorPalette();
+  if (e.mods.isRightButtonDown()) {
+    if (e.eventComponent != nullptr && e.eventComponent != this) {
+      showButtonHelpPopup(e.eventComponent);
+      return;
+    }
+    if (e.y < 120) {
+      if (onShowChannelStrip)
+        onShowChannelStrip();
+    }
     return;
   }
-  if (e.mods.isRightButtonDown() && e.y < 120) {
-    if (onShowChannelStrip)
-      onShowChannelStrip();
+  if (e.y <= 8) {
+    showColorPalette();
   }
+}
+
+void RackSlotComponent::showButtonHelpPopup(juce::Component *src) {
+  juce::String title, description;
+
+  auto match = [&](juce::Component &btn, const juce::String &t,
+                   const juce::String &d) -> bool {
+    if (src == &btn) {
+      title = t;
+      description = d;
+      return true;
+    }
+    return false;
+  };
+
+  if (!(match(ccButton, "CC Parameter Mappings",
+              "Opens the assignment manager for mapping MIDI continuous "
+              "controllers to plugin parameters on this channel.") ||
+        match(noteRangeButton, "Note Range Filter",
+              "Restricts this channel strip to a specific key range on your "
+              "controller. Notes outside the range are ignored.") ||
+        match(customizeButton, "Dynamics Section (DYN)",
+              "Opens the channel strip processor: Noise Gate, 3-band EQ, "
+              "Compressor, and Aux Send routing for spatial mixing.") ||
+        match(arpButton, "MIDI FX (Arpeggiator)",
+              "Opens the built-in arpeggiator and harmonizer controls for "
+              "this channel.") ||
+        match(samplerButton, "Sampler (SMP)",
+              "Opens the sample playback engine, allowing you to load and "
+              "trigger audio samples across the keyboard.") ||
+        match(bypassButton, "Mute Channel",
+              "Instantly cuts all audio output for this track. Click again "
+              "to restore.") ||
+        match(fohRoutingBtn, "FOH Send",
+              "Routes this channel's signal to the Front of House mix "
+              "(audience speakers).") ||
+        match(iemRoutingBtn, "IEM Send",
+              "Routes this channel's signal to your In-Ear Monitor mix "
+              "(personal headphones).") ||
+        match(saveStripBtn, "Save Strip",
+              "Saves this entire channel strip configuration to a file for "
+              "reuse in other songs.") ||
+        match(loadStripBtn, "Load Strip",
+              "Loads a previously saved channel strip from a file or the "
+              "library sidebar.") ||
+        match(fohLearnBtn, "FOH Fader Learn",
+              "Click to arm MIDI CC learn for the FOH fader. Send a CC "
+              "message to assign it.") ||
+        match(iemLearnBtn, "IEM Fader Learn",
+              "Click to arm MIDI CC learn for the IEM fader. Send a CC "
+              "message to assign it.")))
+    return;
+
+  juce::PopupMenu menu;
+  menu.addItem(1, "What is this?");
+  menu.showMenuAsync(
+      juce::PopupMenu::Options().withTargetComponent(src),
+      [title, description](int result) {
+        if (result == 1) {
+          juce::AlertWindow::showMessageBoxAsync(
+              juce::MessageBoxIconType::InfoIcon, title, description, "Got it");
+        }
+      });
 }
 
 const juce::Array<juce::Colour> &RackSlotComponent::getPalette() {

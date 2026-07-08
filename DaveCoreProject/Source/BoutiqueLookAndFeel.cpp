@@ -240,7 +240,7 @@ void BoutiqueLookAndFeel::drawButtonText(juce::Graphics &g, juce::TextButton &bu
     return;
   }
 
-  auto bounds = button.getLocalBounds().reduced(2, 1);
+  auto bounds = button.getLocalBounds().reduced(2, 0);
   g.setColour(button.findColour(button.getToggleState() ? juce::TextButton::textColourOnId
                                                         : juce::TextButton::textColourOffId));
 

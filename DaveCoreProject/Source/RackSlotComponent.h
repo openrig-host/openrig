@@ -42,6 +42,7 @@ public:
 
   void mouseDoubleClick(const juce::MouseEvent &e) override;
   void mouseDown(const juce::MouseEvent &e) override;
+  void showButtonHelpPopup(juce::Component *src);
 
   static const juce::Array<juce::Colour> &getPalette();
   void showColorPalette();
