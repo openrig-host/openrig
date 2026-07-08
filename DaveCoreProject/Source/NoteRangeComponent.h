@@ -15,11 +15,21 @@ public:
     lowNote = slot.getLowNote();
     highNote = slot.getHighNote();
 
-    // Learn Button
-    learnButton.setButtonText("LEARN");
+    // Start in learn mode automatically on open
+    learning = true;
+    learnedLow = -1;
+    learnedHigh = -1;
+    startTimerHz(30); // Flash effect for visual feedback
+
+    // Done Button (replaces Start/Stop)
+    learnButton.setButtonText("DONE");
     learnButton.setColour(juce::TextButton::buttonColourId,
-                          juce::Colours::darkgrey);
-    learnButton.onClick = [this] { toggleLearnMode(); };
+                          juce::Colours::darkgreen);
+    learnButton.onClick = [this] {
+      if (auto* co = findParentComponentOfClass<juce::CallOutBox>()) {
+        co->dismiss();
+      }
+    };
     addAndMakeVisible(learnButton);
 
     // Reset Button
@@ -27,6 +37,8 @@ public:
     resetButton.setColour(juce::TextButton::buttonColourId,
                           juce::Colours::darkred);
     resetButton.onClick = [this] {
+      learnedLow = -1;
+      learnedHigh = -1;
       lowNote = 0;
       highNote = 127;
       slot.setNoteRange(lowNote, highNote);
@@ -78,27 +90,22 @@ public:
                20, juce::Justification::right);
 
     // Title / Learn Mode indicator
-    if (learning) {
-      g.setColour(juce::Colours::lime);
-      g.setFont(juce::FontOptions(16.0f, juce::Font::bold));
-      g.drawText("LEARNING... PLAY NOTES!", 0, 5, getWidth(), 20,
-                 juce::Justification::centred);
-    } else {
-      g.setColour(juce::Colours::gold);
-      g.setFont(juce::FontOptions(16.0f, juce::Font::bold));
-      g.drawText("DRAG TO SET MIDI RANGE", 0, 5, getWidth(), 20,
-                 juce::Justification::centred);
-    }
+    g.setColour(juce::Colours::lime);
+    g.setFont(juce::FontOptions(16.0f, juce::Font::bold));
+    g.drawText("PLAY NOTES OR DRAG KEYBOARD!", 0, 5, getWidth(), 20,
+               juce::Justification::centred);
   }
 
   void mouseDown(const juce::MouseEvent &e) override {
-    if (!learning)
-      updateNoteFromMouse(e.position);
+    learnedLow = -1;
+    learnedHigh = -1;
+    updateNoteFromMouse(e.position);
   }
 
   void mouseDrag(const juce::MouseEvent &e) override {
-    if (!learning)
-      updateNoteFromMouse(e.position);
+    learnedLow = -1;
+    learnedHigh = -1;
+    updateNoteFromMouse(e.position);
   }
 
   // Called by MainComponent to feed MIDI notes when learning
@@ -134,25 +141,6 @@ private:
   bool learning = false;
   int learnedLow = -1;
   int learnedHigh = -1;
-
-  void toggleLearnMode() {
-    learning = !learning;
-    if (learning) {
-      // Reset learned range
-      learnedLow = -1;
-      learnedHigh = -1;
-      learnButton.setButtonText("STOP");
-      learnButton.setColour(juce::TextButton::buttonColourId,
-                            juce::Colours::lime.darker());
-      startTimerHz(30); // For visual feedback
-    } else {
-      learnButton.setButtonText("LEARN");
-      learnButton.setColour(juce::TextButton::buttonColourId,
-                            juce::Colours::darkgrey);
-      stopTimer();
-    }
-    repaint();
-  }
 
   void timerCallback() override {
     // Flash effect while learning
