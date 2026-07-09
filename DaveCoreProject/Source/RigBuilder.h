@@ -52,7 +52,8 @@ public:
     };
 
     static Result build(OpenRigEngine &engine, const juce::var &rig,
-                        std::function<void(const juce::String&)> onProgress = nullptr) {
+                        std::function<void(const juce::String&)> onProgress = nullptr,
+                        bool isPreload = false) {
         Result r;
         if (!rig.isObject())
             return r; // nothing to build
@@ -81,7 +82,7 @@ public:
                         juce::String label = "Slot " + juce::String(i + 1) +
                                              " chain " + juce::String(p + 1);
                         buildOne(engine, pv, OpenRigEngine::stagingKeyFor(i, p, true),
-                                 snap.slotChains, i, p, label, r);
+                                 snap.slotChains, i, p, label, r, isPreload);
                     }
                 }
             }
@@ -103,7 +104,7 @@ public:
                 }
 
                 juce::String label = "FOH master " + juce::String(p + 1);
-                buildMaster(engine, pv, true, p, snap.fohChain, label, r);
+                buildMaster(engine, pv, true, p, snap.fohChain, label, r, isPreload);
             }
         }
 
@@ -123,7 +124,7 @@ public:
                 }
 
                 juce::String label = "IEM master " + juce::String(p + 1);
-                buildMaster(engine, pv, false, p, snap.iemChain, label, r);
+                buildMaster(engine, pv, false, p, snap.iemChain, label, r, isPreload);
             }
         }
 
@@ -156,7 +157,12 @@ private:
                          const juce::String &key,
                          const std::vector<juce::StringArray> &slotPaths,
                          int slotIdx, int chainIdx, const juce::String &label,
-                         Result &r) {
+                         Result &r, bool isPreload = false) {
+        if (isPreload ? engine.hasPreloadedPlugin(key) : engine.stagingHasKey(key)) {
+            logToFile("TRACE: buildOne " + label + " already staged/preloaded, skipping build.");
+            return true;
+        }
+
         juce::String newPath = engine.normalizePath(pv.getProperty("path", "").toString());
         if (newPath.isEmpty())
             return true; // empty slot, nothing to build
@@ -202,15 +208,23 @@ private:
             return false;
         }
         logToFile("TRACE: buildOne staging " + label);
-        engine.pushStagedPlugin(key, std::move(state->inst));
+        if (isPreload)
+            engine.pushPreloadedPlugin(key, std::move(state->inst));
+        else
+            engine.pushStagedPlugin(key, std::move(state->inst));
         ++r.builtCount;
         return true;
     }
 
     static bool buildMaster(OpenRigEngine &engine, const juce::var &pv, bool isFoh,
                             int chainIdx, const juce::StringArray &masterPaths,
-                            const juce::String &label, Result &r) {
+                            const juce::String &label, Result &r, bool isPreload = false) {
         juce::String key = OpenRigEngine::stagingKeyFor(-1, chainIdx, isFoh);
+        if (isPreload ? engine.hasPreloadedPlugin(key) : engine.stagingHasKey(key)) {
+            logToFile("TRACE: buildMaster " + label + " already staged/preloaded, skipping build.");
+            return true;
+        }
+
         juce::String newPath = engine.normalizePath(pv.getProperty("path", "").toString());
         if (newPath.isEmpty())
             return true;
@@ -251,7 +265,10 @@ private:
             return false;
         }
         logToFile("TRACE: buildMaster staging " + label);
-        engine.pushStagedPlugin(key, std::move(state->inst));
+        if (isPreload)
+            engine.pushPreloadedPlugin(key, std::move(state->inst));
+        else
+            engine.pushStagedPlugin(key, std::move(state->inst));
         ++r.builtCount;
         return true;
     }

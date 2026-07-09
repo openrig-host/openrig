@@ -164,6 +164,9 @@ LibraryPanel::LibraryPanel() {
   stripsList->setDirectory(OpenRig::RigLibrary::getPresetsDirectory(), "*.orstrip");
   tabs->addTab("Strips", juce::Colour(0xFF1D2023), stripsList.get(), false);
 
+  setlistPanel = std::make_unique<OpenRig::SetlistPanel>();
+  tabs->addTab("Setlist", juce::Colour(0xFF1D2023), setlistPanel.get(), false);
+
   addAndMakeVisible(tabs.get());
   setSize(240, 400);
   startTimer(3000);

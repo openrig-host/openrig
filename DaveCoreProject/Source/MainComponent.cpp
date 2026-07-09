@@ -126,6 +126,8 @@ MainComponent::MainComponent() {
     resized();
   };
 
+  OpenRig::SetlistManager::getInstance().setEngine(&engine);
+
   libraryPanel = std::make_unique<LibraryPanel>();
   addAndMakeVisible(libraryPanel.get());
   libraryPanel->onSetupDoubleClicked = [this](const juce::File &file) {
@@ -134,6 +136,20 @@ MainComponent::MainComponent() {
   libraryPanel->onSetDoubleClicked = [this](const juce::File &file) {
     loadSetFile(file);
   };
+  if (auto* slp = libraryPanel->getSetlistPanel()) {
+    slp->onAddCurrentRequested = [this] {
+      juce::String currentSetupName = setupNameLabel.getText();
+      juce::File file = OpenRig::RigLibrary::getSongsDirectory().getChildFile(currentSetupName + ".json");
+      if (file.existsAsFile()) {
+        OpenRig::SetlistManager::getInstance().addSetup(file);
+      } else {
+        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "Setlist", "Please save the current rig first before adding it to the setlist.");
+      }
+    };
+    slp->onLoadSetupRequested = [this](const juce::File &file) {
+      loadRigFromFile(file);
+    };
+  }
 
   transitioner = std::make_unique<OpenRig::RigTransitioner>(engine);
 
@@ -723,6 +739,31 @@ void MainComponent::setupHeaderButtons() {
                           });
   };
 
+  // Prev / Next Setlist buttons
+  addAndMakeVisible(prevSetlistBtn);
+  prevSetlistBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xFF3A3D42));
+  prevSetlistBtn.setTooltip("Previous Song in Setlist");
+  prevSetlistBtn.onClick = [this] {
+      auto& sm = OpenRig::SetlistManager::getInstance();
+      if (sm.hasPrev()) {
+          int idx = sm.getActiveIndex() - 1;
+          sm.setActiveIndex(idx);
+          loadRigFromFile(sm.getActiveFile());
+      }
+  };
+
+  addAndMakeVisible(nextSetlistBtn);
+  nextSetlistBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xFF3A3D42));
+  nextSetlistBtn.setTooltip("Next Song in Setlist (Background Preloaded)");
+  nextSetlistBtn.onClick = [this] {
+      auto& sm = OpenRig::SetlistManager::getInstance();
+      if (sm.hasNext()) {
+          int idx = sm.getActiveIndex() + 1;
+          sm.setActiveIndex(idx);
+          loadRigFromFile(sm.getActiveFile());
+      }
+  };
+
   // CPU/RAM monitors
   addAndMakeVisible(cpuLabel);
   cpuLabel.setFont(juce::FontOptions(12.0f));
@@ -1109,10 +1150,12 @@ void MainComponent::resized() {
   midiMonitorToggle.setBounds(header.removeFromLeft(75).reduced(5));
   cpuLabel.setBounds(header.removeFromLeft(70).reduced(5));
   ramLabel.setBounds(header.removeFromLeft(70).reduced(5));
-  setupNameLabel.setBounds(header.removeFromLeft(320).reduced(5));
+  setupNameLabel.setBounds(header.removeFromLeft(240).reduced(5));
 
   saveBtn.setBounds(header.removeFromRight(100).reduced(5));
   loadBtn.setBounds(header.removeFromRight(100).reduced(5));
+  nextSetlistBtn.setBounds(header.removeFromRight(40).reduced(5));
+  prevSetlistBtn.setBounds(header.removeFromRight(40).reduced(5));
 
   // Panic / Exit in middle-ish (Reset Audio is now in the settings overlay)
   panicBtn.setBounds(header.removeFromRight(80).reduced(5));
@@ -1250,7 +1293,7 @@ void MainComponent::loadRigAsync(const juce::File &file, int buttonIndexForHighl
     transitioner->transitionToFile(file,
         OpenRig::RigTransitioner::Callbacks{
             [this](juce::String progress) { setLoadingMessage(progress); },
-            [this, highlight, fileName = file.getFileNameWithoutExtension()](bool ok, juce::String message, int) {
+            [this, highlight, file, fileName = file.getFileNameWithoutExtension()](bool ok, juce::String message, int) {
                 hideLoadingOverlay();
                 if (ok) {
                     setupNameLabel.setText(fileName, juce::dontSendNotification);
@@ -1265,6 +1308,17 @@ void MainComponent::loadRigAsync(const juce::File &file, int buttonIndexForHighl
                     }
                     midiMonitorLabel.setText("RIG: " + message,
                                              juce::dontSendNotification);
+
+                    // Update active index in SetlistManager if this file belongs to the setlist
+                    auto& sm = OpenRig::SetlistManager::getInstance();
+                    const auto& setups = sm.getSetups();
+                    for (int i = 0; i < setups.size(); ++i) {
+                        if (setups[i] == file) {
+                            sm.setActiveIndex(i);
+                            break;
+                        }
+                    }
+                    sm.triggerPreloadOfNext();
                 } else {
                     // Rollback-by-construction: current rig is untouched.
                     juce::AlertWindow::showMessageBoxAsync(

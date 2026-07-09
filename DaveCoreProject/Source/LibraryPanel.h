@@ -36,6 +36,8 @@ private:
   int selectedRow = -1;
 };
 
+#include "SetlistPanel.h"
+
 class LibraryPanel : public juce::Component,
                      public juce::DragAndDropContainer,
                      private juce::Timer {
@@ -57,9 +59,12 @@ public:
   std::function<void(const juce::File &)> onSetupDoubleClicked;
   std::function<void(const juce::File &)> onSetDoubleClicked;
 
+  OpenRig::SetlistPanel* getSetlistPanel() { return setlistPanel.get(); }
+
 private:
   std::unique_ptr<juce::TabbedComponent> tabs;
   std::unique_ptr<LibraryList> setsList, setupsList, stripsList;
+  std::unique_ptr<OpenRig::SetlistPanel> setlistPanel;
 
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(LibraryPanel)
 };

@@ -2405,6 +2405,7 @@ public:
   // by RigBuilder, keyed by rack location (see stagingKeyFor()).
   juce::CriticalSection stagingLock;
   std::map<juce::String, std::unique_ptr<juce::AudioPluginInstance>> stagedPlugins;
+  std::map<juce::String, std::unique_ptr<juce::AudioPluginInstance>> preloadedPlugins;
 
 public:
   std::vector<PluginInfo> availablePlugins = {
@@ -2748,6 +2749,31 @@ public:
   bool stagingHasKey(const juce::String &key) {
     juce::ScopedLock sl(stagingLock);
     return stagedPlugins.find(key) != stagedPlugins.end();
+  }
+
+  void pushPreloadedPlugin(const juce::String &key,
+                           std::unique_ptr<juce::AudioPluginInstance> inst) {
+    juce::ScopedLock sl(stagingLock);
+    preloadedPlugins[key] = std::move(inst);
+  }
+  void clearPreloadedCache() {
+    juce::ScopedLock sl(stagingLock);
+    preloadedPlugins.clear();
+  }
+  bool hasPreloadedPlugin(const juce::String &key) {
+    juce::ScopedLock sl(stagingLock);
+    return preloadedPlugins.find(key) != preloadedPlugins.end();
+  }
+  void promotePreloadedToStaged() {
+    juce::ScopedLock sl(stagingLock);
+    for (auto &pair : preloadedPlugins) {
+      stagedPlugins[pair.first] = std::move(pair.second);
+    }
+    preloadedPlugins.clear();
+  }
+  bool hasPreloadedPlugins() {
+    juce::ScopedLock sl(stagingLock);
+    return !preloadedPlugins.empty();
   }
 
   juce::CriticalSection &getCallbackLock() { return lock; }

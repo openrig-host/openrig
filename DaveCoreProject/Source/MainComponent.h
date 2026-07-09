@@ -75,6 +75,8 @@ private:
   juce::TextButton busRoutingBtn{"BUS ROUTING"};
   juce::TextButton saveBtn{"SAVE RIG"};
   juce::TextButton loadBtn{"LOAD RIG"};
+  juce::TextButton prevSetlistBtn{"<<"};
+  juce::TextButton nextSetlistBtn{">>"};
   juce::TextButton panicBtn{"PANIC"};
   juce::TextButton resetAudioBtn{"RESET AUDIO"};
   juce::TextButton exitBtn{"EXIT"};

@@ -76,7 +76,12 @@ public:
 
     void run() override {
         logToFile("TRACE: RigTransitioner run() started.");
-        engine.clearStagingCache();
+        if (engine.hasPreloadedPlugins()) {
+            logToFile("TRACE: Promoting preloaded plugins to staging cache.");
+            engine.promotePreloadedToStaged();
+        } else {
+            engine.clearStagingCache();
+        }
 
         // 1. Load + migrate.
         postProgress("Loading rig...");
