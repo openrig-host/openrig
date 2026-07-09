@@ -354,7 +354,7 @@ void MainComponent::setupSlotComponents() {
     comp->onShowNoteRangeDialog = [this, slot, comp] {
       auto *nrComp = new NoteRangeComponent(*slot);
       nrComp->setSize(800, 180);
-      activeNoteRangeLearner = nrComp;
+      activeMidiNoteLearner = nrComp;
       juce::CallOutBox::launchAsynchronously(
           std::unique_ptr<juce::Component>(nrComp),
           comp->getNoteRangeButtonBounds(), this);
@@ -536,7 +536,7 @@ void MainComponent::setupSlotComponents() {
     comp->onShowNoteRangeDialog = [this, slot, comp] {
       auto *nrComp = new NoteRangeComponent(*slot);
       nrComp->setSize(800, 180);
-      activeNoteRangeLearner = nrComp;
+      activeMidiNoteLearner = nrComp;
       juce::CallOutBox::launchAsynchronously(
           std::unique_ptr<juce::Component>(nrComp),
           comp->getNoteRangeButtonBounds(), this);

@@ -3,13 +3,14 @@
 #include "../JuceLibraryCode/JuceHeader.h"
 #include "RackSlot.h"
 #include "BoutiqueLookAndFeel.h"
+#include "IMidiNoteLearner.h"
 
 /**
  * A component that displays a piano keyboard and allows selecting a MIDI note
  * range using two draggable handles. Includes a "Learn" mode to capture range
  * from incoming MIDI notes.
  */
-class NoteRangeComponent : public juce::Component, public juce::Timer {
+class NoteRangeComponent : public juce::Component, public juce::Timer, public IMidiNoteLearner {
 public:
   NoteRangeComponent(RackSlot &s) : slot(s) {
     lowNote = slot.getLowNote();
@@ -109,7 +110,7 @@ public:
   }
 
   // Called by MainComponent to feed MIDI notes when learning
-  void handleMidiNote(int noteNumber) {
+  void handleMidiNote(int noteNumber) override {
     if (!learning)
       return;
 
@@ -128,7 +129,7 @@ public:
     repaint();
   }
 
-  bool isLearning() const { return learning; }
+  bool isLearning() const override { return learning; }
 
 private:
   RackSlot &slot;

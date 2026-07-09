@@ -1,5 +1,7 @@
 #include "RackSlotComponent.h"
 #include "Logger.h"
+#include "IMidiNoteLearner.h"
+#include "MainComponent.h"
 
 namespace {
 juce::String midiNoteName(double v) {
@@ -9,9 +11,15 @@ juce::String midiNoteName(double v) {
   return juce::String(names[n % 12]) + juce::String(n / 12 - 1);
 }
 
+bool isBlackKey(int note) {
+  int n = note % 12;
+  return (n == 1 || n == 3 || n == 6 || n == 8 || n == 10);
+}
+
 // Per-instrument layer config: enable, level, and key range. Bound live to the
-// slot's ChainSlotSettings.
-class PluginStackConfigComp : public juce::Component {
+// slot's ChainSlotSettings. Implements IMidiNoteLearner so MainComponent can
+// route incoming MIDI notes to it for range learning.
+class PluginStackConfigComp : public juce::Component, public juce::Timer, public IMidiNoteLearner {
 public:
   PluginStackConfigComp(RackSlot &s, int chainIdx) : slot(s), idx(chainIdx) {
     auto &cs = slot.getChainSlotSettings(idx);
@@ -38,25 +46,43 @@ public:
     levelLabel.setJustificationType(juce::Justification::centred);
     addAndMakeVisible(levelLabel);
 
-    rangeSlider.setSliderStyle(juce::Slider::TwoValueHorizontal);
-    rangeSlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
-    rangeSlider.setRange(0, 127, 1);
-    rangeSlider.setMinAndMaxValues(cs.lowNote.load(), cs.highNote.load(),
-                                   juce::dontSendNotification);
-    rangeSlider.onValueChange = [this] {
-      auto &cs2 = slot.getChainSlotSettings(idx);
-      cs2.lowNote.store((int)rangeSlider.getMinValue());
-      cs2.highNote.store((int)rangeSlider.getMaxValue());
-      refreshRangeLabel();
+    lowNote = cs.lowNote.load();
+    highNote = cs.highNote.load();
+
+    // Start in learn mode automatically
+    learning = true;
+    learnedLow = -1;
+    learnedHigh = -1;
+    startTimerHz(20);
+
+    // Done button
+    doneBtn.setButtonText("DONE");
+    doneBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::darkgreen);
+    doneBtn.onClick = [this] {
+      if (auto* co = findParentComponentOfClass<juce::CallOutBox>())
+        co->dismiss();
     };
-    addAndMakeVisible(rangeSlider);
+    addAndMakeVisible(doneBtn);
 
-    rangeLabel.setJustificationType(juce::Justification::centred);
-    addAndMakeVisible(rangeLabel);
-    refreshRangeLabel();
+    // Reset button
+    resetBtn.setButtonText("RESET");
+    resetBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::darkred);
+    resetBtn.onClick = [this] {
+      learnedLow = -1;
+      learnedHigh = -1;
+      lowNote = 0;
+      highNote = 127;
+      auto &cs2 = slot.getChainSlotSettings(idx);
+      cs2.lowNote.store(0);
+      cs2.highNote.store(127);
+      repaint();
+    };
+    addAndMakeVisible(resetBtn);
 
-    setSize(240, 150);
+    setSize(380, 250);
   }
+
+  ~PluginStackConfigComp() override { stopTimer(); }
 
   void resized() override {
     auto b = getLocalBounds().reduced(8);
@@ -65,23 +91,158 @@ public:
     levelLabel.setBounds(b.removeFromTop(16));
     levelSlider.setBounds(b.removeFromTop(56));
     b.removeFromTop(4);
-    rangeLabel.setBounds(b.removeFromTop(16));
-    rangeSlider.setBounds(b);
+
+    auto btnRow = b.removeFromBottom(28);
+    int bw = btnRow.getWidth() / 2;
+    doneBtn.setBounds(btnRow.removeFromLeft(bw).reduced(2));
+    resetBtn.setBounds(btnRow.reduced(2));
+
+    b.removeFromBottom(4);
+    // Remaining area is the keyboard + range overlay
+    keyboardArea = b;
   }
+
+  void paint(juce::Graphics &g) override {
+    // Title: learn mode indicator
+    auto titleArea = keyboardArea.withHeight(18).translated(0, -2);
+    g.setColour(juce::Colours::lime);
+    g.setFont(juce::FontOptions(13.0f, juce::Font::bold));
+    g.drawText("PLAY NOTES TO SET RANGE", titleArea, juce::Justification::centred);
+
+    // Range text
+    g.setColour(juce::Colours::white);
+    g.setFont(12.0f);
+    g.drawText("Low: " + midiNoteName(lowNote), keyboardArea.getX(), keyboardArea.getY() - 2,
+               80, 16, juce::Justification::left);
+    g.drawText("High: " + midiNoteName(highNote), keyboardArea.getRight() - 80, keyboardArea.getY() - 2,
+               80, 16, juce::Justification::right);
+
+    // Draw keyboard
+    auto kbArea = keyboardArea.toFloat().withTrimmedTop(16.0f);
+    drawKeyboard(g, kbArea);
+    drawRangeOverlay(g, kbArea);
+  }
+
+  void mouseDown(const juce::MouseEvent &e) override {
+    auto kbArea = keyboardArea.toFloat().withTrimmedTop(16.0f);
+    if (kbArea.contains(e.position)) {
+      learnedLow = -1;
+      learnedHigh = -1;
+      updateNoteFromMouse(e.position, kbArea);
+    }
+  }
+
+  void mouseDrag(const juce::MouseEvent &e) override {
+    auto kbArea = keyboardArea.toFloat().withTrimmedTop(16.0f);
+    if (kbArea.contains(e.position)) {
+      updateNoteFromMouse(e.position, kbArea);
+    }
+  }
+
+  // --- IMidiNoteLearner implementation ---
+  void handleMidiNote(int noteNumber) override {
+    if (!learning)
+      return;
+
+    if (learnedLow < 0) {
+      learnedLow = noteNumber;
+      learnedHigh = noteNumber;
+    } else {
+      learnedLow = std::min(learnedLow, noteNumber);
+      learnedHigh = std::max(learnedHigh, noteNumber);
+    }
+
+    lowNote = learnedLow;
+    highNote = learnedHigh;
+    auto &cs = slot.getChainSlotSettings(idx);
+    cs.lowNote.store(lowNote);
+    cs.highNote.store(highNote);
+    repaint();
+  }
+
+  bool isLearning() const override { return learning; }
 
 private:
-  void refreshRangeLabel() {
-    rangeLabel.setText("Range: " + midiNoteName(rangeSlider.getMinValue()) + " - " +
-                           midiNoteName(rangeSlider.getMaxValue()),
-                       juce::dontSendNotification);
-  }
-
   RackSlot &slot;
   int idx;
+  int lowNote = 0;
+  int highNote = 127;
+  bool learning = true;
+  int learnedLow = -1;
+  int learnedHigh = -1;
+
   juce::ToggleButton enableBtn;
   juce::Slider levelSlider;
-  juce::Slider rangeSlider;
-  juce::Label levelLabel, rangeLabel;
+  juce::Label levelLabel;
+  juce::TextButton doneBtn, resetBtn;
+  juce::Rectangle<int> keyboardArea;
+
+  void timerCallback() override { repaint(); }
+
+  void drawKeyboard(juce::Graphics &g, juce::Rectangle<float> area) {
+    float noteWidth = area.getWidth() / 128.0f;
+    for (int i = 0; i < 128; ++i) {
+      if (!isBlackKey(i)) {
+        juce::Rectangle<float> noteRect(area.getX() + i * noteWidth, area.getY(),
+                                        noteWidth, area.getHeight());
+        g.setColour(juce::Colours::white);
+        g.fillRect(noteRect.reduced(0.3f));
+        if (i % 12 == 0) {
+          g.setColour(juce::Colours::black.withAlpha(0.5f));
+          g.setFont(8.0f);
+          g.drawText("C" + juce::String(i / 12 - 1), noteRect,
+                     juce::Justification::centredBottom);
+        }
+      }
+    }
+    for (int i = 0; i < 128; ++i) {
+      if (isBlackKey(i)) {
+        juce::Rectangle<float> noteRect(area.getX() + i * noteWidth,
+                                        area.getY(), noteWidth,
+                                        area.getHeight() * 0.6f);
+        g.setColour(juce::Colours::black);
+        g.fillRect(noteRect);
+      }
+    }
+  }
+
+  void drawRangeOverlay(juce::Graphics &g, juce::Rectangle<float> area) {
+    float noteWidth = area.getWidth() / 128.0f;
+    float x1 = area.getX() + lowNote * noteWidth;
+    float x2 = area.getX() + (highNote + 1) * noteWidth;
+
+    g.setColour(juce::Colours::black.withAlpha(0.6f));
+    g.fillRect(area.withWidth(x1 - area.getX()));
+    g.fillRect(area.withX(x2).withWidth(area.getRight() - x2));
+
+    g.setColour(juce::Colours::lime.withAlpha(0.4f));
+    g.fillRect(juce::Rectangle<float>(x1, area.getY(), x2 - x1, area.getHeight()));
+
+    g.setColour(juce::Colours::lime);
+    g.drawVerticalLine((int)x1, area.getY() - 3, area.getBottom() + 3);
+    g.drawVerticalLine((int)x2, area.getY() - 3, area.getBottom() + 3);
+  }
+
+  void updateNoteFromMouse(juce::Point<float> p, juce::Rectangle<float> area) {
+    float normalizedX = (p.getX() - area.getX()) / area.getWidth();
+    int note = juce::jlimit(0, 127, (int)(normalizedX * 128.0f));
+
+    if (std::abs(note - lowNote) < std::abs(note - highNote)) {
+      lowNote = note;
+    } else {
+      highNote = note;
+    }
+
+    int actualLow = std::min(lowNote, highNote);
+    int actualHigh = std::max(lowNote, highNote);
+    lowNote = actualLow;
+    highNote = actualHigh;
+
+    auto &cs = slot.getChainSlotSettings(idx);
+    cs.lowNote.store(actualLow);
+    cs.highNote.store(actualHigh);
+    repaint();
+  }
 };
 } // namespace
 
@@ -979,6 +1140,11 @@ void RackSlotComponent::showPluginConfigMenu(int chainIndex) {
     return;
 
   auto *comp = new PluginStackConfigComp(slot, chainIndex);
+  
+  if (auto* mainComp = findParentComponentOfClass<MainComponent>()) {
+    mainComp->setActiveMidiNoteLearner(comp);
+  }
+
   juce::CallOutBox::launchAsynchronously(
       std::unique_ptr<juce::Component>(comp),
       slotBtns[chainIndex].getScreenBounds(), nullptr);

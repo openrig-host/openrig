@@ -1,5 +1,6 @@
 #include "LibraryPanel.h"
 #include "SetupMidiTriggers.h"
+#include "SetlistManager.h"
 
 LibraryList::LibraryList(Kind k) : kind(k) {
   setModel(this);
@@ -87,6 +88,8 @@ void LibraryList::listBoxItemClicked(int row, const juce::MouseEvent &e) {
     }
     menu.addItem(2, "Clear MIDI Trigger");
     menu.addSeparator();
+    menu.addItem(5, "Add to Setlist");
+    menu.addSeparator();
     menu.addItem(4, "Delete Setup");
     
     menu.showMenuAsync(juce::PopupMenu::Options(), [this, row](int result) {
@@ -111,6 +114,8 @@ void LibraryList::listBoxItemClicked(int row, const juce::MouseEvent &e) {
                 refresh();
               }
             }));
+      } else if (result == 5) {
+        OpenRig::SetlistManager::getInstance().addSetup(files[row]);
       }
     });
   }
@@ -150,7 +155,7 @@ LibraryPanel::LibraryPanel() {
     if (onSetDoubleClicked)
       onSetDoubleClicked(f);
   };
-  tabs->addTab("Sets", juce::Colour(0xFF1D2023), setsList.get(), false);
+  tabs->addTab("Btn Maps", juce::Colour(0xFF1D2023), setsList.get(), false);
 
   setupsList = std::make_unique<LibraryList>(LibraryList::Kind::Setups);
   setupsList->setDirectory(OpenRig::RigLibrary::getSongsDirectory(), "*.json");
@@ -158,7 +163,7 @@ LibraryPanel::LibraryPanel() {
     if (onSetupDoubleClicked)
       onSetupDoubleClicked(f);
   };
-  tabs->addTab("Setups", juce::Colour(0xFF1D2023), setupsList.get(), false);
+  tabs->addTab("Songs", juce::Colour(0xFF1D2023), setupsList.get(), false);
 
   stripsList = std::make_unique<LibraryList>(LibraryList::Kind::Strips);
   stripsList->setDirectory(OpenRig::RigLibrary::getPresetsDirectory(), "*.orstrip");

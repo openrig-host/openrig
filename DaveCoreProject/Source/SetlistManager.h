@@ -79,6 +79,15 @@ public:
         }
     }
 
+    void clearSetlist() {
+        setups.clear();
+        activeIndex = -1;
+        currentSetlistFile = juce::File{};
+        if (engine != nullptr)
+            engine->clearPreloadedCache();
+        sendChangeMessage();
+    }
+
     void moveSetupUp(int index) {
         if (index > 0 && index < setups.size()) {
             setups.swap(index, index - 1);

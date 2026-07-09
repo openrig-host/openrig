@@ -32,7 +32,8 @@ $headers = @(
     "..\..\Source\SamplerProcessor.h",
     "..\..\Source\SamplerComponent.h",
     "..\..\Source\WaveformSpliceEditor.h",
-    "..\..\Source\SetupMidiTriggers.h"
+    "..\..\Source\SetupMidiTriggers.h",
+    "..\..\Source\IMidiNoteLearner.h"
 )
 foreach ($h in $headers) {
     $exists = $itemGroupClInclude.ClInclude | Where-Object { $_.Include -eq $h }
@@ -96,7 +97,8 @@ $jucerFiles = @(
     @{ id="samplerProcessorH"; name="SamplerProcessor.h"; compile="0"; file="Source/SamplerProcessor.h" },
     @{ id="samplerComponentH"; name="SamplerComponent.h"; compile="0"; file="Source/SamplerComponent.h" },
     @{ id="waveformSpliceEditorH"; name="WaveformSpliceEditor.h"; compile="0"; file="Source/WaveformSpliceEditor.h" },
-    @{ id="setupMidiTriggersH"; name="SetupMidiTriggers.h"; compile="0"; file="Source/SetupMidiTriggers.h" }
+    @{ id="setupMidiTriggersH"; name="SetupMidiTriggers.h"; compile="0"; file="Source/SetupMidiTriggers.h" },
+    @{ id="iMidiNoteLearnerH"; name="IMidiNoteLearner.h"; compile="0"; file="Source/IMidiNoteLearner.h" }
 )
 
 foreach ($jf in $jucerFiles) {

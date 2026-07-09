@@ -91,6 +91,12 @@ public:
         };
         addAndMakeVisible(loadBtn);
 
+        clearBtn.setButtonText("Clear");
+        clearBtn.onClick = [this] {
+            SetlistManager::getInstance().clearSetlist();
+        };
+        addAndMakeVisible(clearBtn);
+
         SetlistManager::getInstance().addChangeListener(this);
     }
 
@@ -168,9 +174,10 @@ public:
         moveDownBtn.setBounds(controlRow.reduced(2));
 
         auto fileRow = b.removeFromBottom(28);
-        int w2 = fileRow.getWidth() / 2;
+        int w2 = fileRow.getWidth() / 3;
         loadBtn.setBounds(fileRow.removeFromLeft(w2).reduced(2));
-        saveBtn.setBounds(fileRow.reduced(2));
+        saveBtn.setBounds(fileRow.removeFromLeft(w2).reduced(2));
+        clearBtn.setBounds(fileRow.reduced(2));
 
         b.removeFromBottom(4);
         listBox.setBounds(b);
@@ -179,7 +186,7 @@ public:
 private:
     juce::ListBox listBox;
     juce::TextButton addBtn, removeBtn, moveUpBtn, moveDownBtn;
-    juce::TextButton loadBtn, saveBtn;
+    juce::TextButton loadBtn, saveBtn, clearBtn;
     std::unique_ptr<juce::FileChooser> fileChooser;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SetlistPanel)

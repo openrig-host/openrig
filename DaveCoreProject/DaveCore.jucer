@@ -27,6 +27,7 @@
       <FILE id="midiRemoteSettingsH" name="MidiRemoteSettings.h" compile="0" resource="0" file="Source/MidiRemoteSettings.h" />
       <FILE id="midiRemoteSettingsOverlayH" name="MidiRemoteSettingsOverlay.h" compile="0" resource="0" file="Source/MidiRemoteSettingsOverlay.h" />
       <FILE id="setupMidiTriggersH" name="SetupMidiTriggers.h" compile="0" resource="0" file="Source/SetupMidiTriggers.h" />
+      <FILE id="iMidiNoteLearnerH" name="IMidiNoteLearner.h" compile="0" resource="0" file="Source/IMidiNoteLearner.h" />
     </GROUP>
   </MAINGROUP>
   <MODULES>

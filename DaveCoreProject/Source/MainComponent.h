@@ -14,6 +14,7 @@
 #include "MidiLearnBus.h"
 #include "MidiMonitorComponent.h"
 #include "NoteRangeComponent.h"
+#include "IMidiNoteLearner.h"
 #include "OpenRigConstants.h"
 #include "OpenRigEngine.h"
 #include "RackSlotComponent.h"
@@ -60,6 +61,7 @@ public:
   void resetAudioDevice();
   void showAboutDialog();
   void showConfigOverlay();
+  void setActiveMidiNoteLearner(juce::Component* learner) { activeMidiNoteLearner = learner; }
 
 private:
   //==============================================================================
@@ -307,14 +309,16 @@ private:
       });
     }
 
-    // Route note-on to any active NoteRangeComponent learning. The learner is
-    // captured by value as a SafePointer (weak ref) so the async no-ops if the
-    // CallOutBox was dismissed before the message thread runs the callback.
-    if (msg.isNoteOn() && activeNoteRangeLearner != nullptr) {
+    // Route note-on to any active learner (NoteRangeComponent or per-plugin config).
+    // The learner is captured by value as a SafePointer (weak ref) so the async
+    // no-ops if the CallOutBox was dismissed before the message thread runs.
+    if (msg.isNoteOn() && activeMidiNoteLearner != nullptr) {
       int noteNum = msg.getNoteNumber();
-      juce::MessageManager::callAsync([learner = activeNoteRangeLearner, noteNum]() {
-        if (learner)
-          learner->handleMidiNote(noteNum);
+      juce::MessageManager::callAsync([learner = activeMidiNoteLearner, noteNum]() {
+        if (learner) {
+          if (auto* l = dynamic_cast<IMidiNoteLearner*>(learner.getComponent()))
+            l->handleMidiNote(noteNum);
+        }
       });
     }
 
@@ -342,10 +346,10 @@ private:
     }
   }
 
-  // Active NoteRangeComponent in learn mode. Held as a SafePointer (weak ref)
-  // because the CallOutBox owns/deletes it and may dismiss it at any time; the
-  // MIDI-thread callback must never dereference a raw owning pointer.
-  juce::Component::SafePointer<NoteRangeComponent> activeNoteRangeLearner;
+  // Active MIDI note learner. Can be a NoteRangeComponent, PluginStackConfigComp,
+  // or any Component implementing IMidiNoteLearner. Held as a generic SafePointer
+  // because the CallOutBox owns/deletes the component and may dismiss at any time.
+  juce::Component::SafePointer<juce::Component> activeMidiNoteLearner;
 
   // Scene MIDI trigger learn state
   int sceneMidiLearnArmed = -1;  // scene index being learned, -1 = not armed
