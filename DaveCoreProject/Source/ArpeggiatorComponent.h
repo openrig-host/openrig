@@ -3,6 +3,7 @@
 #include <JuceHeader.h>
 #include "SimpleArpeggiator.h"
 #include "BoutiqueLookAndFeel.h"
+#include "ThemeManager.h"
 
 class ArpeggiatorComponent : public juce::Component,
                               public juce::Label::Listener {
@@ -37,8 +38,8 @@ public:
         bpmEditor.addListener(this);
         bpmEditor.setJustificationType(juce::Justification::centred);
         bpmEditor.setFont(juce::FontOptions(24.0f, juce::Font::bold));
-        bpmEditor.setColour(juce::Label::textColourId, juce::Colours::white);
-        bpmEditor.setColour(juce::Label::backgroundColourId, juce::Colours::darkgrey.withAlpha(0.3f));
+        bpmEditor.setColour(juce::Label::textColourId, ThemeManager::get(Theme::Role::text));
+        bpmEditor.setColour(juce::Label::backgroundColourId, ThemeManager::get(Theme::Role::panel).withAlpha(0.3f));
         addAndMakeVisible(bpmEditor);
 
         // Octave Up
@@ -94,12 +95,12 @@ public:
         bool useModern = (laf != nullptr && laf->useModernStyle);
 
         if (useModern) {
-            // Dark modern glassmorphic background
-            g.fillAll(juce::Colour(0xff16181b));
-            g.setColour(juce::Colour(0xff2a2d32));
+            // Themed glassmorphic background
+            g.fillAll(ThemeManager::get(Theme::Role::panel));
+            g.setColour(ThemeManager::get(Theme::Role::border));
             g.drawRoundedRectangle(getLocalBounds().toFloat(), 8.0f, 1.5f);
         } else {
-            g.fillAll(juce::Colours::darkgrey.darker());
+            g.fillAll(ThemeManager::get(Theme::Role::background).darker());
         }
     }
 

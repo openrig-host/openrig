@@ -110,26 +110,27 @@ void BoutiqueLookAndFeel::drawRotarySlider(juce::Graphics &g, int x, int y,
   float knobRadius = radius * 0.85f;
 
   // 1. Drop Shadow (simulated)
-  g.setColour(juce::Colours::black.withAlpha(0.5f));
+  g.setColour(ThemeManager::get(Theme::Role::background).withAlpha(0.5f));
   g.fillEllipse(center.x - knobRadius + 2, center.y - knobRadius + 4,
                 knobRadius * 2, knobRadius * 2);
 
   // 2. Main Knob Body Gradient
-  juce::ColourGradient knobGrad(juce::Colours::darkgrey.brighter(0.1f),
+  juce::ColourGradient knobGrad(ThemeManager::get(Theme::Role::knobFace).brighter(0.1f),
                                 center.x - knobRadius, center.y - knobRadius,
-                                juce::Colours::black, center.x + knobRadius,
+                                ThemeManager::get(Theme::Role::background),
+                                center.x + knobRadius,
                                 center.y + knobRadius, false);
   g.setGradientFill(knobGrad);
   g.fillEllipse(center.x - knobRadius, center.y - knobRadius, knobRadius * 2,
                 knobRadius * 2);
 
   // 3. Top Reflection (Gloss)
-  g.setColour(juce::Colours::white.withAlpha(0.08f));
+  g.setColour(ThemeManager::get(Theme::Role::knobThumb).withAlpha(0.08f));
   g.fillEllipse(center.x - knobRadius * 0.7f, center.y - knobRadius * 0.8f,
                 knobRadius * 1.4f, knobRadius * 0.6f);
 
   // 4. Subtle Rim
-  g.setColour(juce::Colours::black.withAlpha(0.5f));
+  g.setColour(ThemeManager::get(Theme::Role::background).withAlpha(0.5f));
   g.drawEllipse(center.x - knobRadius, center.y - knobRadius, knobRadius * 2,
                 knobRadius * 2, 1.5f);
 
@@ -144,11 +145,11 @@ void BoutiqueLookAndFeel::drawRotarySlider(juce::Graphics &g, int x, int y,
       juce::AffineTransform::rotation(angle).translated(center.x, center.y));
 
   // Draw indicator shadow/glow
-  g.setColour(juce::Colours::black.withAlpha(0.5f));
+  g.setColour(ThemeManager::get(Theme::Role::background).withAlpha(0.5f));
   g.strokePath(p, juce::PathStrokeType(pointerThickness + 2.0f));
 
   // Draw indicator
-  g.setColour(juce::Colours::white.withAlpha(0.9f));
+  g.setColour(ThemeManager::get(Theme::Role::knobThumb).withAlpha(0.9f));
   g.fillPath(p);
 }
 
@@ -167,7 +168,7 @@ void BoutiqueLookAndFeel::drawButtonBackground(juce::Graphics &g,
   auto bounds = button.getLocalBounds().toFloat();
   auto cornerSize = 4.0f;
 
-  juce::Colour baseCol = juce::Colour(0xff1d2024); // Flat charcoal default
+  juce::Colour baseCol = ThemeManager::get(Theme::Role::raised); // Flat default
 
   auto text = button.getButtonText();
 
@@ -176,34 +177,36 @@ void BoutiqueLookAndFeel::drawButtonBackground(juce::Graphics &g,
   bool isMute = (text == "MUTE" || text == "M");
   bool isActive = button.getToggleState();
 
-  // Assigned setup buttons have darkgreen in the legacy system
+  // Assigned setup buttons have a green tint in the legacy system
   bool isAssignedSetup = (backgroundColour.getGreen() > backgroundColour.getRed() && 
                           backgroundColour.getGreen() > backgroundColour.getBlue() &&
                           text != "FOH" && text.toUpperCase() != "ON" && text != "MIDI MON" &&
                           text != "SAVE" && text != "LOAD" && text != "DYN");
 
   if (isPanic) {
-    baseCol = shouldDrawButtonAsDown ? juce::Colour(0xffb2102f) : juce::Colour(0xff881122);
+    baseCol = shouldDrawButtonAsDown ? ThemeManager::get(Theme::Role::panic).darker(0.3f)
+                                     : ThemeManager::get(Theme::Role::panic).darker(0.5f);
   } else if (isMute) {
     if (isActive)
-      baseCol = juce::Colour(0xffd50000); // Crimson for active mute
+      baseCol = ThemeManager::get(Theme::Role::danger); // active mute
     else
-      baseCol = juce::Colour(0xff1d2024);
+      baseCol = ThemeManager::get(Theme::Role::raised);
   } else if (isActive) {
     // Currently active item
     if (text == "FOH") {
-      baseCol = juce::Colour(0xff00b0ff); // Sky blue
+      baseCol = ThemeManager::get(Theme::Role::iem);
     } else if (text == "IEM" || text == "EARS") {
-      baseCol = juce::Colour(0xff00e676); // Green
+      baseCol = ThemeManager::get(Theme::Role::foh);
     } else {
-      baseCol = juce::Colour(0xff00e5ff); // Active setup is glowing Cyan!
+      baseCol = ThemeManager::get(Theme::Role::accent); // active highlight
     }
   } else if (isAssignedSetup) {
-    // Assigned setup but not active: subtle dark green background to show it's loaded
-    baseCol = juce::Colour(0xff12281a);
+    // Assigned setup but not active: subtle themed tint to show it's loaded
+    baseCol = ThemeManager::get(Theme::Role::ok).withAlpha(0.25f)
+                  .overlaidWith(ThemeManager::get(Theme::Role::raised));
   } else {
     // Standard flat buttons in modern mode
-    baseCol = juce::Colour(0xff1d2024);
+    baseCol = ThemeManager::get(Theme::Role::raised);
   }
 
   // Hover and click states
@@ -218,13 +221,13 @@ void BoutiqueLookAndFeel::drawButtonBackground(juce::Graphics &g,
   g.fillRoundedRectangle(bounds, cornerSize);
 
   // Borders
-  juce::Colour borderCol = juce::Colour(0xff2e3238);
+  juce::Colour borderCol = ThemeManager::get(Theme::Role::border);
   if (isPanic && !shouldDrawButtonAsDown) {
-    borderCol = juce::Colour(0xffff1744);
+    borderCol = ThemeManager::get(Theme::Role::panic);
   } else if (isActive) {
     borderCol = baseCol.brighter(0.2f);
   } else if (isAssignedSetup) {
-    borderCol = juce::Colour(0xff00e676).withAlpha(0.4f); // Subtle green border for assigned setups
+    borderCol = ThemeManager::get(Theme::Role::ok).withAlpha(0.4f); // subtle tint border
   }
   
   g.setColour(borderCol);

@@ -1,6 +1,7 @@
 #pragma once
 #include <JuceHeader.h>
 #include "AssetLoader.h"
+#include "ThemeManager.h"
 
 /**
  * BoutiqueLookAndFeel
@@ -10,56 +11,64 @@
  */
 class BoutiqueLookAndFeel : public juce::LookAndFeel_V4 {
 public:
+  // Mirrors the active theme's `flat` flag. Components that historically read
+  // `laf->useModernStyle` keep working; it now reflects the theme.
   bool useModernStyle = true;
 
   BoutiqueLookAndFeel() {
     // Set default Sans-Serif Typeface for a clean, premium visual design (fixes "vibe codey" default fonts)
     setDefaultSansSerifTypefaceName("Segoe UI");
-
-    // Set some professional colors
-    setColour(juce::Slider::thumbColourId, juce::Colours::white);
-    setColour(juce::Slider::trackColourId,
-              juce::Colours::black.withAlpha(0.4f));
-  }
-  // ===== Color Scheme System =====
-  struct Scheme {
-    juce::String name;
-    juce::Colour bg, panel, accent, foh, iem, text, textDim, border;
-  };
-
-  int currentScheme = 0;
-
-  static juce::StringArray getSchemeNames() {
-    return {"Midnight", "Amber", "Crimson"};
+    applyThemeColors();
   }
 
-  Scheme getActiveScheme() const {
-    static Scheme schemes[] = {
-      {"Midnight", juce::Colour(0xFF121315),juce::Colour(0xFF1E2124),juce::Colour(0xFF00E5FF),juce::Colour(0xFF00E676),juce::Colour(0xFF29B6F6),juce::Colour(0xFFFFFFFF),juce::Colour(0xFF8E9AA6),juce::Colour(0xFF2A2E33)},
-      {"Amber",    juce::Colour(0xFF141210),juce::Colour(0xFF221E1A),juce::Colour(0xFFFFB300),juce::Colour(0xFFFF8F00),juce::Colour(0xFFFF6E40),juce::Colour(0xFFFFF3E0),juce::Colour(0xFFA89080),juce::Colour(0xFF3D352B)},
-      {"Crimson",  juce::Colour(0xFF120808),juce::Colour(0xFF1E1010),juce::Colour(0xFFFF1744),juce::Colour(0xFFD50000),juce::Colour(0xFFFF4081),juce::Colour(0xFFFFEBEE),juce::Colour(0xFF8E6060),juce::Colour(0xFF2A1515)},
-    };
-    return schemes[juce::jlimit(0, 2, currentScheme)];
-  }
+  // Push the active theme's colors into the JUCE colour-ID system. Call after
+  // switching themes so all LookAndFeel-owned widgets repaint correctly.
+  void applyThemeColors() {
+    useModernStyle = ThemeManager::getInstance().isFlat();
+    const auto& t = ThemeManager::getInstance().active();
 
-  void setScheme(int idx) {
-    currentScheme = juce::jlimit(0, 2, idx);
-    auto s = getActiveScheme();
-    setColour(juce::ResizableWindow::backgroundColourId, s.bg);
-    setColour(juce::Slider::thumbColourId, s.accent);
-    setColour(juce::Slider::trackColourId, s.bg.darker(0.3f));
-    setColour(juce::TextButton::buttonColourId, s.panel);
-    setColour(juce::TextButton::buttonOnColourId, s.accent);
-    setColour(juce::TextButton::textColourOffId, s.text);
-    setColour(juce::TextButton::textColourOnId, s.bg);
-    setColour(juce::Label::textColourId, s.text);
-    setColour(juce::ComboBox::backgroundColourId, s.panel);
-    setColour(juce::ComboBox::outlineColourId, s.border);
-    setColour(juce::ComboBox::textColourId, s.text);
-    setColour(juce::ListBox::backgroundColourId, s.panel);
-    setColour(juce::ListBox::textColourId, s.text);
-    setColour(juce::ScrollBar::backgroundColourId, s.bg);
-    setColour(juce::ScrollBar::thumbColourId, s.border);
+    setColour(juce::ResizableWindow::backgroundColourId, t.background);
+    setColour(juce::DocumentWindow::backgroundColourId, t.background);
+    setColour(juce::Slider::thumbColourId, t.knobThumb);
+    setColour(juce::Slider::trackColourId, t.trackGroove);
+    setColour(juce::Slider::textBoxTextColourId, t.text);
+    setColour(juce::Slider::textBoxBackgroundColourId, t.panel);
+    setColour(juce::Slider::textBoxOutlineColourId, t.border);
+    setColour(juce::Slider::textBoxHighlightColourId, t.accent);
+
+    setColour(juce::TextButton::buttonColourId, t.raised);
+    setColour(juce::TextButton::buttonOnColourId, t.accent);
+    setColour(juce::TextButton::textColourOffId, t.text);
+    setColour(juce::TextButton::textColourOnId, t.textOnAccent);
+    setColour(juce::ToggleButton::textColourId, t.text);
+    setColour(juce::ToggleButton::tickColourId, t.accent);
+    setColour(juce::ToggleButton::tickDisabledColourId, t.textFaint);
+
+    setColour(juce::Label::textColourId, t.text);
+    setColour(juce::Label::backgroundColourId, t.panel);
+    setColour(juce::Label::outlineColourId, t.border);
+
+    setColour(juce::ComboBox::backgroundColourId, t.panel);
+    setColour(juce::ComboBox::outlineColourId, t.border);
+    setColour(juce::ComboBox::textColourId, t.text);
+    setColour(juce::ComboBox::arrowColourId, t.textDim);
+    setColour(juce::PopupMenu::backgroundColourId, t.panel);
+    setColour(juce::PopupMenu::textColourId, t.text);
+    setColour(juce::PopupMenu::highlightedBackgroundColourId, t.active);
+
+    setColour(juce::ListBox::backgroundColourId, t.panel);
+    setColour(juce::ListBox::outlineColourId, t.border);
+    setColour(juce::ListBox::textColourId, t.text);
+
+    setColour(juce::ScrollBar::backgroundColourId, t.background);
+    setColour(juce::ScrollBar::thumbColourId, t.borderStrong);
+    setColour(juce::ScrollBar::trackColourId, t.trackGroove);
+
+    setColour(juce::TextEditor::backgroundColourId, t.panelAlt);
+    setColour(juce::TextEditor::textColourId, t.text);
+    setColour(juce::TextEditor::outlineColourId, t.border);
+    setColour(juce::TextEditor::highlightColourId, t.active);
+    setColour(juce::TextEditor::focusedOutlineColourId, t.accent);
   }
 
   /**
@@ -128,23 +137,21 @@ public:
     float cornerSize = useModernStyle ? 3.0f : 4.0f;
 
     // 1. Drop Shadow
-    g.setColour(juce::Colours::black.withAlpha(0.5f));
+    g.setColour(ThemeManager::get(Theme::Role::background).withAlpha(0.5f));
     g.fillRoundedRectangle(thumbRect.translated(0.0f, useModernStyle ? 2.0f : 3.0f), cornerSize);
 
     if (useModernStyle) {
       // Modern flat cap body
-      g.setColour(juce::Colour(0xff2a2e33));
+      g.setColour(ThemeManager::get(Theme::Role::knobFace));
       g.fillRoundedRectangle(thumbRect, cornerSize);
 
-      // Central accent bar
-      juce::Colour accentCol = juce::Colours::white;
+      // Central accent bar — routed by slider component ID to its semantic bus
+      juce::Colour accentCol = ThemeManager::get(Theme::Role::accent);
       auto id = slider.getComponentID();
       if (id == "foh" || id == "master_foh")
-        accentCol = juce::Colour(0xff00e676); // emerald green
+        accentCol = ThemeManager::get(Theme::Role::foh);
       else if (id == "iem" || id == "master_iem")
-        accentCol = juce::Colour(0xff29b6f6); // sky blue
-      else
-        accentCol = juce::Colour(0xff00e5ff); // electric cyan
+        accentCol = ThemeManager::get(Theme::Role::iem);
 
       float ridgeY = thumbRect.getCentreY();
       float ridgeH = 3.0f;
@@ -155,7 +162,7 @@ public:
       g.fillRoundedRectangle(ridgeRect, 1.0f);
 
       // Border
-      g.setColour(juce::Colour(0xff16181a));
+      g.setColour(ThemeManager::get(Theme::Role::background).darker(0.2f));
       g.drawRoundedRectangle(thumbRect, cornerSize, 1.0f);
     } else {
       // 2. Main Body Gradient (Top-down lighting)
@@ -203,13 +210,13 @@ public:
                                        (float)height);
 
       if (useModernStyle) {
-        g.setColour(juce::Colour(0xff0b0c0d)); // Sleek deep black track
+        g.setColour(ThemeManager::get(Theme::Role::trackGroove)); // Sleek deep track
       } else {
-        // Track background: Blue for masters, Dark Grey for channels
+        // Track background: themed for masters, darker for channels
         if (slider.getComponentID() == "master")
-          g.setColour(juce::Colours::blue.withAlpha(0.5f));
+          g.setColour(ThemeManager::get(Theme::Role::iem).withAlpha(0.5f));
         else
-          g.setColour(juce::Colours::black.withAlpha(0.6f));
+          g.setColour(ThemeManager::get(Theme::Role::background).withAlpha(0.6f));
       }
 
       g.fillRoundedRectangle(trackArea, cornerSize);
@@ -230,13 +237,13 @@ public:
 
         // Major ticks (every 20%)
         if (i % 2 == 0) {
-          g.setColour(useModernStyle ? juce::Colour(0xff2a2e33) : juce::Colours::white.withAlpha(0.4f));
+          g.setColour(useModernStyle ? ThemeManager::get(Theme::Role::borderStrong) : juce::Colours::white.withAlpha(0.4f));
           // Wider ticks
           g.drawLine((float)x + (width - tickWidth - 10) * 0.5f, yPos,
                      (float)x + (width + tickWidth + 10) * 0.5f, yPos, 1.0f);
         } else {
           // Minor ticks
-          g.setColour(useModernStyle ? juce::Colour(0xff1e2124) : juce::Colours::white.withAlpha(0.15f));
+          g.setColour(useModernStyle ? ThemeManager::get(Theme::Role::border) : juce::Colours::white.withAlpha(0.15f));
           g.drawLine((float)x + (width - tickWidth) * 0.5f, yPos,
                      (float)x + (width + tickWidth) * 0.5f, yPos, 0.5f);
         }
@@ -247,7 +254,7 @@ public:
       juce::Rectangle<float> trackArea((float)x,
                                        (float)y + (height - trackWidth) * 0.5f,
                                        (float)width, (float)trackWidth);
-      g.setColour(juce::Colour(0xff0b0c0d));
+      g.setColour(ThemeManager::get(Theme::Role::trackGroove));
       g.fillRoundedRectangle(trackArea, cornerSize);
     }
   }

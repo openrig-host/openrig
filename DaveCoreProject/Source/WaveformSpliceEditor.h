@@ -1,6 +1,7 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include "ThemeManager.h"
 
 class WaveformSpliceEditor : public juce::Component,
                              public juce::ChangeListener {
@@ -40,12 +41,12 @@ public:
         auto bounds = getLocalBounds().toFloat();
         
         // Background
-        g.setColour(juce::Colour(0xff090b0d));
+        g.setColour(ThemeManager::get(Theme::Role::trackGroove));
         g.fillRoundedRectangle(bounds, 4.0f);
 
         // Draw Waveform
         if (thumbnail.getNumChannels() > 0) {
-            g.setColour(juce::Colours::cyan.withAlpha(0.6f));
+            g.setColour(ThemeManager::get(Theme::Role::iem).withAlpha(0.6f));
             thumbnail.drawChannels(g, getLocalBounds().reduced(2), 0.0, thumbnail.getTotalLength(), 1.0f);
 
             // Shading out-of-range areas

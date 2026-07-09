@@ -8,6 +8,7 @@
 #include "MainComponent.h"
 #include "NoteRangeComponent.h"
 #include "RackSlotComponent.h"
+#include "ThemeManager.h"
 
 namespace {
 // Procedurally renders a gear icon for the settings ImageButton (no asset dep).
@@ -42,7 +43,7 @@ juce::Image createGearImage(int size, juce::Colour colour) {
   g.fillPath(gear);
 
   // Center hole (drawn in panel colour to read as a hole on the dark header)
-  g.setColour(juce::Colour(0xff121315));
+  g.setColour(ThemeManager::get(Theme::Role::background));
   g.fillEllipse(cx - size * 0.16f, cy - size * 0.16f, size * 0.32f,
                 size * 0.32f);
   return img;
@@ -57,7 +58,7 @@ public:
   juce::AudioPluginInstance* pluginInstance = nullptr;
 
   PluginWindow(const juce::String &name, juce::Component *content, juce::AudioPluginInstance* pi)
-      : DocumentWindow(name, juce::Colours::darkgrey,
+      : DocumentWindow(name, ThemeManager::get(Theme::Role::panel),
                        DocumentWindow::closeButton |
                            DocumentWindow::minimiseButton),
         pluginInstance(pi) {
@@ -98,11 +99,17 @@ MainComponent::MainComponent() {
 
   // Listen for audio/MIDI device changes
   deviceManager.addChangeListener(this);
+
+  // Load persisted theme before applying the look and feel so the LnF reflects
+  // the user's saved choice on first paint.
+  ThemeManager::getInstance().loadFromSettings();
+  ThemeManager::getInstance().addChangeListener(this);
   loadAudioSettings();
 
   // Apply look and feel
   setLookAndFeel(&boutiqueLookAndFeel);
   juce::LookAndFeel::setDefaultLookAndFeel(&boutiqueLookAndFeel);
+  boutiqueLookAndFeel.applyThemeColors();
 
   // Preload skeuomorphic assets for performance
   AssetLoader::getInstance().preloadAssets();
@@ -117,7 +124,7 @@ MainComponent::MainComponent() {
   addAndMakeVisible(toggleLibraryBtn);
   toggleLibraryBtn.setTooltip("Toggle Library Sidebar");
   toggleLibraryBtn.setColour(juce::TextButton::buttonColourId,
-                              juce::Colour(0xFF2A2D32));
+                              ThemeManager::get(Theme::Role::panelAlt));
   toggleLibraryBtn.onClick = [this] {
     libraryVisible = !libraryVisible;
     toggleLibraryBtn.setButtonText(libraryVisible ? "<<" : ">>");
@@ -180,6 +187,7 @@ MainComponent::~MainComponent() {
     transitioner->stopTransition();
   activePluginWindows.clear();
   deviceManager.removeChangeListener(this);
+  ThemeManager::getInstance().removeChangeListener(this);
   saveAudioSettings();
   deviceManager.removeMidiInputDeviceCallback({}, this);
   auto midiInputs = juce::MidiInput::getAvailableDevices();
@@ -564,24 +572,24 @@ void MainComponent::setupHeaderButtons() {
 
   // Panic button
   addAndMakeVisible(panicBtn);
-  panicBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::red);
+  panicBtn.setColour(juce::TextButton::buttonColourId, ThemeManager::get(Theme::Role::panic));
   panicBtn.onClick = [this] { engine.triggerPanic(); };
 
   // Reset Audio button
   addAndMakeVisible(resetAudioBtn);
   resetAudioBtn.setColour(juce::TextButton::buttonColourId,
-                          juce::Colours::orange);
+                          ThemeManager::get(Theme::Role::warn));
   resetAudioBtn.onClick = [this] { resetAudioDevice(); };
 
   // Exit button
   addAndMakeVisible(exitBtn);
-  exitBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::darkgrey);
+  exitBtn.setColour(juce::TextButton::buttonColourId, ThemeManager::get(Theme::Role::panel));
   exitBtn.onClick = [] { juce::JUCEApplication::quit(); };
 
   // Audio Settings button
   addAndMakeVisible(audioSettingsBtn);
   audioSettingsBtn.setColour(juce::TextButton::buttonColourId,
-                             juce::Colours::darkmagenta);
+                             ThemeManager::get(Theme::Role::accent));
   audioSettingsBtn.onClick = [this] {
     auto *selector = new juce::AudioDeviceSelectorComponent(
         deviceManager, 0, OpenRigConstants::kDefaultInputChannels, 0,
@@ -590,7 +598,7 @@ void MainComponent::setupHeaderButtons() {
     juce::DialogWindow::LaunchOptions options;
     options.content.setOwned(selector);
     options.dialogTitle = "Audio & MIDI Settings";
-    options.dialogBackgroundColour = juce::Colours::darkgrey;
+    options.dialogBackgroundColour = ThemeManager::get(Theme::Role::panel);
     options.escapeKeyTriggersCloseButton = true;
     options.useNativeTitleBar = true;
     options.resizable = false;
@@ -600,14 +608,14 @@ void MainComponent::setupHeaderButtons() {
   // MIDI Monitor
   addAndMakeVisible(midiMonitorLabel);
   midiMonitorLabel.setFont(juce::FontOptions(14.0f, juce::Font::bold));
-  midiMonitorLabel.setColour(juce::Label::textColourId, juce::Colours::lime);
+  midiMonitorLabel.setColour(juce::Label::textColourId, ThemeManager::get(Theme::Role::midiNote));
 
   // MIDI Monitor toggle button
   addAndMakeVisible(midiMonitorToggle);
   midiMonitorToggle.setColour(juce::TextButton::buttonColourId,
-                              juce::Colours::darkgreen);
+                              ThemeManager::get(Theme::Role::ok));
   midiMonitorToggle.setColour(juce::TextButton::buttonOnColourId,
-                              juce::Colour(0xff00aa44));
+                              ThemeManager::get(Theme::Role::ok).brighter(0.3f));
   midiMonitorToggle.onClick = [this] {
     midiMonitorVisible = !midiMonitorVisible;
     if (midiMonitorVisible) {
@@ -640,7 +648,7 @@ void MainComponent::setupHeaderButtons() {
 
   // Settings gear button — centralizes the settings buttons into one overlay
   addAndMakeVisible(settingsGearBtn);
-  auto gearImg = createGearImage(28, juce::Colour(0xFF00E5FF));
+  auto gearImg = createGearImage(28, ThemeManager::get(Theme::Role::accent));
   settingsGearBtn.setImages(false, true, true, gearImg, 1.0f,
                             juce::Colours::transparentBlack, gearImg, 1.0f,
                             juce::Colours::white.withAlpha(0.25f), gearImg,
@@ -658,7 +666,7 @@ void MainComponent::setupHeaderButtons() {
   // Bus Routing button
   addAndMakeVisible(busRoutingBtn);
   busRoutingBtn.setColour(juce::TextButton::buttonColourId,
-                          juce::Colours::darkcyan);
+                          ThemeManager::get(Theme::Role::iem));
   busRoutingBtn.onClick = [this] {
     juce::PopupMenu menu;
     menu.addSectionHeader("FOH Output Channels");
@@ -695,7 +703,7 @@ void MainComponent::setupHeaderButtons() {
 
   // Save/Load buttons
   addAndMakeVisible(saveBtn);
-  saveBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::darkgreen);
+  saveBtn.setColour(juce::TextButton::buttonColourId, ThemeManager::get(Theme::Role::ok));
   saveBtn.onClick = [this] {
     auto chooser = std::make_shared<juce::FileChooser>(
         "Save Rig Configuration",
@@ -723,7 +731,7 @@ void MainComponent::setupHeaderButtons() {
 
   addAndMakeVisible(loadBtn);
   loadBtn.setColour(juce::TextButton::buttonColourId,
-                    juce::Colours::darkorange);
+                    ThemeManager::get(Theme::Role::warn));
   loadBtn.onClick = [this] {
     auto chooser = std::make_shared<juce::FileChooser>(
         "Load Rig Configuration",
@@ -741,7 +749,7 @@ void MainComponent::setupHeaderButtons() {
 
   // Prev / Next Setlist buttons
   addAndMakeVisible(prevSetlistBtn);
-  prevSetlistBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xFF3A3D42));
+  prevSetlistBtn.setColour(juce::TextButton::buttonColourId, ThemeManager::get(Theme::Role::panelAlt));
   prevSetlistBtn.setTooltip("Previous Song in Setlist");
   prevSetlistBtn.onClick = [this] {
       auto& sm = OpenRig::SetlistManager::getInstance();
@@ -753,7 +761,7 @@ void MainComponent::setupHeaderButtons() {
   };
 
   addAndMakeVisible(nextSetlistBtn);
-  nextSetlistBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xFF3A3D42));
+  nextSetlistBtn.setColour(juce::TextButton::buttonColourId, ThemeManager::get(Theme::Role::panelAlt));
   nextSetlistBtn.setTooltip("Next Song in Setlist (Background Preloaded)");
   nextSetlistBtn.onClick = [this] {
       auto& sm = OpenRig::SetlistManager::getInstance();
@@ -767,14 +775,14 @@ void MainComponent::setupHeaderButtons() {
   // CPU/RAM monitors
   addAndMakeVisible(cpuLabel);
   cpuLabel.setFont(juce::FontOptions(12.0f));
-  cpuLabel.setColour(juce::Label::textColourId, juce::Colours::orange);
+  cpuLabel.setColour(juce::Label::textColourId, ThemeManager::get(Theme::Role::warn));
   addAndMakeVisible(ramLabel);
   ramLabel.setFont(juce::FontOptions(12.0f));
-  ramLabel.setColour(juce::Label::textColourId, juce::Colours::yellow);
+  ramLabel.setColour(juce::Label::textColourId, ThemeManager::get(Theme::Role::meterMid));
 
   addAndMakeVisible(setupNameLabel);
   setupNameLabel.setFont(juce::FontOptions(22.0f, juce::Font::bold));
-  setupNameLabel.setColour(juce::Label::textColourId, juce::Colour(0xff00e5ff));
+  setupNameLabel.setColour(juce::Label::textColourId, ThemeManager::get(Theme::Role::accent));
   setupNameLabel.setJustificationType(juce::Justification::centredLeft);
 }
 
@@ -784,10 +792,10 @@ void MainComponent::setupSetupButtons() {
   addAndMakeVisible(loadSetBtn);
   addAndMakeVisible(setupBuilderBtn);
   
-  saveSetBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::darkgreen);
-  loadSetBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::darkorange);
-  setupBuilderBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xFF00E5FF));
-  setupBuilderBtn.setColour(juce::TextButton::textColourOffId, juce::Colours::black);
+  saveSetBtn.setColour(juce::TextButton::buttonColourId, ThemeManager::get(Theme::Role::ok));
+  loadSetBtn.setColour(juce::TextButton::buttonColourId, ThemeManager::get(Theme::Role::warn));
+  setupBuilderBtn.setColour(juce::TextButton::buttonColourId, ThemeManager::get(Theme::Role::accent));
+  setupBuilderBtn.setColour(juce::TextButton::textColourOffId, ThemeManager::get(Theme::Role::textOnAccent));
   
   saveSetBtn.onClick = [this] { saveSetToFile(); };
   loadSetBtn.onClick = [this] { loadSetFromFile(); };
@@ -799,10 +807,10 @@ void MainComponent::setupSetupButtons() {
   addAndMakeVisible(renameSceneBtn);
   addAndMakeVisible(deleteSceneBtn);
 
-  addSceneBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::teal);
-  saveSceneBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::darkgreen);
-  renameSceneBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::darkslategrey);
-  deleteSceneBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::darkred);
+  addSceneBtn.setColour(juce::TextButton::buttonColourId, ThemeManager::get(Theme::Role::iem));
+  saveSceneBtn.setColour(juce::TextButton::buttonColourId, ThemeManager::get(Theme::Role::ok));
+  renameSceneBtn.setColour(juce::TextButton::buttonColourId, ThemeManager::get(Theme::Role::raised));
+  deleteSceneBtn.setColour(juce::TextButton::buttonColourId, ThemeManager::get(Theme::Role::danger));
 
   addSceneBtn.onClick = [this] {
     engine.createNewScene("NEW PRESET");
@@ -860,9 +868,9 @@ void MainComponent::refreshSceneButtons() {
     btn->setClickingTogglesState(true);
     btn->setRadioGroupId(9999, juce::dontSendNotification);
     btn->setColour(juce::TextButton::buttonColourId,
-                   juce::Colour(0xFF3A3D42));
+                   ThemeManager::get(Theme::Role::panelAlt));
     btn->setColour(juce::TextButton::buttonOnColourId,
-                   juce::Colour(0xFF00E5FF));
+                   ThemeManager::get(Theme::Role::accent));
 
     // Show assigned PC in tooltip if set
     int assignedPC = engine.getSceneMidiPC(i);
@@ -873,7 +881,7 @@ void MainComponent::refreshSceneButtons() {
       btn->setTooltip(tip);
       // Tint button slightly to indicate it has a trigger
       btn->setColour(juce::TextButton::buttonColourId,
-                     juce::Colour(0xFF2D3A42));
+                     ThemeManager::get(Theme::Role::iem).darker(0.4f));
     }
 
     int sceneIdx = i;
@@ -941,7 +949,7 @@ void MainComponent::setupMasterSection() {
     iemEditGuiBtns[i].onClick = [this, i] { openMasterPluginEditor(false, i); };
 
     // Color styles matching routing destinations
-    fohFxBtns[i].setColour(juce::TextButton::buttonColourId, juce::Colours::limegreen.darker(0.3f));
+    fohFxBtns[i].setColour(juce::TextButton::buttonColourId, ThemeManager::get(Theme::Role::foh).darker(0.3f));
     iemFxBtns[i].setColour(juce::TextButton::buttonColourId, juce::Colours::dodgerblue.darker(0.3f));
   }
 }
@@ -1072,6 +1080,12 @@ void MainComponent::showSetupBuilderOverlay() {
 void MainComponent::changeListenerCallback(juce::ChangeBroadcaster* source) {
   if (source == &deviceManager) {
     saveAudioSettings();
+  } else if (source == &ThemeManager::getInstance()) {
+    // Theme changed: re-apply LookAndFeel colours and repaint everything.
+    boutiqueLookAndFeel.applyThemeColors();
+    repaint();
+    for (auto* c : getChildren())
+      c->repaint();
   }
 }
 
@@ -1084,14 +1098,14 @@ void MainComponent::audioDeviceAboutToStart(juce::AudioIODevice *device) {
 void MainComponent::audioDeviceStopped() {}
 
 void MainComponent::paint(juce::Graphics &g) {
-  // Dark premium look
-  g.fillAll(juce::Colour(0xff121212));
+  // Themed background
+  g.fillAll(ThemeManager::get(Theme::Role::background));
 
   // Draw Master VU Meters
   auto drawMasterMeter = [&](juce::Graphics &g, juce::Rectangle<float> area,
                              float L, float R, juce::Colour low,
                              juce::Colour mid, juce::Colour high) {
-    g.setColour(juce::Colours::black);
+    g.setColour(ThemeManager::get(Theme::Role::trackGroove));
     g.fillRoundedRectangle(area, 2.0f);
 
     auto lRect = area.removeFromLeft(area.getWidth() / 2).reduced(1);
@@ -1113,7 +1127,7 @@ void MainComponent::paint(juce::Graphics &g) {
           juce::Colour c = (ratio < 0.6f) ? low : ((ratio < 0.85f) ? mid : high);
           g.setColour(c);
         } else {
-          g.setColour(juce::Colours::darkgrey.darker(0.8f));
+          g.setColour(ThemeManager::get(Theme::Role::bypassed).darker(0.4f));
         }
         g.fillRect(seg);
       }
@@ -1125,13 +1139,17 @@ void MainComponent::paint(juce::Graphics &g) {
 
   auto fohBounds = masterFohSlider.getBounds().toFloat();
   drawMasterMeter(g, fohBounds.withX(fohBounds.getRight() + 2).withWidth(14),
-                  masterFohL, masterFohR, juce::Colours::limegreen,
-                  juce::Colours::yellow, juce::Colours::red);
+                  masterFohL, masterFohR,
+                  ThemeManager::get(Theme::Role::meterLow),
+                  ThemeManager::get(Theme::Role::meterMid),
+                  ThemeManager::get(Theme::Role::meterPeak));
 
   auto iemBounds = masterIemSlider.getBounds().toFloat();
   drawMasterMeter(g, iemBounds.withX(iemBounds.getRight() + 2).withWidth(14),
-                  masterIemL, masterIemR, juce::Colours::cyan,
-                  juce::Colours::yellow, juce::Colours::red);
+                  masterIemL, masterIemR,
+                  ThemeManager::get(Theme::Role::iem),
+                  ThemeManager::get(Theme::Role::meterMid),
+                  ThemeManager::get(Theme::Role::meterPeak));
 }
 
 void MainComponent::resized() {
@@ -1597,14 +1615,14 @@ void MainComponent::applySetlistFromFile(const juce::File &file) {
       setupFilePaths[i] = obj->getProperty(key).toString();
       if (juce::File(setupFilePaths[i]).existsAsFile())
         setupButtons[i].setColour(juce::TextButton::buttonColourId,
-                                 juce::Colours::darkgreen);
+                                 ThemeManager::get(Theme::Role::ok));
       else
         setupButtons[i].setColour(juce::TextButton::buttonColourId,
-                                 juce::Colours::darkslategrey);
+                                 ThemeManager::get(Theme::Role::raised));
     } else {
       setupFilePaths[i] = "";
       setupButtons[i].setColour(juce::TextButton::buttonColourId,
-                               juce::Colours::darkslategrey);
+                               ThemeManager::get(Theme::Role::raised));
     }
   }
   saveButtonMappings();

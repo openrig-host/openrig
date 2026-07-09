@@ -1,4 +1,5 @@
 #include "RackSlotComponent.h"
+#include "ThemeManager.h"
 #include "Logger.h"
 #include "IMidiNoteLearner.h"
 #include "MainComponent.h"
@@ -57,7 +58,7 @@ public:
 
     // Done button
     doneBtn.setButtonText("DONE");
-    doneBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::darkgreen);
+    doneBtn.setColour(juce::TextButton::buttonColourId, ThemeManager::get(Theme::Role::ok));
     doneBtn.onClick = [this] {
       if (auto* co = findParentComponentOfClass<juce::CallOutBox>())
         co->dismiss();
@@ -66,7 +67,7 @@ public:
 
     // Reset button
     resetBtn.setButtonText("RESET");
-    resetBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::darkred);
+    resetBtn.setColour(juce::TextButton::buttonColourId, ThemeManager::get(Theme::Role::danger));
     resetBtn.onClick = [this] {
       learnedLow = -1;
       learnedHigh = -1;
@@ -105,12 +106,12 @@ public:
   void paint(juce::Graphics &g) override {
     // Title: learn mode indicator
     auto titleArea = keyboardArea.withHeight(18).translated(0, -2);
-    g.setColour(juce::Colours::lime);
+    g.setColour(ThemeManager::get(Theme::Role::foh));
     g.setFont(juce::FontOptions(13.0f, juce::Font::bold));
     g.drawText("PLAY NOTES TO SET RANGE", titleArea, juce::Justification::centred);
 
     // Range text
-    g.setColour(juce::Colours::white);
+    g.setColour(ThemeManager::get(Theme::Role::text));
     g.setFont(12.0f);
     g.drawText("Low: " + midiNoteName(lowNote), keyboardArea.getX(), keyboardArea.getY() - 2,
                80, 16, juce::Justification::left);
@@ -211,14 +212,14 @@ private:
     float x1 = area.getX() + lowNote * noteWidth;
     float x2 = area.getX() + (highNote + 1) * noteWidth;
 
-    g.setColour(juce::Colours::black.withAlpha(0.6f));
+    g.setColour(ThemeManager::get(Theme::Role::background).withAlpha(0.6f));
     g.fillRect(area.withWidth(x1 - area.getX()));
     g.fillRect(area.withX(x2).withWidth(area.getRight() - x2));
 
-    g.setColour(juce::Colours::lime.withAlpha(0.4f));
+    g.setColour(ThemeManager::get(Theme::Role::foh).withAlpha(0.4f));
     g.fillRect(juce::Rectangle<float>(x1, area.getY(), x2 - x1, area.getHeight()));
 
-    g.setColour(juce::Colours::lime);
+    g.setColour(ThemeManager::get(Theme::Role::foh));
     g.drawVerticalLine((int)x1, area.getY() - 3, area.getBottom() + 3);
     g.drawVerticalLine((int)x2, area.getY() - 3, area.getBottom() + 3);
   }
@@ -316,7 +317,7 @@ RackSlotComponent::RackSlotComponent(RackSlot &s, int index, juce::LookAndFeel &
   fohRoutingBtn.setButtonText("FOH");
   fohRoutingBtn.setTooltip("FOH Send: Routes this channel's signal to the Front of House mix.");
   fohRoutingBtn.setColour(juce::TextButton::buttonOnColourId,
-                          juce::Colours::limegreen);
+                          ThemeManager::get(Theme::Role::foh));
   fohRoutingBtn.getProperties().set("useToggleSwitch", true);
   fohRoutingBtn.getProperties().set("isOrangeToggle", true);
   fohRoutingBtn.setToggleState(slot.isFohEnabled(),
@@ -334,7 +335,7 @@ RackSlotComponent::RackSlotComponent(RackSlot &s, int index, juce::LookAndFeel &
   iemRoutingBtn.setButtonText("IEM");
   iemRoutingBtn.setTooltip("IEM Send: Routes this channel's signal to your In-Ear Monitors mix.");
   iemRoutingBtn.setColour(juce::TextButton::buttonOnColourId,
-                          juce::Colours::mediumblue);
+                          ThemeManager::get(Theme::Role::iem));
   iemRoutingBtn.getProperties().set("useToggleSwitch", true);
   iemRoutingBtn.getProperties().set("isOrangeToggle", true);
   iemRoutingBtn.setToggleState(slot.isIemEnabled(),
@@ -353,7 +354,7 @@ RackSlotComponent::RackSlotComponent(RackSlot &s, int index, juce::LookAndFeel &
   bypassButton.setTooltip("Mute Channel: Instantly cuts all audio output for this track.");
   bypassButton.setClickingTogglesState(true);
   bypassButton.setColour(juce::TextButton::buttonOnColourId,
-                         juce::Colours::red);
+                         ThemeManager::get(Theme::Role::danger));
   bypassButton.getProperties().set("useToggleSwitch", true);
   bypassButton.getProperties().set("isOrangeToggle", false);
   bypassButton.onClick = [this] {
@@ -373,9 +374,9 @@ RackSlotComponent::RackSlotComponent(RackSlot &s, int index, juce::LookAndFeel &
     addAndMakeVisible(editGuiBtns[i]);
     editGuiBtns[i].setButtonText("E");
     editGuiBtns[i].setColour(juce::TextButton::buttonColourId,
-                             juce::Colours::red.darker(0.3f));
+                             ThemeManager::get(Theme::Role::danger).darker(0.3f));
     editGuiBtns[i].setColour(juce::TextButton::textColourOffId,
-                             juce::Colours::white);
+                             ThemeManager::get(Theme::Role::text));
     editGuiBtns[i].onClick = [this, i] {
       if (onOpenEditor)
         onOpenEditor(i);
@@ -386,7 +387,7 @@ RackSlotComponent::RackSlotComponent(RackSlot &s, int index, juce::LookAndFeel &
   ccButton.setButtonText("CC");
   ccButton.setTooltip("CC Mapping: Opens the assignment manager for mapping MIDI continuous controllers.");
   ccButton.setColour(juce::TextButton::buttonColourId,
-                     juce::Colours::darkorange);
+                     ThemeManager::get(Theme::Role::warn));
   ccButton.onClick = [this] {
     if (onShowCCDialog)
       onShowCCDialog();
@@ -396,21 +397,21 @@ RackSlotComponent::RackSlotComponent(RackSlot &s, int index, juce::LookAndFeel &
   fohLearnBtn.setButtonText("L");
   fohLearnBtn.setTooltip("Learn FOH fader CC");
   fohLearnBtn.setColour(juce::TextButton::buttonColourId,
-                        juce::Colours::darkgrey);
+                        ThemeManager::get(Theme::Role::panel));
   fohLearnBtn.onClick = [this] { armFaderLearn(true); };
 
   addAndMakeVisible(iemLearnBtn);
   iemLearnBtn.setButtonText("L");
   iemLearnBtn.setTooltip("Learn IEM fader CC");
   iemLearnBtn.setColour(juce::TextButton::buttonColourId,
-                        juce::Colours::darkgrey);
+                        ThemeManager::get(Theme::Role::panel));
   iemLearnBtn.onClick = [this] { armFaderLearn(false); };
 
   addAndMakeVisible(noteRangeButton);
   noteRangeButton.setButtonText("NR");
   noteRangeButton.setTooltip("Note Range: Restricts this channel strip to a specific key range on your controller.");
   noteRangeButton.setColour(juce::TextButton::buttonColourId,
-                            juce::Colours::darkviolet);
+                            ThemeManager::get(Theme::Role::midiPC));
   noteRangeButton.onClick = [this] {
     if (onShowNoteRangeDialog)
       onShowNoteRangeDialog();
@@ -420,7 +421,7 @@ RackSlotComponent::RackSlotComponent(RackSlot &s, int index, juce::LookAndFeel &
   customizeButton.setButtonText("DYN");
   customizeButton.setTooltip("Dynamics (DYN): Opens the channel strip processor (Gate, EQ, Compressor).");
   customizeButton.setColour(juce::TextButton::buttonColourId,
-                            juce::Colours::darkslategrey);
+                            ThemeManager::get(Theme::Role::raised));
   customizeButton.onClick = [this] {
     if (onShowChannelStrip)
       onShowChannelStrip();
@@ -428,7 +429,7 @@ RackSlotComponent::RackSlotComponent(RackSlot &s, int index, juce::LookAndFeel &
 
   addAndMakeVisible(arpButton);
   arpButton.setButtonText("MIDI");
-  arpButton.setColour(juce::TextButton::buttonColourId, juce::Colours::purple.brighter(0.2f));
+  arpButton.setColour(juce::TextButton::buttonColourId, ThemeManager::get(Theme::Role::midiPC).brighter(0.2f));
   arpButton.setTooltip("MIDI FX: Opens the built-in arpeggiator controls.");
   arpButton.onClick = [this] {
     if (onShowArpeggiator)
@@ -437,7 +438,7 @@ RackSlotComponent::RackSlotComponent(RackSlot &s, int index, juce::LookAndFeel &
 
   addAndMakeVisible(samplerButton);
   samplerButton.setButtonText("SMP");
-  samplerButton.setColour(juce::TextButton::buttonColourId, juce::Colours::cyan.darker(0.3f));
+  samplerButton.setColour(juce::TextButton::buttonColourId, ThemeManager::get(Theme::Role::iem).darker(0.3f));
   samplerButton.setTooltip("Open Sampler");
   samplerButton.onClick = [this] {
     if (onShowSampler)
@@ -448,7 +449,7 @@ RackSlotComponent::RackSlotComponent(RackSlot &s, int index, juce::LookAndFeel &
   saveStripBtn.setButtonText("SAVE");
   saveStripBtn.setTooltip("Save this strip to file");
   saveStripBtn.setColour(juce::TextButton::buttonColourId,
-                         juce::Colours::darkgreen);
+                         ThemeManager::get(Theme::Role::ok));
   saveStripBtn.onClick = [this] {
     if (onSaveStrip)
       onSaveStrip();
@@ -458,7 +459,7 @@ RackSlotComponent::RackSlotComponent(RackSlot &s, int index, juce::LookAndFeel &
   loadStripBtn.setButtonText("LOAD");
   loadStripBtn.setTooltip("Load a strip from file");
   loadStripBtn.setColour(juce::TextButton::buttonColourId,
-                         juce::Colours::darkblue);
+                         ThemeManager::get(Theme::Role::iem));
   loadStripBtn.onClick = [this] {
     if (onLoadStripFile || onLoadStrip)
       showLoadStripMenu();
@@ -469,7 +470,7 @@ RackSlotComponent::RackSlotComponent(RackSlot &s, int index, juce::LookAndFeel &
   addAndMakeVisible(noteRangeLabel);
   noteRangeLabel.setJustificationType(juce::Justification::centred);
   noteRangeLabel.setFont(juce::FontOptions(10.0f, juce::Font::bold));
-  noteRangeLabel.setColour(juce::Label::textColourId, juce::Colours::orange);
+  noteRangeLabel.setColour(juce::Label::textColourId, ThemeManager::get(Theme::Role::warn));
   noteRangeLabelListener.owner = this;
   noteRangeLabel.addMouseListener(&noteRangeLabelListener, false);
 
@@ -492,9 +493,9 @@ RackSlotComponent::~RackSlotComponent() {
 
 void RackSlotComponent::resetLearnButtonVisuals() {
   fohLearnBtn.setColour(juce::TextButton::buttonColourId,
-                        juce::Colours::darkgrey);
+                        ThemeManager::get(Theme::Role::panel));
   iemLearnBtn.setColour(juce::TextButton::buttonColourId,
-                        juce::Colours::darkgrey);
+                        ThemeManager::get(Theme::Role::panel));
   armedLearnBtn = nullptr;
   fohLearnBtn.repaint();
   iemLearnBtn.repaint();
@@ -537,9 +538,9 @@ void RackSlotComponent::armFaderLearn(bool isFoh) {
 
   armedLearnBtn = clicked;
   fohLearnBtn.setColour(juce::TextButton::buttonColourId,
-                        isFoh ? juce::Colours::red : juce::Colours::darkgrey);
+                        isFoh ? ThemeManager::get(Theme::Role::danger) : ThemeManager::get(Theme::Role::panel));
   iemLearnBtn.setColour(juce::TextButton::buttonColourId,
-                        isFoh ? juce::Colours::darkgrey : juce::Colours::red);
+                        isFoh ? ThemeManager::get(Theme::Role::panel) : ThemeManager::get(Theme::Role::danger));
   fohLearnBtn.repaint();
   iemLearnBtn.repaint();
 }
@@ -592,8 +593,8 @@ void RackSlotComponent::timerCallback() {
     if (hasPlugin)
       anyPlugin = true;
     slotBtns[i].setColour(juce::TextButton::buttonColourId,
-                          hasPlugin ? juce::Colours::green.darker(0.3f)
-                                    : juce::Colours::darkgrey);
+                          hasPlugin ? ThemeManager::get(Theme::Role::ok).darker(0.3f)
+                                    : ThemeManager::get(Theme::Role::panel));
   }
   if (anyPlugin != cachedHasAnyPlugin) {
     cachedHasAnyPlugin = anyPlugin;
@@ -648,19 +649,19 @@ void RackSlotComponent::paint(juce::Graphics &g) {
   if (hasCustomColor) {
     bgCol = customColor;
   } else if (isMonitorIn) {
-    bgCol = juce::Colours::darkorange.darker(0.4f);
+    bgCol = ThemeManager::get(Theme::Role::catMonitor).darker(0.4f);
   } else if (isAccordion) {
-    bgCol = juce::Colours::darkred.darker(0.3f);
+    bgCol = ThemeManager::get(Theme::Role::catAccordion).darker(0.3f);
   } else if (isReturn) {
-    bgCol = juce::Colours::darkblue.darker(0.5f);
+    bgCol = ThemeManager::get(Theme::Role::catReturn).darker(0.5f);
   } else {
-    bgCol = (slotIndex % 2 == 0) ? juce::Colour(0xff2a2a2a)
-                                 : juce::Colour(0xff333333);
+    bgCol = (slotIndex % 2 == 0) ? ThemeManager::get(Theme::Role::panel)
+                                 : ThemeManager::get(Theme::Role::panelAlt);
   }
 
   if (useModern) {
-    juce::Colour modernBg = (slotIndex % 2 == 0) ? juce::Colour(0xff16181b)
-                                                 : juce::Colour(0xff1d2023);
+    juce::Colour modernBg = (slotIndex % 2 == 0) ? ThemeManager::get(Theme::Role::panel)
+                                                 : ThemeManager::get(Theme::Role::panelAlt);
 
     if (slot.isBypassed()) {
       modernBg = modernBg.darker(0.5f);
@@ -669,15 +670,15 @@ void RackSlotComponent::paint(juce::Graphics &g) {
     g.setColour(modernBg);
     g.fillRoundedRectangle(bounds, 6.0f);
 
-    g.setColour(juce::Colour(0xff2a2d32));
+    g.setColour(ThemeManager::get(Theme::Role::border));
     g.drawRoundedRectangle(bounds, 6.0f, 1.0f);
 
     juce::Colour categoryCol = slot.getChannelColor();
     if (categoryCol == juce::Colour(0xff2a2a2a)) {
-      if (isMonitorIn) categoryCol = juce::Colours::darkorange;
-      else if (isAccordion) categoryCol = juce::Colours::darkred;
-      else if (isReturn) categoryCol = juce::Colours::darkblue;
-      else categoryCol = juce::Colour(0xff3e444d);
+      if (isMonitorIn) categoryCol = ThemeManager::get(Theme::Role::catMonitor);
+      else if (isAccordion) categoryCol = ThemeManager::get(Theme::Role::catAccordion);
+      else if (isReturn) categoryCol = ThemeManager::get(Theme::Role::catReturn);
+      else categoryCol = ThemeManager::get(Theme::Role::catDefault);
     }
 
     g.setColour(categoryCol);
@@ -701,9 +702,9 @@ void RackSlotComponent::paint(juce::Graphics &g) {
                bounds.getRight() - 1.5f, bounds.getBottom() - 2, 1.0f);
 
     auto drawScrew = [&](float cx, float cy) {
-      g.setColour(juce::Colours::silver);
+      g.setColour(ThemeManager::get(Theme::Role::knobThumb));
       g.fillEllipse(cx - 3, cy - 3, 6, 6);
-      g.setColour(juce::Colours::darkgrey);
+      g.setColour(ThemeManager::get(Theme::Role::border));
       g.drawEllipse(cx - 3, cy - 3, 6, 6, 1.0f);
       g.drawLine(cx - 2, cy, cx + 2, cy, 1.0f);
     };
@@ -731,7 +732,7 @@ void RackSlotComponent::paint(juce::Graphics &g) {
   }
 
   // Draw Stage-Readable Strip Name
-  g.setColour(slot.isBypassed() ? juce::Colours::white.withAlpha(0.4f) : juce::Colours::white);
+  g.setColour(slot.isBypassed() ? ThemeManager::get(Theme::Role::text).withAlpha(0.4f) : ThemeManager::get(Theme::Role::text));
   g.setFont(juce::FontOptions(13.0f, juce::Font::bold));
   g.drawText(slot.getName(), 2, 100, getWidth() - 4, 18,
              juce::Justification::centred, true);
@@ -739,7 +740,7 @@ void RackSlotComponent::paint(juce::Graphics &g) {
   // Active VST slot highlight: tint populated slot boxes with track color
   if (cachedHasAnyPlugin && !slot.isBypassed()) {
     juce::Colour trackColor =
-        hasCustomColor ? customColor : juce::Colour(0xff00e5ff);
+        hasCustomColor ? customColor : ThemeManager::get(Theme::Role::accent);
     for (int i = 0; i < 3; ++i) {
       if (slot.getPluginInstance(i) != nullptr) {
         auto sb = slotBtns[i].getBounds().toFloat().expanded(1.0f);
@@ -764,16 +765,16 @@ void RackSlotComponent::paint(juce::Graphics &g) {
   int centerX = getWidth() / 2 - meterWidth / 2;
   auto faderBounds = channelSlider.getBounds();
   auto meterArea = juce::Rectangle<int>(centerX, faderBounds.getY(), meterWidth, faderBounds.getHeight());
-  drawVerticalMeter(g, meterArea, curLeft, curRight, juce::Colours::green,
-                    juce::Colours::yellow, juce::Colours::red);
+  drawVerticalMeter(g, meterArea, curLeft, curRight, ThemeManager::get(Theme::Role::meterLow),
+                    ThemeManager::get(Theme::Role::meterMid), ThemeManager::get(Theme::Role::meterPeak));
 
   {
     float load = juce::jlimit(0.0f, 1.0f, slot.getCpuUsage());
     const int barH = 3;
     juce::Colour loadCol =
-        (load < 0.6f) ? juce::Colours::limegreen
-                      : (load < 0.85f ? juce::Colours::yellow
-                                      : juce::Colours::red);
+        (load < 0.6f) ? ThemeManager::get(Theme::Role::meterLow)
+                      : (load < 0.85f ? ThemeManager::get(Theme::Role::meterMid)
+                                      : ThemeManager::get(Theme::Role::meterPeak));
     g.setColour(loadCol.withMultipliedAlpha(0.30f));
     g.fillRect(bounds.getX(), bounds.getBottom() - (float)barH,
                bounds.getWidth(), (float)barH);
@@ -786,7 +787,7 @@ void RackSlotComponent::paint(juce::Graphics &g) {
 void RackSlotComponent::drawVerticalMeter(juce::Graphics &g, juce::Rectangle<int> area, float L,
                                           float R, juce::Colour low, juce::Colour mid,
                                           juce::Colour high) {
-  g.setColour(juce::Colours::black);
+  g.setColour(ThemeManager::get(Theme::Role::trackGroove));
   g.fillRect(area);
 
   auto lRect = area.removeFromLeft(area.getWidth() / 2).reduced(1);

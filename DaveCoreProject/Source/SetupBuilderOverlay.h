@@ -5,6 +5,7 @@
 #include "RigSerializer.h"
 #include "BoutiqueLookAndFeel.h"
 #include "OpenRigConstants.h"
+#include "ThemeManager.h"
 
 class StripRowComponent : public juce::Component {
 public:
@@ -28,7 +29,7 @@ public:
 
         ccInput.setText(juce::String(defaultCC));
         ccInput.setInputRestrictions(3, "0123456789");
-        ccInput.setColour(juce::TextEditor::backgroundColourId, juce::Colour(0xFF22252A));
+        ccInput.setColour(juce::TextEditor::backgroundColourId, ThemeManager::get(Theme::Role::panel));
         ccInput.onTextChange = [this] { triggerCallback(); };
         addAndMakeVisible(ccInput);
 
@@ -83,12 +84,12 @@ public:
     SetupBuilderOverlay(Actions a) : actions(std::move(a)) {
         titleLabel.setText("SETUP BUILDER", juce::dontSendNotification);
         titleLabel.setFont(juce::FontOptions(20.0f, juce::Font::bold));
-        titleLabel.setColour(juce::Label::textColourId, juce::Colour(0xFF00E5FF));
+        titleLabel.setColour(juce::Label::textColourId, ThemeManager::get(Theme::Role::accent));
         titleLabel.setJustificationType(juce::Justification::centred);
         addAndMakeVisible(titleLabel);
 
         closeBtn.setButtonText("X");
-        closeBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::darkred);
+        closeBtn.setColour(juce::TextButton::buttonColourId, ThemeManager::get(Theme::Role::danger));
         closeBtn.onClick = [this] { if (actions.onClose) actions.onClose(); };
         addAndMakeVisible(closeBtn);
 
@@ -100,9 +101,9 @@ public:
 
         listBox.setModel(this);
         listBox.setRowHeight(24);
-        listBox.setColour(juce::ListBox::backgroundColourId, juce::Colour(0xFF101216));
+        listBox.setColour(juce::ListBox::backgroundColourId, ThemeManager::get(Theme::Role::panel));
         listBox.setOutlineThickness(1);
-        listBox.setColour(juce::ListBox::outlineColourId, juce::Colour(0xFF2A2D32));
+        listBox.setColour(juce::ListBox::outlineColourId, ThemeManager::get(Theme::Role::border));
         addAndMakeVisible(listBox);
 
         // Setup Name Input
@@ -112,8 +113,8 @@ public:
 
         nameEditor.setText("My Custom Rig");
         nameEditor.setInputRestrictions(30);
-        nameEditor.setColour(juce::TextEditor::backgroundColourId, juce::Colour(0xFF101216));
-        nameEditor.setColour(juce::TextEditor::outlineColourId, juce::Colour(0xFF2A2D32));
+        nameEditor.setColour(juce::TextEditor::backgroundColourId, ThemeManager::get(Theme::Role::panel));
+        nameEditor.setColour(juce::TextEditor::outlineColourId, ThemeManager::get(Theme::Role::border));
         addAndMakeVisible(nameEditor);
 
         // Options
@@ -122,8 +123,8 @@ public:
         addAndMakeVisible(assignMidiChannelsBtn);
 
         buildBtn.setButtonText("BUILD & LOAD SETUP");
-        buildBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xFF00E5FF));
-        buildBtn.setColour(juce::TextButton::textColourOffId, juce::Colours::black);
+        buildBtn.setColour(juce::TextButton::buttonColourId, ThemeManager::get(Theme::Role::accent));
+        buildBtn.setColour(juce::TextButton::textColourOffId, ThemeManager::get(Theme::Role::textOnAccent));
         buildBtn.onClick = [this] { buildSetup(); };
         addAndMakeVisible(buildBtn);
 
@@ -136,7 +137,7 @@ public:
 
     void paintListBoxItem(int rowNumber, juce::Graphics& g, int width, int height, bool rowIsSelected) override {
         juce::ignoreUnused(rowIsSelected, rowNumber, width, height);
-        g.fillAll(juce::Colour(0xFF101216));
+        g.fillAll(ThemeManager::get(Theme::Role::panel));
     }
 
     juce::Component* refreshComponentForRow(int rowNumber, bool isRowSelected, juce::Component* existingComponentToUpdate) override {
@@ -160,12 +161,12 @@ public:
     }
 
     void paint(juce::Graphics& g) override {
-        g.fillAll(juce::Colour(0xE6121315));
-        g.setColour(juce::Colour(0xFF00E5FF));
+        g.fillAll(ThemeManager::get(Theme::Role::scrim));
+        g.setColour(ThemeManager::get(Theme::Role::accent));
         g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(1.0f), 8.0f, 1.5f);
 
         if (stripFiles.isEmpty()) {
-            g.setColour(juce::Colours::white.withAlpha(0.5f));
+            g.setColour(ThemeManager::get(Theme::Role::text).withAlpha(0.5f));
             g.setFont(14.0f);
             g.drawText("No saved strips found in:\n" + stripsDir.getFullPathName(),
                        listBox.getBounds(), juce::Justification::centred, true);

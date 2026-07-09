@@ -3,6 +3,7 @@
 #include <JuceHeader.h>
 #include "BoutiqueLookAndFeel.h"
 #include "MidiLearnBus.h"
+#include "ThemeManager.h"
 #include "OpenRigConstants.h"
 
 class MidiMonitorComponent : public juce::Component, public juce::Timer {
@@ -34,7 +35,7 @@ public:
                juce::MidiMessage::getMidiNoteName(msg.getNoteNumber(), true, true,
                                                    4) +
                "  vel:" + juce::String(msg.getVelocity());
-      ev.colour = juce::Colour(0xff00cc66);
+      ev.colour = ThemeManager::get(Theme::Role::midiNote);
       ev.timestamp = now;
       ev.isNoteOn = true;
       ev.noteNumber = msg.getNoteNumber();
@@ -45,7 +46,7 @@ public:
       ev.text = "Note Off " +
                juce::MidiMessage::getMidiNoteName(msg.getNoteNumber(), true, true,
                                                    4);
-      ev.colour = juce::Colour(0xff006633);
+      ev.colour = ThemeManager::get(Theme::Role::midiNote).darker(0.4f);
       ev.timestamp = now;
       ev.isNoteOn = false;
       ev.noteNumber = msg.getNoteNumber();
@@ -59,7 +60,7 @@ public:
           text += " [CAPTURED]";
       }
       ev.text = text;
-      ev.colour = armed ? juce::Colours::gold : juce::Colour(0xff3399ff);
+      ev.colour = armed ? juce::Colours::gold : ThemeManager::get(Theme::Role::midiCC);
       ev.timestamp = now;
       ev.isNoteOn = false;
       ev.ccNumber = msg.getControllerNumber();
@@ -69,7 +70,7 @@ public:
       MidiEvent ev;
       int val = msg.getPitchWheelValue();
       ev.text = "PitchBend " + juce::String(val);
-      ev.colour = juce::Colour(0xffff6633);
+      ev.colour = ThemeManager::get(Theme::Role::midiOther);
       ev.timestamp = now;
       ev.isNoteOn = false;
       pushEvent(ev);
@@ -77,7 +78,7 @@ public:
       MidiEvent ev;
       ev.text = "Aftertouch ch:" + juce::String(msg.getChannel()) +
                 " val:" + juce::String(msg.getAfterTouchValue());
-      ev.colour = juce::Colour(0xffcc66ff);
+      ev.colour = ThemeManager::get(Theme::Role::midiPC);
       ev.timestamp = now;
       ev.isNoteOn = false;
       pushEvent(ev);
@@ -85,7 +86,7 @@ public:
   }
 
   void paint(juce::Graphics &g) override {
-    g.fillAll(juce::Colour(0xff0a0a0a));
+    g.fillAll(ThemeManager::get(Theme::Role::background));
 
     int rowH = 18;
     int topOffset = 0;
@@ -93,7 +94,7 @@ public:
     // --- CC-learn banner (reserved top row) ---
     bool showBanner = false;
     if (armedLabelNow.isNotEmpty()) {
-      g.setColour(juce::Colours::lime);
+      g.setColour(ThemeManager::get(Theme::Role::midiArm));
       g.setFont(juce::FontOptions(12.0f, juce::Font::bold));
       g.drawText("● LEARNING: " + armedLabelNow, 4, 0, getWidth() - 8, rowH,
                  juce::Justification::centredLeft, false);
@@ -159,7 +160,7 @@ public:
       }
     }
 
-    g.setColour(juce::Colour(0xff333333));
+    g.setColour(ThemeManager::get(Theme::Role::border));
     g.drawRect(getLocalBounds(), 1);
   }
 

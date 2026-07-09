@@ -1,9 +1,10 @@
 #pragma once
 #include <JuceHeader.h>
+#include "ThemeManager.h"
 
 class LEDIndicator : public juce::Component, private juce::Timer {
 public:
-  LEDIndicator(const juce::Colour &colour = juce::Colours::lime)
+  LEDIndicator(const juce::Colour &colour = ThemeManager::get(Theme::Role::midiNote))
       : ledColour(colour) {
     // No timer needed by default unless animating
   }

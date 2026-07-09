@@ -1,5 +1,6 @@
 #pragma once
 #include <JuceHeader.h>
+#include "ThemeManager.h"
 
 /**
  * A simple full-screen overlay to block interaction and show feedback
@@ -33,12 +34,12 @@ public:
     float w = 300, h = 120;
     juce::Rectangle<float> box(center.x - w / 2, center.y - h / 2, w, h);
 
-    // Dark purple background
-    g.setColour(juce::Colour(0xff3a1a5e));
+    // Themed background
+    g.setColour(ThemeManager::get(Theme::Role::accentDim));
     g.fillRoundedRectangle(box, 12.0f);
 
     // Border
-    g.setColour(juce::Colours::white.withAlpha(0.4f));
+    g.setColour(ThemeManager::get(Theme::Role::knobThumb).withAlpha(0.4f));
     g.drawRoundedRectangle(box, 12.0f, 2.0f);
 
     // Main text - use Font object explicitly

@@ -3,6 +3,7 @@
 #include "MidiLearnBus.h"
 #include "RackSlot.h"
 #include <JuceHeader.h>
+#include "ThemeManager.h"
 
 /**
     Detects parameter value changes on a plugin. Used by Quick Learn to
@@ -53,7 +54,7 @@ public:
     };
     addAndMakeVisible(fohLearnBtn);
     fohLearnBtn.setButtonText("L");
-    fohLearnBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::darkgreen);
+    fohLearnBtn.setColour(juce::TextButton::buttonColourId, ThemeManager::get(Theme::Role::ok));
     fohLearnBtn.setTooltip("Learn FOH fader CC");
     fohLearnBtn.onClick = [this] { armFaderLearn(true); };
 
@@ -67,7 +68,7 @@ public:
     };
     addAndMakeVisible(iemLearnBtn);
     iemLearnBtn.setButtonText("L");
-    iemLearnBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::darkgreen);
+    iemLearnBtn.setColour(juce::TextButton::buttonColourId, ThemeManager::get(Theme::Role::ok));
     iemLearnBtn.setTooltip("Learn IEM fader CC");
     iemLearnBtn.onClick = [this] { armFaderLearn(false); };
 
@@ -127,7 +128,7 @@ public:
 
     addAndMakeVisible(learnBtn);
     learnBtn.setButtonText("LEARN");
-    learnBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::darkblue);
+    learnBtn.setColour(juce::TextButton::buttonColourId, ThemeManager::get(Theme::Role::iem));
     learnBtn.setTooltip("Arm learn: wiggle a knob to bind the selected param");
     learnBtn.addListener(this);
 
@@ -137,8 +138,8 @@ public:
 
     addAndMakeVisible(invBtn);
     invBtn.setButtonText("INV");
-    invBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff884400));
-    invBtn.setColour(juce::TextButton::buttonOnColourId, juce::Colours::orange);
+    invBtn.setColour(juce::TextButton::buttonColourId, ThemeManager::get(Theme::Role::warn).darker(0.3f));
+    invBtn.setColour(juce::TextButton::buttonOnColourId, ThemeManager::get(Theme::Role::warn));
     invBtn.setTooltip("Invert CC direction (pull-down increases value, for B3 drawbars)");
     invBtn.setClickingTogglesState(true);
     invBtn.addListener(this);
@@ -159,20 +160,20 @@ public:
 
     addAndMakeVisible(passBtn);
     passBtn.setButtonText("PASS");
-    passBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff664400));
+    passBtn.setColour(juce::TextButton::buttonColourId, ThemeManager::get(Theme::Role::warn).darker(0.5f));
     passBtn.setTooltip("Add CC passthrough remap (for plugins with internal MIDI learn)");
     passBtn.addListener(this);
 
     addAndMakeVisible(ck88PresetBtn);
     ck88PresetBtn.setButtonText("CK88");
-    ck88PresetBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff004466));
+    ck88PresetBtn.setColour(juce::TextButton::buttonColourId, ThemeManager::get(Theme::Role::iem).darker(0.5f));
     ck88PresetBtn.setTooltip("Allow common CK88 CCs on this slot (mod, volume, expression, etc.)");
     ck88PresetBtn.addListener(this);
 
     // --- Quick Learn ---
     addAndMakeVisible(quickLearnBtn);
     quickLearnBtn.setButtonText("QUICK");
-    quickLearnBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::darkmagenta);
+    quickLearnBtn.setColour(juce::TextButton::buttonColourId, ThemeManager::get(Theme::Role::midiPC));
     quickLearnBtn.setClickingTogglesState(true);
     quickLearnBtn.setTooltip("Quick Learn: wiggle a CC then wiggle a plugin parameter (either order). Binds instantly.");
     quickLearnBtn.onClick = [this] {
@@ -197,20 +198,20 @@ public:
 
     addAndMakeVisible(selLearnBtn);
     selLearnBtn.setButtonText("RE-LEARN");
-    selLearnBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::darkblue);
+    selLearnBtn.setColour(juce::TextButton::buttonColourId, ThemeManager::get(Theme::Role::iem));
     selLearnBtn.onClick = [this] { armSelectedRelearn(); };
 
     addAndMakeVisible(selInvBtn);
     selInvBtn.setButtonText("INV");
-    selInvBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff884400));
-    selInvBtn.setColour(juce::TextButton::buttonOnColourId, juce::Colours::orange);
+    selInvBtn.setColour(juce::TextButton::buttonColourId, ThemeManager::get(Theme::Role::warn).darker(0.3f));
+    selInvBtn.setColour(juce::TextButton::buttonOnColourId, ThemeManager::get(Theme::Role::warn));
     selInvBtn.setTooltip("Toggle invert on selected mapping");
     selInvBtn.setClickingTogglesState(true);
     selInvBtn.onClick = [this] { toggleSelectedInvert(); };
 
     addAndMakeVisible(delBtn);
     delBtn.setButtonText("DELETE");
-    delBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::darkred);
+    delBtn.setColour(juce::TextButton::buttonColourId, ThemeManager::get(Theme::Role::danger));
     delBtn.onClick = [this] { deleteSelected(); };
 
     addAndMakeVisible(statusLabel);
@@ -546,18 +547,18 @@ public:
     if (rowNumber >= (int)mappings.size())
       return;
     auto &m = mappings[rowNumber];
-    g.setColour(rowIsSelected ? juce::Colour(0xff3a5e8e)
-                              : juce::Colour(0xff222222));
+    g.setColour(rowIsSelected ? ThemeManager::get(Theme::Role::active).darker(0.3f)
+                              : ThemeManager::get(Theme::Role::panelAlt));
     g.fillRect(0, 0, width, height - 1);
 
-    g.setColour(juce::Colours::white);
+    g.setColour(ThemeManager::get(Theme::Role::text));
     g.setFont(13.0f);
 
     if (m.type == MappingItem::Passthrough) {
       juce::String text = "CC" + juce::String(m.cc).paddedLeft('0', 3) +
                           "  >  CC" + juce::String(m.outgoingCC).paddedLeft('0', 3) +
                           "  [PASSTHRU]";
-      g.setColour(juce::Colour(0xffccaa44));
+      g.setColour(ThemeManager::get(Theme::Role::meterMid));
       g.drawText(text, 6, 0, width - 8, height, juce::Justification::centredLeft,
                  true);
     } else {
@@ -740,8 +741,8 @@ public:
   }
 
   void paint(juce::Graphics &g) override {
-    g.fillAll(juce::Colour(0xff2a2a2a));
-    g.setColour(juce::Colours::white);
+    g.fillAll(ThemeManager::get(Theme::Role::panel));
+    g.setColour(ThemeManager::get(Theme::Role::text));
     g.setFont(16.0f);
     g.drawText("CC Assignment Manager", 10, 10, getWidth() - 20, 24,
                juce::Justification::centred);

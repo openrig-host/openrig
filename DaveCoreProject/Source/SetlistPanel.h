@@ -3,6 +3,7 @@
 #include <JuceHeader.h>
 #include "SetlistManager.h"
 #include "BoutiqueLookAndFeel.h"
+#include "ThemeManager.h"
 
 namespace OpenRig {
 
@@ -125,17 +126,17 @@ public:
         int activeIdx = SetlistManager::getInstance().getActiveIndex();
 
         if (row == activeIdx) {
-            g.fillAll(juce::Colour(0xFF00FF66).withAlpha(0.2f)); // Green highlight for active song
+            g.fillAll(ThemeManager::get(Theme::Role::foh).withAlpha(0.2f)); // active song highlight
         } else if (isSelected) {
-            g.fillAll(juce::Colour(0xFF00E5FF).withAlpha(0.25f));
+            g.fillAll(ThemeManager::get(Theme::Role::accent).withAlpha(0.25f));
         }
 
-        g.setColour(juce::Colours::white);
+        g.setColour(ThemeManager::get(Theme::Role::text));
         juce::String name = setups[row].getFileNameWithoutExtension();
 
         if (row == activeIdx) {
             name = "▶  " + name;
-            g.setColour(juce::Colour(0xFF00FF66));
+            g.setColour(ThemeManager::get(Theme::Role::foh));
         }
 
         g.drawText(name, 6, 0, width - 12, height, juce::Justification::centredLeft, true);

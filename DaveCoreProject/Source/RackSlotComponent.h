@@ -93,7 +93,7 @@ private:
   juce::ComboBox inputSelector;
   juce::Label noteRangeLabel;
 
-  LEDIndicator midiLed{juce::Colours::lime};
+  LEDIndicator midiLed{ThemeManager::get(Theme::Role::midiNote)};
 
   float curLeft = 0.0f;
   float curRight = 0.0f;

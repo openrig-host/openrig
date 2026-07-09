@@ -4,6 +4,7 @@
 #include "RackSlot.h"
 #include <JuceHeader.h>
 #include "BoutiqueLookAndFeel.h"
+#include "ThemeManager.h"
 
 class BigKnob : public juce::Slider {
 public:
@@ -76,7 +77,7 @@ public:
     addAndMakeVisible(gateToggle);
     gateToggle.setButtonText("ENABLE");
     gateToggle.setClickingTogglesState(true);
-    gateToggle.setColour(juce::TextButton::buttonOnColourId, juce::Colours::limegreen);
+    gateToggle.setColour(juce::TextButton::buttonOnColourId, ThemeManager::get(Theme::Role::ok));
     gateToggle.getProperties().set("useToggleSwitch", true);
     gateToggle.getProperties().set("isOrangeToggle", false);
     gateToggle.setToggleState(slot.getStrip().gateEnabled, juce::dontSendNotification);
@@ -99,7 +100,7 @@ public:
     addAndMakeVisible(eqToggle);
     eqToggle.setButtonText("ENABLE");
     eqToggle.setClickingTogglesState(true);
-    eqToggle.setColour(juce::TextButton::buttonOnColourId, juce::Colours::limegreen);
+    eqToggle.setColour(juce::TextButton::buttonOnColourId, ThemeManager::get(Theme::Role::ok));
     eqToggle.getProperties().set("useToggleSwitch", true);
     eqToggle.getProperties().set("isOrangeToggle", false);
     eqToggle.setToggleState(slot.getStrip().eqEnabled, juce::dontSendNotification);
@@ -146,7 +147,7 @@ public:
     addAndMakeVisible(compToggle);
     compToggle.setButtonText("ENABLE");
     compToggle.setClickingTogglesState(true);
-    compToggle.setColour(juce::TextButton::buttonOnColourId, juce::Colours::limegreen);
+    compToggle.setColour(juce::TextButton::buttonOnColourId, ThemeManager::get(Theme::Role::ok));
     compToggle.getProperties().set("useToggleSwitch", true);
     compToggle.getProperties().set("isOrangeToggle", false);
     compToggle.setToggleState(slot.getStrip().compEnabled, juce::dontSendNotification);
@@ -172,7 +173,7 @@ public:
     addAndMakeVisible(reverbToggle);
     reverbToggle.setButtonText("REVERB");
     reverbToggle.setClickingTogglesState(true);
-    reverbToggle.setColour(juce::TextButton::buttonOnColourId, juce::Colours::limegreen);
+    reverbToggle.setColour(juce::TextButton::buttonOnColourId, ThemeManager::get(Theme::Role::ok));
     reverbToggle.getProperties().set("useToggleSwitch", true);
     reverbToggle.setToggleState(slot.getStrip().reverbEnabled, juce::dontSendNotification);
     reverbToggle.onClick = [this] {
@@ -199,7 +200,7 @@ public:
     addAndMakeVisible(chorusToggle);
     chorusToggle.setButtonText("CHORUS");
     chorusToggle.setClickingTogglesState(true);
-    chorusToggle.setColour(juce::TextButton::buttonOnColourId, juce::Colours::limegreen);
+    chorusToggle.setColour(juce::TextButton::buttonOnColourId, ThemeManager::get(Theme::Role::ok));
     chorusToggle.getProperties().set("useToggleSwitch", true);
     chorusToggle.setToggleState(slot.getStrip().chorusEnabled, juce::dontSendNotification);
     chorusToggle.onClick = [this] {
@@ -239,7 +240,7 @@ public:
     colorPreview.setColour(juce::Label::backgroundColourId, slot.getChannelColor());
     addAndMakeVisible(colorButton);
     colorButton.setButtonText("Change Color");
-    colorButton.setColour(juce::TextButton::buttonColourId, juce::Colours::darkslategrey);
+    colorButton.setColour(juce::TextButton::buttonColourId, ThemeManager::get(Theme::Role::raised));
     colorButton.onClick = [this] { showColorPicker(); };
 
     // --- AUX SENDS ---
@@ -271,7 +272,7 @@ public:
 
     juce::DialogWindow::LaunchOptions options;
     options.dialogTitle = "Select Channel Color";
-    options.dialogBackgroundColour = juce::Colours::darkgrey;
+    options.dialogBackgroundColour = ThemeManager::get(Theme::Role::panel);
     options.escapeKeyTriggersCloseButton = true;
     options.useNativeTitleBar = false;
     options.resizable = false;
@@ -297,11 +298,11 @@ public:
     bool useModern = (laf != nullptr && laf->useModernStyle);
 
     if (useModern) {
-      g.fillAll(juce::Colour(0xff16181b));
-      g.setColour(juce::Colour(0xff2a2d32));
+      g.fillAll(ThemeManager::get(Theme::Role::panel));
+      g.setColour(ThemeManager::get(Theme::Role::border));
       g.drawRect(getLocalBounds(), 1);
     } else {
-      g.fillAll(juce::Colours::black.withAlpha(0.9f));
+      g.fillAll(ThemeManager::get(Theme::Role::background).withAlpha(0.9f));
     }
     g.setColour(juce::Colours::white);
     g.setFont(24.0f);

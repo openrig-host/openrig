@@ -3,6 +3,7 @@
 #include <JuceHeader.h>
 #include "SimpleArpeggiator.h"
 #include "OctaveHarmonizer.h"
+#include "ThemeManager.h"
 #include "RackSlot.h"
 
 class MidiEffectsComponent : public juce::Component,
@@ -231,8 +232,8 @@ private:
 
 public:
     void paint(juce::Graphics& g) override {
-        g.fillAll(juce::Colour(0xE6121315));
-        g.setColour(juce::Colour(0xFF00E5FF));
+        g.fillAll(ThemeManager::get(Theme::Role::scrim));
+        g.setColour(ThemeManager::get(Theme::Role::accent));
         g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(1.0f), 8.0f, 1.5f);
     }
 

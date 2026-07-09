@@ -6,21 +6,24 @@
 <title>OpenRig — The Sovereign Live Performance Engine</title>
 <meta name="description" content="A rack-based VST3 host built for live keyboardists. Atomic song switching, dual-bus mixing, MIDI learn, setlist preloading, and a panic button that works in the next audio block." />
 <style>
+  @import url("https://fonts.googleapis.com/css?family=Source+Sans+Pro:300,400,600|Arvo:700");
+
   :root {
-    --bg: #0d1014;
-    --bg-2: #14181d;
-    --bg-3: #1a1f26;
-    --panel: #1d2027;
-    --border: #2a2f38;
-    --text: #e8ecf2;
-    --text-dim: #98a2b3;
-    --text-faint: #5b6573;
-    --accent: #4dd0e1;        /* cyan, matches the app */
-    --accent-2: #b388ff;      /* purple, the "boutique" hint */
-    --warn: #ff7043;
-    --good: #66bb6a;
+    --bg: #ffffff;
+    --bg-2: #f8fafc;
+    --bg-3: #f1f5f9;
+    --panel: #ffffff;
+    --border: #e2e8f0;
+    --text: #555555;
+    --text-dark: #333333;
+    --text-dim: #777777;
+    --text-faint: #888888;
+    --accent: #ed786a;        /* Warm coral-red accent color from Strongly Typed */
+    --accent-2: #7c3aed;      /* purple */
+    --warn: #ea580c;
+    --good: #16a34a;
     --mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
-    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    --sans: 'Source Sans Pro', -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
   }
 
   * { box-sizing: border-box; }
@@ -28,15 +31,26 @@
   html, body {
     margin: 0;
     padding: 0;
-    background: var(--bg);
+    background: #f4f6f9;
     color: var(--text);
     font-family: var(--sans);
-    line-height: 1.6;
+    font-weight: 300;
+    line-height: 1.7em;
+    font-size: 16px;
     -webkit-font-smoothing: antialiased;
   }
 
-  a { color: var(--accent); text-decoration: none; }
-  a:hover { text-decoration: underline; }
+  a { 
+    color: var(--text-dark); 
+    text-decoration: none; 
+    border-bottom: solid 1px var(--border);
+    transition: color 0.2s ease, border-color 0.2s ease;
+  }
+  a:hover { 
+    color: var(--accent); 
+    border-bottom-color: transparent;
+    text-decoration: none;
+  }
 
   code, kbd, pre {
     font-family: var(--mono);
@@ -47,7 +61,8 @@
     background: var(--bg-3);
     border: 1px solid var(--border);
     border-radius: 4px;
-    padding: 1px 6px;
+    padding: 2px 6px;
+    color: #0f172a;
   }
 
   pre {
@@ -73,13 +88,11 @@
 
   /* Hero */
   .hero {
-    padding: 96px 0 64px;
+    padding: 80px 0 64px;
     text-align: center;
-    background:
-      radial-gradient(ellipse 800px 400px at 50% 0%, rgba(77, 208, 225, 0.12), transparent 70%),
-      radial-gradient(ellipse 600px 300px at 80% 100%, rgba(179, 136, 255, 0.08), transparent 70%),
-      var(--bg);
+    background: #ffffff;
     border-bottom: 1px solid var(--border);
+    margin-bottom: 48px;
   }
 
   .badge {
@@ -88,7 +101,7 @@
     border: 1px solid var(--border);
     border-radius: 999px;
     font-family: var(--mono);
-    font-size: 12px;
+    font-size: 11px;
     color: var(--text-dim);
     background: var(--bg-2);
     margin-bottom: 20px;
@@ -97,22 +110,22 @@
   }
 
   h1 {
-    font-size: clamp(40px, 6vw, 64px);
-    line-height: 1.1;
-    margin: 0 0 12px;
-    font-weight: 800;
-    letter-spacing: -0.02em;
-    background: linear-gradient(180deg, #ffffff 0%, #b0bac8 100%);
-    -webkit-background-clip: text;
-    background-clip: text;
-    -webkit-text-fill-color: transparent;
+    font-family: 'Arvo', Georgia, serif;
+    font-size: clamp(36px, 5vw, 56px);
+    line-height: 1.2;
+    margin: 0 0 16px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    color: var(--text-dark);
+    text-transform: uppercase;
   }
 
   .tagline {
-    font-size: clamp(18px, 2vw, 22px);
+    font-size: clamp(16px, 1.8vw, 20px);
     color: var(--text-dim);
     max-width: 720px;
     margin: 0 auto 32px;
+    line-height: 1.6em;
   }
 
   .cta {
@@ -124,56 +137,81 @@
 
   .btn {
     display: inline-block;
-    padding: 12px 22px;
-    border-radius: 8px;
+    padding: 12px 26px;
+    border-radius: 6px;
     font-weight: 600;
-    font-size: 15px;
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
     border: 1px solid var(--border);
-    transition: transform 0.1s ease, background 0.15s ease, border-color 0.15s ease;
+    transition: all 0.2s ease;
+    border-bottom: 1px solid var(--border);
   }
 
-  .btn:hover { transform: translateY(-1px); text-decoration: none; }
+  .btn:hover { 
+    transform: translateY(-1px); 
+    text-decoration: none; 
+    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+  }
 
   .btn-primary {
     background: var(--accent);
-    color: #0a1014;
+    color: #ffffff;
     border-color: var(--accent);
   }
-  .btn-primary:hover { background: #6ee0ef; border-color: #6ee0ef; }
+  .btn-primary:hover { 
+    background: #f19084; 
+    border-color: #f19084;
+    color: #ffffff;
+  }
 
   .btn-secondary {
     background: var(--bg-2);
-    color: var(--text);
+    color: var(--text-dark);
   }
-  .btn-secondary:hover { background: var(--bg-3); border-color: var(--accent); }
+  .btn-secondary:hover { 
+    background: var(--bg-3); 
+    border-color: var(--accent);
+  }
 
-  /* Section */
+  /* Section Frames */
   section {
-    padding: 80px 0;
-    border-bottom: 1px solid var(--border);
+    padding: 48px;
+    background: #ffffff;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.02);
+    margin-bottom: 32px;
   }
-  section:last-of-type { border-bottom: none; }
 
   h2 {
-    font-size: 32px;
-    margin: 0 0 8px;
+    font-family: 'Arvo', Georgia, serif;
+    font-size: 26px;
+    margin: 0 0 12px;
     font-weight: 700;
-    letter-spacing: -0.01em;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--text-dark);
   }
   h2 .accent { color: var(--accent); }
 
   .section-sub {
     color: var(--text-dim);
-    font-size: 17px;
-    margin: 0 0 40px;
+    font-size: 16px;
+    margin: 0 0 32px;
     max-width: 720px;
   }
 
   h3 {
-    font-size: 18px;
-    margin: 32px 0 8px;
-    color: var(--text);
+    font-family: 'Source Sans Pro', sans-serif;
+    font-size: 16px;
+    margin: 32px 0 16px;
+    color: var(--text-dark);
     font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    border-bottom: 2px solid var(--bg-3);
+    padding-bottom: 8px;
   }
   h3 .dot {
     display: inline-block;
@@ -188,42 +226,49 @@
   .features {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-    gap: 16px;
+    gap: 20px;
   }
 
   .card {
-    background: var(--panel);
+    background: var(--bg-2);
     border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 20px 22px;
-    transition: border-color 0.15s ease, transform 0.15s ease;
+    border-radius: 6px;
+    padding: 22px;
+    transition: all 0.2s ease;
   }
-  .card:hover { border-color: var(--accent); transform: translateY(-2px); }
+  .card:hover { 
+    border-color: var(--accent); 
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(0,0,0,0.03);
+  }
 
   .card .icon {
     display: inline-block;
     font-family: var(--mono);
     color: var(--accent);
-    font-size: 13px;
+    font-size: 12px;
     margin-bottom: 8px;
     letter-spacing: 0.05em;
   }
 
   .card h3 {
-    margin: 0 0 6px;
-    font-size: 16px;
+    margin: 0 0 8px;
+    font-size: 15px;
+    border-bottom: none;
+    padding-bottom: 0;
   }
   .card p {
     margin: 0;
     color: var(--text-dim);
     font-size: 14px;
+    text-align: left;
   }
 
   /* Architecture diagram */
   .diagram {
-    background: var(--panel);
+    background: var(--bg-2);
     border: 1px solid var(--border);
-    border-radius: 12px;
+    border-radius: 6px;
     padding: 24px;
     overflow-x: auto;
   }
@@ -232,17 +277,20 @@
     border: none;
     padding: 0;
     margin: 0;
-    color: var(--text);
+    color: var(--text-dark);
     font-size: 13px;
     line-height: 1.5;
   }
 
   /* Footer */
   footer {
-    padding: 48px 0;
+    padding: 64px 0;
     text-align: center;
     color: var(--text-faint);
     font-size: 14px;
+    background: #ffffff;
+    border-top: 1px solid var(--border);
+    margin-top: 64px;
   }
   footer a { color: var(--text-dim); }
 
@@ -350,19 +398,31 @@
       <a class="btn btn-primary" href="https://github.com/davewaugh/davecore/releases">Download for Windows</a>
       <a class="btn btn-secondary" href="https://github.com/davewaugh/davecore">View on GitHub</a>
     </div>
+
+    <!-- App Main Interface Screenshot placed prominently at top -->
+    <div style="margin: 48px auto 0; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--bg-2); text-align: center; max-width: 900px; box-shadow: 0 10px 30px rgba(0,0,0,0.05);">
+      <div style="padding: 12px; border-bottom: 1px solid var(--border); font-family: var(--mono); font-size: 13px; color: var(--text-dim);">
+        📸 OpenRig Live Mixer Interface
+      </div>
+      <div style="background: #111418;">
+        <img src="main_mixer_view.png" alt="OpenRig Main Mixer Screen" style="max-width: 100%; height: auto; display: block; margin: 0 auto;" />
+      </div>
+    </div>
   </div>
 </div>
 
-<div class="warning">
-  <h3>Getting Started &amp; Stage Preparation</h3>
-  <p>
-    <strong>OpenRig is an open-source tool</strong> built specifically for live stage use. While designed for maximum stability, we recommend thorough preparation before performing:
-  </p>
-  <ul>
-    <li>Run it through rehearsals with <strong>your</strong> actual songs, plugins, and MIDI hardware.</li>
-    <li>Test your song switches, scene changes, and panic button under live playing conditions.</li>
-    <li>Always maintain a backup plan (e.g., a hardware fallback or second system) for critical performances.</li>
-  </ul>
+<div class="container" style="margin-top: 48px;">
+  <div class="warning" style="margin: 0 auto;">
+    <h3>Getting Started &amp; Stage Preparation</h3>
+    <p>
+      <strong>OpenRig is an open-source tool</strong> built specifically for live stage use. While designed for maximum stability, we recommend thorough preparation before performing:
+    </p>
+    <ul>
+      <li>Run it through rehearsals with <strong>your</strong> actual songs, plugins, and MIDI hardware.</li>
+      <li>Test your song switches, scene changes, and panic button under live playing conditions.</li>
+      <li>Always maintain a backup plan (e.g., a hardware fallback or second system) for critical performances.</li>
+    </ul>
+  </div>
 </div>
 
 <section>
@@ -371,16 +431,6 @@
     <p class="section-sub">
       OpenRig is a live VST3 host that looks, feels, and acts like a digital hardware mixer. No virtual cable spaghetti, no confusing node graphs—just a clean, linear rack of channel strips designed for playing keyboards live.
     </p>
-
-    <!-- App Main Interface Screenshot -->
-    <div style="margin: 32px 0; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--bg-2); text-align: center;">
-      <div style="padding: 16px; border-bottom: 1px solid var(--border); font-family: var(--mono); font-size: 13px; color: var(--text-dim);">
-        📸 SCREENSHOT: Main Mixer Screen (Showing channel strips, FOH/IEM faders, and top control bar)
-      </div>
-      <div style="padding: 60px 20px; background: radial-gradient(circle, rgba(77,208,225,0.05) 0%, transparent 70%); color: var(--text-faint); font-style: italic;">
-        [Insert main_mixer_view.png showing the main application interface]
-      </div>
-    </div>
 
     <p>It's built around the simple realities of keyboard performance:</p>
 
@@ -414,11 +464,11 @@
 
     <!-- Note Range / Learning Screenshot -->
     <div style="margin: 40px 0; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--bg-2); text-align: center;">
-      <div style="padding: 16px; border-bottom: 1px solid var(--border); font-family: var(--mono); font-size: 13px; color: var(--text-dim);">
-        📸 SCREENSHOT: MIDI Note-Range Learn (Visual keyboard overlay with active range highlight)
+      <div style="padding: 12px; border-bottom: 1px solid var(--border); font-family: var(--mono); font-size: 13px; color: var(--text-dim);">
+        📸 MIDI Note-Range Learn Screen
       </div>
-      <div style="padding: 60px 20px; background: radial-gradient(circle, rgba(179,136,255,0.05) 0%, transparent 70%); color: var(--text-faint); font-style: italic;">
-        [Insert note_range_learn.png showing the piano keyboard zoning screen]
+      <div style="background: #111418;">
+        <img src="note_range_learn.png" alt="OpenRig MIDI Note-Range Learn Screen" style="max-width: 100%; height: auto; display: block; margin: 0 auto;" />
       </div>
     </div>
 
@@ -442,6 +492,16 @@
       <div class="card"><h3>Boutique dark-mode UI</h3><p>Skeuomorphic knobs, glassy panels. No virtual-cable spaghetti.</p></div>
     </div>
 
+    <!-- Active VST Windows Screenshot -->
+    <div style="margin: 40px 0 20px; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--bg-2); text-align: center;">
+      <div style="padding: 12px; border-bottom: 1px solid var(--border); font-family: var(--mono); font-size: 13px; color: var(--text-dim);">
+        📸 Active VST Editors
+      </div>
+      <div style="background: #111418;">
+        <img src="active_vst_windows.png" alt="OpenRig Active VST Editors" style="max-width: 100%; height: auto; display: block; margin: 0 auto;" />
+      </div>
+    </div>
+
     <h3><span class="dot"></span>Songs, Scenes &amp; Setlists</h3>
     <div class="features">
       <div class="card"><h3>Songs (Rigs)</h3><p>A complete patch: plugins, states, channel strips, CC maps, levels. Saved as versioned JSON.</p></div>
@@ -457,6 +517,16 @@
       <div class="card"><h3>Scene MIDI triggers</h3><p>Assign a Program Change + channel to any scene. Your hardware sequencer calls the song.</p></div>
       <div class="card"><h3>MIDI monitor</h3><p>See what your keyboard is actually sending, with learn-capture overlay.</p></div>
       <div class="card"><h3>MIDI remote settings</h3><p>Define a hardware device, map its controls once, use them across all rigs.</p></div>
+    </div>
+
+    <!-- CC Assignment Manager Screenshot -->
+    <div style="margin: 40px 0 20px; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--bg-2); text-align: center;">
+      <div style="padding: 12px; border-bottom: 1px solid var(--border); font-family: var(--mono); font-size: 13px; color: var(--text-dim);">
+        📸 CC Assignment Manager Screen
+      </div>
+      <div style="background: #111418;">
+        <img src="cc_assignment_manager.png" alt="OpenRig CC Assignment Manager Screen" style="max-width: 100%; height: auto; display: block; margin: 0 auto;" />
+      </div>
     </div>
 
     <h3><span class="dot"></span>DSP &amp; Effects</h3>
@@ -480,11 +550,11 @@
 
     <!-- Channel Strip / DYN Screenshot -->
     <div style="margin: 40px 0 20px; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--bg-2); text-align: center;">
-      <div style="padding: 16px; border-bottom: 1px solid var(--border); font-family: var(--mono); font-size: 13px; color: var(--text-dim);">
-        📸 SCREENSHOT: Channel Strip / Dynamics Panel (Skeuomorphic dials for Gate, EQ, Compressor, Chorus, and Reverb)
+      <div style="padding: 12px; border-bottom: 1px solid var(--border); font-family: var(--mono); font-size: 13px; color: var(--text-dim);">
+        📸 Channel Strip / Dynamics Panel
       </div>
-      <div style="padding: 60px 20px; background: radial-gradient(circle, rgba(77,208,225,0.05) 0%, transparent 70%); color: var(--text-faint); font-style: italic;">
-        [Insert channel_strip_dyn.png showing the built-in dynamics processor controls]
+      <div style="background: #111418;">
+        <img src="channel_strip_dyn.png" alt="OpenRig Channel Strip Dynamics Screen" style="max-width: 100%; height: auto; display: block; margin: 0 auto;" />
       </div>
     </div>
   </div>

@@ -30,6 +30,8 @@ private:
   Actions actions;
   juce::Label titleLabel;
   juce::Label infoLabel;
+  juce::Label themeLabel{"themeLabel", "THEME"};
+  juce::ComboBox themeCombo;
   juce::TextButton audioSettingsBtn, scanPluginsBtn, busRoutingBtn,
       resetAudioBtn, aboutBtn, stressTestBtn;
   juce::TextButton closeBtn{"X"};

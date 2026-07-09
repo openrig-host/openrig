@@ -4,6 +4,7 @@
 #include "RackSlot.h"
 #include "BoutiqueLookAndFeel.h"
 #include "WaveformSpliceEditor.h"
+#include "ThemeManager.h"
 
 class SamplerSlotRow : public juce::Component,
                        public juce::FileDragAndDropTarget {
@@ -19,7 +20,7 @@ public:
         // MIDI Learn Button (L)
         learnBtn.setButtonText("L");
         learnBtn.setTooltip("MIDI Learn Root & Range");
-        learnBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::darkgrey);
+        learnBtn.setColour(juce::TextButton::buttonColourId, ThemeManager::get(Theme::Role::panel));
         learnBtn.onClick = [this] {
             isLearning = !isLearning;
             setLearningState(isLearning);
@@ -32,7 +33,7 @@ public:
             if (onRowSelected) onRowSelected();
             chooseFile(); 
         };
-        dropButton.setColour(juce::TextButton::buttonColourId, juce::Colours::darkgrey.darker(0.3f));
+        dropButton.setColour(juce::TextButton::buttonColourId, ThemeManager::get(Theme::Role::panel).darker(0.3f));
         addAndMakeVisible(dropButton);
 
         volSlider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
@@ -164,7 +165,7 @@ public:
             learnBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::red);
         } else {
             learnBtn.setButtonText("L");
-            learnBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::darkgrey);
+            learnBtn.setColour(juce::TextButton::buttonColourId, ThemeManager::get(Theme::Role::panel));
         }
     }
 
@@ -176,7 +177,7 @@ public:
             dropButton.setColour(juce::TextButton::buttonColourId, juce::Colours::green.darker(0.5f));
         } else {
             dropButton.setButtonText("[ Drag & Drop WAV here ]");
-            dropButton.setColour(juce::TextButton::buttonColourId, juce::Colours::darkgrey.darker(0.3f));
+            dropButton.setColour(juce::TextButton::buttonColourId, ThemeManager::get(Theme::Role::panel).darker(0.3f));
         }
 
         volSlider.setValue(cfg.volume, juce::dontSendNotification);
@@ -351,7 +352,7 @@ public:
         enableBtn.setButtonText(slotRef.getSampler().enabled.load() ? "SAMPLER: ON" : "SAMPLER: OFF");
         enableBtn.setClickingTogglesState(true);
         enableBtn.setToggleState(slotRef.getSampler().enabled.load(), juce::dontSendNotification);
-        enableBtn.setColour(juce::TextButton::buttonOnColourId, juce::Colours::limegreen);
+        enableBtn.setColour(juce::TextButton::buttonOnColourId, ThemeManager::get(Theme::Role::ok));
         enableBtn.onClick = [this] {
             bool on = enableBtn.getToggleState();
             slotRef.getSampler().enabled.store(on);
@@ -426,9 +427,9 @@ public:
     void paint(juce::Graphics& g) override {
         auto bounds = getLocalBounds().toFloat();
         
-        g.fillAll(juce::Colour(0xff121518));
+        g.fillAll(ThemeManager::get(Theme::Role::panel));
         
-        g.setColour(juce::Colours::cyan.withAlpha(0.2f));
+        g.setColour(ThemeManager::get(Theme::Role::iem).withAlpha(0.2f));
         g.drawRoundedRectangle(bounds, 8.0f, 2.0f);
     }
 

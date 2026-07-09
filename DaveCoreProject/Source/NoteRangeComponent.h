@@ -3,6 +3,7 @@
 #include "../JuceLibraryCode/JuceHeader.h"
 #include "RackSlot.h"
 #include "BoutiqueLookAndFeel.h"
+#include "ThemeManager.h"
 #include "IMidiNoteLearner.h"
 
 /**
@@ -25,7 +26,7 @@ public:
     // Done Button (replaces Start/Stop)
     learnButton.setButtonText("DONE");
     learnButton.setColour(juce::TextButton::buttonColourId,
-                          juce::Colours::darkgreen);
+                          ThemeManager::get(Theme::Role::ok));
     learnButton.onClick = [this] {
       if (auto* co = findParentComponentOfClass<juce::CallOutBox>()) {
         co->dismiss();
@@ -36,7 +37,7 @@ public:
     // Reset Button
     resetButton.setButtonText("RESET");
     resetButton.setColour(juce::TextButton::buttonColourId,
-                          juce::Colours::darkred);
+                          ThemeManager::get(Theme::Role::danger));
     resetButton.onClick = [this] {
       learnedLow = -1;
       learnedHigh = -1;
@@ -65,10 +66,10 @@ public:
     bool useModern = (laf != nullptr && laf->useModernStyle);
 
     // Draw background
-    g.fillAll(useModern ? juce::Colour(0xff16181b) : juce::Colour(0xff121212));
+    g.fillAll(ThemeManager::get(Theme::Role::panel));
 
     // Draw Border
-    g.setColour(useModern ? juce::Colour(0xff2a2d32) : juce::Colours::grey.withAlpha(0.3f));
+    g.setColour(ThemeManager::get(Theme::Role::border));
     g.drawRect(bounds, 1.0f);
 
     // Keyboard area (above the buttons)
@@ -83,7 +84,7 @@ public:
     drawRangeOverlay(g, keyboardArea);
 
     // Labels
-    g.setColour(juce::Colours::white);
+    g.setColour(ThemeManager::get(Theme::Role::text));
     g.setFont(14.0f);
     g.drawText("Low: " + midiNoteToName(lowNote), 12, 5, 100, 20,
                juce::Justification::left);
@@ -91,7 +92,7 @@ public:
                20, juce::Justification::right);
 
     // Title / Learn Mode indicator
-    g.setColour(juce::Colours::lime);
+    g.setColour(ThemeManager::get(Theme::Role::foh));
     g.setFont(juce::FontOptions(16.0f, juce::Font::bold));
     g.drawText("PLAY NOTES OR DRAG KEYBOARD!", 0, 5, getWidth(), 20,
                juce::Justification::centred);
@@ -193,14 +194,14 @@ private:
     g.fillRect(area.withX(x2).withWidth(area.getRight() - x2));
 
     // Highlight the active area
-    auto highlightColor = learning ? juce::Colours::lime.withAlpha(0.4f)
+    auto highlightColor = learning ? ThemeManager::get(Theme::Role::foh).withAlpha(0.4f)
                                    : juce::Colours::gold.withAlpha(0.4f);
     g.setColour(highlightColor);
     g.fillRect(
         juce::Rectangle<float>(x1, area.getY(), x2 - x1, area.getHeight()));
 
     // Draw Handles
-    g.setColour(learning ? juce::Colours::lime : juce::Colours::gold);
+    g.setColour(learning ? ThemeManager::get(Theme::Role::foh) : juce::Colours::gold);
     g.drawVerticalLine((int)x1, area.getY() - 5, area.getBottom() + 5);
     g.drawVerticalLine((int)x2, area.getY() - 5, area.getBottom() + 5);
   }
