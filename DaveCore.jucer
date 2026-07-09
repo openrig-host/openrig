@@ -1,0 +1,52 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<PROJECT id="VSTQ28" name="OpenRig" projectType="guiapp" juceVersion="7.0.0" displaySplashScreen="0" reportAppUsage="0" splashScreenColour="Dark" companyName="DaveWaugh" companyCopyright="Dave Waugh" companyWebsite="" companyEmail="" bundleIdentifier="com.davewaugh.openrig" smallIcon="DaveCoreProject/Source/Resources/OpenRig_Icon.ico" bigIcon="DaveCoreProject/Source/Resources/OpenRig_Icon.ico">
+  <MAINGROUP id="VSTQ29" name="OpenRig">
+    <GROUP id="VSTQ30" name="Source">
+      <FILE id="VSTQ31" name="Main.cpp" compile="1" resource="0" file="Source/Main.cpp" />
+      <FILE id="VSTQ32" name="MainComponent.h" compile="0" resource="0" file="Source/MainComponent.h" />
+      <FILE id="VSTQ33" name="MainComponent.cpp" compile="1" resource="0" file="Source/MainComponent.cpp" />
+      <FILE id="VSTQ34" name="DaveCoreEngine.h" compile="0" resource="0" file="Source/DaveCoreEngine.h" />
+      <FILE id="VSTQ35" name="RackSlot.h" compile="0" resource="0" file="Source/RackSlot.h" />
+      <FILE id="VSTQ36" name="RackSlotComponent.h" compile="0" resource="0" file="Source/RackSlotComponent.h" />
+      <FILE id="VSTQ37" name="Scene.h" compile="0" resource="0" file="Source/Scene.h" />
+    </GROUP>
+  </MAINGROUP>
+  <EXPORTFORMATS>
+    <VS2022 targetFolder="Builds/VisualStudio2022">
+      <CONFIGURATIONS>
+        <CONFIGURATION name="Debug" winWarningLevel="4" generateManifest="1" winArchitecture="x64" isDebug="1" optimisation="1" targetName="OpenRig" />
+        <CONFIGURATION name="Release" winWarningLevel="4" generateManifest="1" winArchitecture="x64" isDebug="0" optimisation="3" targetName="OpenRig" />
+      </CONFIGURATIONS>
+      <MODULEPATHS>
+        <MODULEPATH id="juce_audio_basics" path="C:/JUCE/modules" />
+        <MODULEPATH id="juce_audio_devices" path="C:/JUCE/modules" />
+        <MODULEPATH id="juce_audio_formats" path="C:/JUCE/modules" />
+        <MODULEPATH id="juce_audio_processors" path="C:/JUCE/modules" />
+        <MODULEPATH id="juce_audio_utils" path="C:/JUCE/modules" />
+        <MODULEPATH id="juce_core" path="C:/JUCE/modules" />
+        <MODULEPATH id="juce_data_structures" path="C:/JUCE/modules" />
+        <MODULEPATH id="juce_events" path="C:/JUCE/modules" />
+        <MODULEPATH id="juce_graphics" path="C:/JUCE/modules" />
+        <MODULEPATH id="juce_gui_basics" path="C:/JUCE/modules" />
+        <MODULEPATH id="juce_gui_extra" path="C:/JUCE/modules" />
+      </MODULEPATHS>
+    </VS2022>
+  </EXPORTFORMATS>
+  <MODULES>
+    <MODULE id="juce_audio_basics" showAllCode="1" useLocalCopy="0" useGlobalPath="1" />
+    <MODULE id="juce_audio_devices" showAllCode="1" useLocalCopy="0" useGlobalPath="1" />
+    <MODULE id="juce_audio_formats" showAllCode="1" useLocalCopy="0" useGlobalPath="1" />
+    <MODULE id="juce_audio_processors" showAllCode="1" useLocalCopy="0" useGlobalPath="1" />
+    <MODULE id="juce_audio_utils" showAllCode="1" useLocalCopy="0" useGlobalPath="1" />
+    <MODULE id="juce_core" showAllCode="1" useLocalCopy="0" useGlobalPath="1" />
+    <MODULE id="juce_data_structures" showAllCode="1" useLocalCopy="0" useGlobalPath="1" />
+    <MODULE id="juce_events" showAllCode="1" useLocalCopy="0" useGlobalPath="1" />
+    <MODULE id="juce_graphics" showAllCode="1" useLocalCopy="0" useGlobalPath="1" />
+    <MODULE id="juce_gui_basics" showAllCode="1" useLocalCopy="0" useGlobalPath="1" />
+    <MODULE id="juce_gui_extra" showAllCode="1" useLocalCopy="0" useGlobalPath="1" />
+  </MODULES>
+  <LIVE_SETTINGS>
+    <WINDOWS />
+  </LIVE_SETTINGS>
+  <JUCEOPTIONS JUCE_PLUGINHOST_VST3="enabled" JUCE_PLUGINHOST_VST="enabled" JUCE_STRICT="disabled" />
+</PROJECT>

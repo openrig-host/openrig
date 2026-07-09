@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- VU Meter - Source: verbumware/vu-meter (MIT License) -->
+<svg
+   xmlns:dc="http://purl.org/dc/elements/1.1/"
+   xmlns:cc="http://creativecommons.org/ns#"
+   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+   xmlns:svg="http://www.w3.org/2000/svg"
+   xmlns="http://www.w3.org/2000/svg"
+   width="256"
+   height="128"
+   viewBox="0 0 256 128"
+   id="vu-meter">
+  <defs id="defs4" />
+  <g id="layer1" transform="translate(0,-924.36216)">
+    <g id="vu-back">
+      <text id="text4182" y="1004.3622" x="128"
+         style="font-style:normal;font-weight:normal;font-size:40px;line-height:125%;font-family:sans-serif;fill:#000000;fill-opacity:1;stroke:none"
+         xml:space="preserve"><tspan
+           style="font-size:20px;text-align:center;text-anchor:middle"
+           y="1004.3622" x="128" id="tspan4184">VU</tspan></text>
+      <path
+         style="fill:none;stroke:#c0c0c0;stroke-width:2;stroke-linejoin:miter;stroke-opacity:1"
+         id="path4180-6"
+         d="m 20.08831,979.0978 a 200,200 0 0 1 214.31911,-0.95458" />
+      <path
+         style="fill:none;stroke:#ff5500;stroke-width:2;stroke-linejoin:miter;stroke-opacity:1"
+         id="path4180-6-8"
+         d="m 178.49145,953.96582 a 200,200 0 0 1 55.91597,24.1774" />
+      <text id="text4182-0" y="967.36218" x="15"
+         style="font-style:normal;font-weight:normal;font-size:13.75px;font-family:sans-serif;fill:#000000;fill-opacity:1;stroke:none"
+         xml:space="preserve"><tspan
+           style="font-size:13.75px;text-align:center;text-anchor:middle"
+           y="967.36218" x="15" id="tspan4184-3">20</tspan></text>
+      <text id="text4182-0-2-4" y="944.36218" x="184"
+         style="font-style:normal;font-weight:normal;font-size:13.75px;font-family:sans-serif;fill:#000000;fill-opacity:1;stroke:none"
+         xml:space="preserve"><tspan
+           style="font-size:13.75px;text-align:center;text-anchor:middle"
+           y="944.36218" x="184" id="tspan4184-3-4-8">0</tspan></text>
+      <text id="text4182-0-2" y="968.36218" x="240"
+         style="font-style:normal;font-weight:normal;font-size:13.75px;font-family:sans-serif;fill:#000000;fill-opacity:1;stroke:none"
+         xml:space="preserve"><tspan
+           style="font-size:13.75px;text-align:center;text-anchor:middle"
+           y="968.36218" x="240" id="tspan4184-3-4">+3</tspan></text>
+    </g>
+    <g id="vu-front" style="fill:#b3b3b3">
+      <rect y="1020.3622" x="1" height="30.999977" width="254" id="rect4207"
+         style="fill:#b3b3b3;fill-opacity:1;stroke:none" />
+    </g>
+    <rect
+       style="fill:none;stroke:#c0c0c0;stroke-width:2;stroke-dasharray:2, 4;stroke-opacity:1"
+       id="vu-view" width="254" height="125.99998" x="1" y="925.36218" />
+    <path
+       style="fill:none;stroke:#c0c0c0;stroke-width:2;stroke-dasharray:2, 4;stroke-opacity:1"
+       id="vu-track"
+       d="M 15.771843,973.23477 A 208,208 0 0 1 238.66372,972.24201" />
+    <path
+       style="fill:none;stroke:#000000;stroke-width:1px"
+       d="m 128,940.36216 0,39"
+       id="vu-needle" />
+  </g>
+</svg>

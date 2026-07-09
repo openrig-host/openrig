@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Neumorphic Toggle Switch - Custom Design for OpenRig -->
+<svg xmlns="http://www.w3.org/2000/svg" width="60" height="30" viewBox="0 0 60 30">
+  <defs>
+    <!-- Neumorphic shadows -->
+    <filter id="toggle-shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="2" dy="2" stdDeviation="2" flood-color="#000000" flood-opacity="0.4"/>
+    </filter>
+    <filter id="toggle-inset" x="-20%" y="-20%" width="140%" height="140%">
+      <feOffset dx="1" dy="1" in="SourceAlpha" result="offset"/>
+      <feGaussianBlur stdDeviation="1" in="offset" result="blur"/>
+      <feFlood flood-color="#000000" flood-opacity="0.5"/>
+      <feComposite in2="blur" operator="in" result="shadow"/>
+      <feComposite in="SourceGraphic" in2="shadow" operator="over"/>
+    </filter>
+    <linearGradient id="track-off" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#2a2a2a"/>
+      <stop offset="100%" style="stop-color:#3a3a3a"/>
+    </linearGradient>
+    <linearGradient id="track-on" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#00aa44"/>
+      <stop offset="100%" style="stop-color:#00cc55"/>
+    </linearGradient>
+    <linearGradient id="thumb-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#f0f0f0"/>
+      <stop offset="50%" style="stop-color:#d0d0d0"/>
+      <stop offset="100%" style="stop-color:#b0b0b0"/>
+    </linearGradient>
+  </defs>
+  
+  <!-- Toggle OFF state -->
+  <g id="toggle-off">
+    <!-- Track (background) -->
+    <rect x="2" y="2" width="56" height="26" rx="13" ry="13" 
+          fill="url(#track-off)" filter="url(#toggle-inset)"/>
+    
+    <!-- Inner shadow -->
+    <rect x="4" y="4" width="52" height="22" rx="11" ry="11" 
+          fill="none" stroke="#1a1a1a" stroke-width="1" opacity="0.5"/>
+    
+    <!-- Thumb (off position - left) -->
+    <circle cx="15" cy="15" r="10" fill="url(#thumb-gradient)" filter="url(#toggle-shadow)" id="thumb-off"/>
+    
+    <!-- Thumb highlight -->
+    <circle cx="13" cy="13" r="4" fill="#ffffff" opacity="0.3"/>
+  </g>
+  
+  <!-- Toggle ON state (hidden by default - use CSS/JS to toggle visibility) -->
+  <g id="toggle-on" style="display:none">
+    <!-- Track (background) - green when on -->
+    <rect x="2" y="2" width="56" height="26" rx="13" ry="13" 
+          fill="url(#track-on)" filter="url(#toggle-inset)"/>
+    
+    <!-- Inner glow -->
+    <rect x="4" y="4" width="52" height="22" rx="11" ry="11" 
+          fill="none" stroke="#00ff66" stroke-width="1" opacity="0.3"/>
+    
+    <!-- Thumb (on position - right) -->
+    <circle cx="45" cy="15" r="10" fill="url(#thumb-gradient)" filter="url(#toggle-shadow)" id="thumb-on"/>
+    
+    <!-- Thumb highlight -->
+    <circle cx="43" cy="13" r="4" fill="#ffffff" opacity="0.3"/>
+  </g>
+</svg>

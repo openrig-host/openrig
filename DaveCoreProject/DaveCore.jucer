@@ -1,0 +1,69 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<JUCERPROJECT id="y15uHa" name="OpenRig" projectType="guiapp" useAppConfig="1" addUsingNamespaceToJuceHeader="0" jucerFormatVersion="1">
+  <MAINGROUP id="kDqy99" name="DaveCore">
+    <GROUP id="{7F03F339-D8EE-9CEA-49B0-ACBF8ABA11C0}" name="Source">
+      <FILE id="engineH" name="DaveCoreEngine.h" compile="0" resource="0" file="Source/DaveCoreEngine.h" />
+      <FILE id="rackSlotH" name="RackSlot.h" compile="0" resource="0" file="Source/RackSlot.h" />
+      <FILE id="sceneH" name="Scene.h" compile="0" resource="0" file="Source/Scene.h" />
+      <FILE id="rackSlotCompH" name="RackSlotComponent.h" compile="0" resource="0" file="Source/RackSlotComponent.h" />
+      <FILE id="uhRr7a" name="Main.cpp" compile="1" resource="0" file="Source/Main.cpp" />
+      <FILE id="y5Bcq1" name="MainComponent.h" compile="0" resource="0" file="Source/MainComponent.h" />
+      <FILE id="Rl5RHc" name="MainComponent.cpp" compile="1" resource="0" file="Source/MainComponent.cpp" />
+      <FILE id="rigModelH" name="RigModel.h" compile="0" resource="0" file="Source/RigModel.h" />
+      <FILE id="rigSerializerH" name="RigSerializer.h" compile="0" resource="0" file="Source/RigSerializer.h" />
+      <FILE id="rigBuilderH" name="RigBuilder.h" compile="0" resource="0" file="Source/RigBuilder.h" />
+      <FILE id="rigBuilderCpp" name="RigBuilder.cpp" compile="1" resource="0" file="Source/RigBuilder.cpp" />
+      <FILE id="rigTransitionerH" name="RigTransitioner.h" compile="0" resource="0" file="Source/RigTransitioner.h" />
+      <FILE id="rigTransitionerCpp" name="RigTransitioner.cpp" compile="1" resource="0" file="Source/RigTransitioner.cpp" />
+      <FILE id="midiLearnBusH" name="MidiLearnBus.h" compile="0" resource="0" file="Source/MidiLearnBus.h" />
+      <FILE id="cfgOverlayH" name="ConfigModalOverlay.h" compile="0" resource="0" file="Source/ConfigModalOverlay.h" />
+      <FILE id="cfgOverlayCpp" name="ConfigModalOverlay.cpp" compile="1" resource="0" file="Source/ConfigModalOverlay.cpp" />
+      <FILE id="libPanelCpp" name="LibraryPanel.cpp" compile="1" resource="0" file="Source/LibraryPanel.cpp" />
+      <FILE id="rackSlotCpp" name="RackSlotComponent.cpp" compile="1" resource="0" file="Source/RackSlotComponent.cpp" />
+      <FILE id="libraryPanelH" name="LibraryPanel.h" compile="0" resource="0" file="Source/LibraryPanel.h" />
+      <FILE id="samplerProcessorH" name="SamplerProcessor.h" compile="0" resource="0" file="Source/SamplerProcessor.h" />
+      <FILE id="samplerComponentH" name="SamplerComponent.h" compile="0" resource="0" file="Source/SamplerComponent.h" />
+      <FILE id="waveformSpliceEditorH" name="WaveformSpliceEditor.h" compile="0" resource="0" file="Source/WaveformSpliceEditor.h" />
+      <FILE id="midiRemoteSettingsH" name="MidiRemoteSettings.h" compile="0" resource="0" file="Source/MidiRemoteSettings.h" />
+      <FILE id="midiRemoteSettingsOverlayH" name="MidiRemoteSettingsOverlay.h" compile="0" resource="0" file="Source/MidiRemoteSettingsOverlay.h" />
+      <FILE id="setupMidiTriggersH" name="SetupMidiTriggers.h" compile="0" resource="0" file="Source/SetupMidiTriggers.h" />
+    </GROUP>
+  </MAINGROUP>
+  <MODULES>
+    <MODULE id="juce_audio_basics" showAllCode="1" useLocalCopy="0" useGlobalPath="1" />
+    <MODULE id="juce_audio_devices" showAllCode="1" useLocalCopy="0" useGlobalPath="1" />
+    <MODULE id="juce_audio_formats" showAllCode="1" useLocalCopy="0" useGlobalPath="1" />
+    <MODULE id="juce_audio_processors" showAllCode="1" useLocalCopy="0" useGlobalPath="1" />
+    <MODULE id="juce_audio_processors_headless" showAllCode="1" useLocalCopy="0" useGlobalPath="1" />
+    <MODULE id="juce_audio_utils" showAllCode="1" useLocalCopy="0" useGlobalPath="1" />
+    <MODULE id="juce_core" showAllCode="1" useLocalCopy="0" useGlobalPath="1" />
+    <MODULE id="juce_data_structures" showAllCode="1" useLocalCopy="0" useGlobalPath="1" />
+    <MODULE id="juce_events" showAllCode="1" useLocalCopy="0" useGlobalPath="1" />
+    <MODULE id="juce_graphics" showAllCode="1" useLocalCopy="0" useGlobalPath="1" />
+    <MODULE id="juce_gui_basics" showAllCode="1" useLocalCopy="0" useGlobalPath="1" />
+    <MODULE id="juce_gui_extra" showAllCode="1" useLocalCopy="0" useGlobalPath="1" />
+  </MODULES>
+  <JUCEOPTIONS JUCE_STRICT_REFCOUNTEDPOINTER="1" JUCE_PLUGINHOST_VST3="1" JUCE_PLUGINHOST_VST="0" JUCE_ASIO="1" />
+  <EXPORTFORMATS>
+    <VS2026 targetFolder="Builds/VisualStudio2026">
+      <CONFIGURATIONS>
+        <CONFIGURATION isDebug="1" name="Debug" targetName="DaveCore" />
+        <CONFIGURATION isDebug="0" name="Release" targetName="DaveCore" />
+      </CONFIGURATIONS>
+      <MODULEPATHS>
+        <MODULEPATH id="juce_audio_basics" path="C:/JUCE/modules" />
+        <MODULEPATH id="juce_audio_devices" path="C:/JUCE/modules" />
+        <MODULEPATH id="juce_audio_formats" path="C:/JUCE/modules" />
+        <MODULEPATH id="juce_audio_processors" path="C:/JUCE/modules" />
+        <MODULEPATH id="juce_audio_utils" path="C:/JUCE/modules" />
+        <MODULEPATH id="juce_core" path="C:/JUCE/modules" />
+        <MODULEPATH id="juce_data_structures" path="C:/JUCE/modules" />
+        <MODULEPATH id="juce_events" path="C:/JUCE/modules" />
+        <MODULEPATH id="juce_graphics" path="C:/JUCE/modules" />
+        <MODULEPATH id="juce_gui_basics" path="C:/JUCE/modules" />
+        <MODULEPATH id="juce_gui_extra" path="C:/JUCE/modules" />
+        <MODULEPATH id="juce_audio_processors_headless" path="C:/JUCE/modules" />
+      </MODULEPATHS>
+    </VS2026>
+  </EXPORTFORMATS>
+</JUCERPROJECT>

@@ -1,0 +1,12 @@
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <!-- Synth Wave -->
+  <path d="M10,50 Q25,10 40,50 T70,50 T100,50" fill="none" stroke="#00FFFF" stroke-width="5" />
+  <!-- Knobs -->
+  <circle cx="20" cy="80" r="8" fill="#555" stroke="#333" stroke-width="2"/>
+  <circle cx="40" cy="80" r="8" fill="#555" stroke="#333" stroke-width="2"/>
+  <circle cx="60" cy="80" r="8" fill="#555" stroke="#333" stroke-width="2"/>
+  <circle cx="80" cy="80" r="8" fill="#555" stroke="#333" stroke-width="2"/>
+  <!-- Screen -->
+  <rect x="20" y="10" width="60" height="30" fill="#222" stroke="#555" stroke-width="2"/>
+  <path d="M25,25 L35,15 L45,35 L55,20 L65,30" fill="none" stroke="lime" stroke-width="2"/>
+</svg>
