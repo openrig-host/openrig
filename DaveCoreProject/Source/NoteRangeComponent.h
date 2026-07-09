@@ -62,9 +62,6 @@ public:
   void paint(juce::Graphics &g) override {
     auto bounds = getLocalBounds().toFloat();
 
-    auto* laf = dynamic_cast<BoutiqueLookAndFeel*>(&getLookAndFeel());
-    bool useModern = (laf != nullptr && laf->useModernStyle);
-
     // Draw background
     g.fillAll(ThemeManager::get(Theme::Role::panel));
 
