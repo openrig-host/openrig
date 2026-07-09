@@ -981,7 +981,7 @@ void RackSlotComponent::showPluginConfigMenu(int chainIndex) {
   auto *comp = new PluginStackConfigComp(slot, chainIndex);
   juce::CallOutBox::launchAsynchronously(
       std::unique_ptr<juce::Component>(comp),
-      slotBtns[chainIndex].getBounds(), this);
+      slotBtns[chainIndex].getScreenBounds(), nullptr);
 }
 
 void RackSlotComponent::SlotBtnMouseListener::mouseDown(const juce::MouseEvent &e) {

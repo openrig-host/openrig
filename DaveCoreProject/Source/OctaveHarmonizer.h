@@ -18,7 +18,8 @@ public:
     }
 
     void processBlock(juce::MidiBuffer& midi, int /*numSamples*/,
-                      juce::MidiBuffer* harmonyOutput = nullptr) {
+                      juce::MidiBuffer* harmonyOutput = nullptr,
+                      int transposeSemis = 0) {
         juce::MidiBuffer output;
         juce::MidiBuffer targetOutput; // holds generated voices routed to another strip
 
@@ -115,7 +116,7 @@ public:
                     addHarmonyNote(note - 5, vel, pos);
                 } else if (africa == 2) {
                     const int offsets[12] = { -3, -3, -4, -4, -4, -3, -3, -3, -4, -4, -3, -3 };
-                    int pc = note % 12;
+                    int pc = (((note - transposeSemis) % 12) + 12) % 12;
                     addHarmonyNote(note + offsets[pc], vel, pos);
                 } else if (africa == 3) {
                     int transposed = note - 1;
@@ -152,7 +153,7 @@ public:
                     releaseHarmonyNote(note - 5, pos);
                 } else if (africa == 2) {
                     const int offsets[12] = { -3, -3, -4, -4, -4, -3, -3, -3, -4, -4, -3, -3 };
-                    int pc = note % 12;
+                    int pc = (((note - transposeSemis) % 12) + 12) % 12;
                     releaseHarmonyNote(note + offsets[pc], pos);
                 } else if (africa == 3) {
                     int transposed = note - 1;

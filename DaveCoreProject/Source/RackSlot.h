@@ -96,7 +96,7 @@ public:
     // Harmonizer with redirection support: generated harmony notes go to harmonyBuffer
     juce::MidiBuffer harmonyBuffer;
     harmonizer.processBlock(midiMessages, slotBuffer.getNumSamples(),
-                            &harmonyBuffer);
+                            &harmonyBuffer, getTransposeSemis());
 
     int target = harmonizer.harmonyTargetSlot.load();
     if (target >= 0 && !harmonyBuffer.isEmpty() && midiRouteCallback)
