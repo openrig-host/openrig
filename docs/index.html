@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>OpenRig — The Sovereign Live Performance Engine</title>
+<meta name="description" content="A rack-based VST3 host built for live keyboardists. Atomic song switching, dual-bus mixing, MIDI learn, setlist preloading, and a panic button that works in the next audio block." />
+<style>
+  :root {
+    --bg: #0d1014;
+    --bg-2: #14181d;
+    --bg-3: #1a1f26;
+    --panel: #1d2027;
+    --border: #2a2f38;
+    --text: #e8ecf2;
+    --text-dim: #98a2b3;
+    --text-faint: #5b6573;
+    --accent: #4dd0e1;        /* cyan, matches the app */
+    --accent-2: #b388ff;      /* purple, the "boutique" hint */
+    --warn: #ff7043;
+    --good: #66bb6a;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  code, kbd, pre {
+    font-family: var(--mono);
+    font-size: 0.9em;
+  }
+
+  code {
+    background: var(--bg-3);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1px 6px;
+  }
+
+  pre {
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+    overflow-x: auto;
+  }
+
+  pre code {
+    background: none;
+    border: none;
+    padding: 0;
+  }
+
+  /* Layout */
+  .container {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 0 24px;
+  }
+
+  /* Hero */
+  .hero {
+    padding: 96px 0 64px;
+    text-align: center;
+    background:
+      radial-gradient(ellipse 800px 400px at 50% 0%, rgba(77, 208, 225, 0.12), transparent 70%),
+      radial-gradient(ellipse 600px 300px at 80% 100%, rgba(179, 136, 255, 0.08), transparent 70%),
+      var(--bg);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .badge {
+    display: inline-block;
+    padding: 4px 12px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-dim);
+    background: var(--bg-2);
+    margin-bottom: 20px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+
+  h1 {
+    font-size: clamp(40px, 6vw, 64px);
+    line-height: 1.1;
+    margin: 0 0 12px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    background: linear-gradient(180deg, #ffffff 0%, #b0bac8 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .tagline {
+    font-size: clamp(18px, 2vw, 22px);
+    color: var(--text-dim);
+    max-width: 720px;
+    margin: 0 auto 32px;
+  }
+
+  .cta {
+    display: inline-flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .btn {
+    display: inline-block;
+    padding: 12px 22px;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 15px;
+    border: 1px solid var(--border);
+    transition: transform 0.1s ease, background 0.15s ease, border-color 0.15s ease;
+  }
+
+  .btn:hover { transform: translateY(-1px); text-decoration: none; }
+
+  .btn-primary {
+    background: var(--accent);
+    color: #0a1014;
+    border-color: var(--accent);
+  }
+  .btn-primary:hover { background: #6ee0ef; border-color: #6ee0ef; }
+
+  .btn-secondary {
+    background: var(--bg-2);
+    color: var(--text);
+  }
+  .btn-secondary:hover { background: var(--bg-3); border-color: var(--accent); }
+
+  /* Section */
+  section {
+    padding: 80px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  section:last-of-type { border-bottom: none; }
+
+  h2 {
+    font-size: 32px;
+    margin: 0 0 8px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+  h2 .accent { color: var(--accent); }
+
+  .section-sub {
+    color: var(--text-dim);
+    font-size: 17px;
+    margin: 0 0 40px;
+    max-width: 720px;
+  }
+
+  h3 {
+    font-size: 18px;
+    margin: 32px 0 8px;
+    color: var(--text);
+    font-weight: 600;
+  }
+  h3 .dot {
+    display: inline-block;
+    width: 8px; height: 8px;
+    background: var(--accent);
+    border-radius: 50%;
+    margin-right: 8px;
+    transform: translateY(-1px);
+  }
+
+  /* Grids */
+  .features {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 16px;
+  }
+
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px 22px;
+    transition: border-color 0.15s ease, transform 0.15s ease;
+  }
+  .card:hover { border-color: var(--accent); transform: translateY(-2px); }
+
+  .card .icon {
+    display: inline-block;
+    font-family: var(--mono);
+    color: var(--accent);
+    font-size: 13px;
+    margin-bottom: 8px;
+    letter-spacing: 0.05em;
+  }
+
+  .card h3 {
+    margin: 0 0 6px;
+    font-size: 16px;
+  }
+  .card p {
+    margin: 0;
+    color: var(--text-dim);
+    font-size: 14px;
+  }
+
+  /* Architecture diagram */
+  .diagram {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    overflow-x: auto;
+  }
+  .diagram pre {
+    background: none;
+    border: none;
+    padding: 0;
+    margin: 0;
+    color: var(--text);
+    font-size: 13px;
+    line-height: 1.5;
+  }
+
+  /* Footer */
+  footer {
+    padding: 48px 0;
+    text-align: center;
+    color: var(--text-faint);
+    font-size: 14px;
+  }
+  footer a { color: var(--text-dim); }
+
+  /* Pills */
+  .pill-row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin: 16px 0 32px;
+  }
+  .pill {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: var(--bg-3);
+    border: 1px solid var(--border);
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+  .pill.ok { color: var(--good); border-color: rgba(102, 187, 106, 0.3); }
+  .pill.warn { color: var(--warn); border-color: rgba(255, 112, 67, 0.3); }
+
+  /* Warning banner */
+  .warning {
+    background: linear-gradient(180deg, rgba(255, 112, 67, 0.08), rgba(255, 112, 67, 0.02));
+    border: 1px solid rgba(255, 112, 67, 0.4);
+    border-left: 4px solid var(--warn);
+    border-radius: 10px;
+    padding: 20px 24px;
+    margin: -32px auto 48px;
+    max-width: 1100px;
+  }
+  .warning h3 {
+    margin: 0 0 8px;
+    font-size: 17px;
+    color: var(--warn);
+  }
+  .warning p {
+    margin: 0 0 10px;
+    color: var(--text);
+    font-size: 15px;
+  }
+  .warning ul { margin: 8px 0 0; padding-left: 22px; color: var(--text-dim); font-size: 14px; }
+  .warning li { margin-bottom: 4px; }
+
+  /* Honest-vibe callout */
+  .honest {
+    background: linear-gradient(180deg, rgba(77, 208, 225, 0.07), rgba(77, 208, 225, 0.02));
+    border: 1px solid rgba(77, 208, 225, 0.35);
+    border-left: 4px solid var(--accent);
+    border-radius: 10px;
+    padding: 18px 24px;
+    margin: 0 auto 48px;
+    max-width: 1100px;
+    color: var(--text);
+    font-size: 15px;
+  }
+  .honest strong { color: var(--accent); }
+  .honest a { color: var(--accent); }
+
+  /* Tables */
+  table.vst {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0 24px;
+    font-size: 14px;
+  }
+  table.vst th, table.vst td {
+    text-align: left;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  table.vst th {
+    background: var(--bg-2);
+    color: var(--text-dim);
+    font-weight: 600;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  table.vst tr:hover td { background: var(--bg-2); }
+  table.vst td:first-child { color: var(--text); font-weight: 500; }
+  table.vst td:nth-child(2) { color: var(--text-dim); font-family: var(--mono); font-size: 13px; }
+
+  @media (max-width: 600px) {
+    .hero { padding: 64px 0 48px; }
+    section { padding: 56px 0; }
+    h2 { font-size: 26px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="container">
+    <div class="badge">v1.0 · Windows · VST3</div>
+    <h1>OpenRig</h1>
+    <p class="tagline">
+      The Sovereign Live Performance Engine.<br/>
+      A rack-based VST3 host built for one job: getting you through a live set without a single dropout, a stuck note, or a fumbled song switch.
+    </p>
+    <div class="cta">
+      <a class="btn btn-primary" href="https://github.com/davewaugh/davecore/releases">Download for Windows</a>
+      <a class="btn btn-secondary" href="https://github.com/davewaugh/davecore">View on GitHub</a>
+    </div>
+  </div>
+</div>
+
+<div class="warning">
+  <h3>Getting Started &amp; Stage Preparation</h3>
+  <p>
+    <strong>OpenRig is an open-source tool</strong> built specifically for live stage use. While designed for maximum stability, we recommend thorough preparation before performing:
+  </p>
+  <ul>
+    <li>Run it through rehearsals with <strong>your</strong> actual songs, plugins, and MIDI hardware.</li>
+    <li>Test your song switches, scene changes, and panic button under live playing conditions.</li>
+    <li>Always maintain a backup plan (e.g., a hardware fallback or second system) for critical performances.</li>
+  </ul>
+</div>
+
+<section>
+  <div class="container">
+    <h2>What is <span class="accent">OpenRig</span>?</h2>
+    <p class="section-sub">
+      OpenRig is a live VST3 host that looks, feels, and acts like a digital hardware mixer. No virtual cable spaghetti, no confusing node graphs—just a clean, linear rack of channel strips designed for playing keyboards live.
+    </p>
+
+    <!-- App Main Interface Screenshot -->
+    <div style="margin: 32px 0; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--bg-2); text-align: center;">
+      <div style="padding: 16px; border-bottom: 1px solid var(--border); font-family: var(--mono); font-size: 13px; color: var(--text-dim);">
+        📸 SCREENSHOT: Main Mixer Screen (Showing channel strips, FOH/IEM faders, and top control bar)
+      </div>
+      <div style="padding: 60px 20px; background: radial-gradient(circle, rgba(77,208,225,0.05) 0%, transparent 70%); color: var(--text-faint); font-style: italic;">
+        [Insert main_mixer_view.png showing the main application interface]
+      </div>
+    </div>
+
+    <p>It's built around the simple realities of keyboard performance:</p>
+
+    <div class="features">
+      <div class="card">
+        <span class="icon">01</span>
+        <h3>Intuitive Mixer-Based Layout</h3>
+        <p>Your plugins live in vertical channel strips with physical faders, mutes, routing, and bypass controls you already understand.</p>
+      </div>
+      <div class="card">
+        <span class="icon">02</span>
+        <h3>FOH and IEM are Not the Same Mix</h3>
+        <p>Every channel strip has independent faders sending to Front of House (FOH) and In-Ear Monitors (IEM) simultaneously.</p>
+      </div>
+      <div class="card">
+        <span class="icon">03</span>
+        <h3>Seamless Song Switches</h3>
+        <p>Next songs preload on a background worker thread and transition atomically, leaving your current sound active until the swap is complete.</p>
+      </div>
+      <div class="card">
+        <span class="icon">04</span>
+        <h3>Interactive Note-Range &amp; CC Learn</h3>
+        <p>Restrict channels to key zones or map physical knobs using a simple "Play note" or "Wiggle knob" learn mode.</p>
+      </div>
+      <div class="card">
+        <span class="icon">05</span>
+        <h3>A Panic Button That Works</h3>
+        <p>A dedicated panic utility kills all active MIDI notes inside the very next audio block to silence runaways instantly.</p>
+      </div>
+    </div>
+
+    <!-- Note Range / Learning Screenshot -->
+    <div style="margin: 40px 0; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--bg-2); text-align: center;">
+      <div style="padding: 16px; border-bottom: 1px solid var(--border); font-family: var(--mono); font-size: 13px; color: var(--text-dim);">
+        📸 SCREENSHOT: MIDI Note-Range Learn (Visual keyboard overlay with active range highlight)
+      </div>
+      <div style="padding: 60px 20px; background: radial-gradient(circle, rgba(179,136,255,0.05) 0%, transparent 70%); color: var(--text-faint); font-style: italic;">
+        [Insert note_range_learn.png showing the piano keyboard zoning screen]
+      </div>
+    </div>
+
+    <p style="margin-top: 32px; color: var(--text-dim); font-style: italic;">
+      This is not a studio DAW. It is a streamlined instrument built for the stage.
+    </p>
+  </div>
+</section>
+
+<section>
+  <div class="container">
+    <h2>Features</h2>
+    <p class="section-sub">Everything you need for a reliable, repeatable live rig.</p>
+
+    <h3><span class="dot"></span>The Rack</h3>
+    <div class="features">
+      <div class="card"><h3>Linear, fixed slot layout</h3><p>One slot per instrument, in a known order. No clicks, no surprises, no patch-graph archaeology.</p></div>
+      <div class="card"><h3>Dual-bus mixing on every slot</h3><p>Independent FOH and IEM levels, mutes, and enables per slot.</p></div>
+      <div class="card"><h3>Per-slot MIDI channel routing</h3><p>Global default + per-slot override. Send a CC to one instrument and only that instrument.</p></div>
+      <div class="card"><h3>Per-instrument stacking</h3><p>Multiple instances of the same plugin in a slot, with individual level, note range, and enable.</p></div>
+      <div class="card"><h3>Boutique dark-mode UI</h3><p>Skeuomorphic knobs, glassy panels. No virtual-cable spaghetti.</p></div>
+    </div>
+
+    <h3><span class="dot"></span>Songs, Scenes &amp; Setlists</h3>
+    <div class="features">
+      <div class="card"><h3>Songs (Rigs)</h3><p>A complete patch: plugins, states, channel strips, CC maps, levels. Saved as versioned JSON.</p></div>
+      <div class="card"><h3>Scenes</h3><p>Variations within a song (verse / chorus / bridge). Snapshot, recall, MIDI-trigger them.</p></div>
+      <div class="card"><h3>Setlists</h3><p>Ordered queue of songs with one-click load and automatic preload of the next rig on a worker thread.</p></div>
+      <div class="card"><h3>Atomic transitions</h3><p>New rig is built and validated off-thread, then swapped under lock. A failed build never touches the live rig.</p></div>
+      <div class="card"><h3>Rollback-by-construction</h3><p>If the build fails, the current rig keeps playing. No half-loaded songs, ever.</p></div>
+    </div>
+
+    <h3><span class="dot"></span>MIDI</h3>
+    <div class="features">
+      <div class="card"><h3>Arm-then-wiggle CC learn</h3><p>Click Learn, move the physical control, it's bound. Range, min/max, invert all supported.</p></div>
+      <div class="card"><h3>Scene MIDI triggers</h3><p>Assign a Program Change + channel to any scene. Your hardware sequencer calls the song.</p></div>
+      <div class="card"><h3>MIDI monitor</h3><p>See what your keyboard is actually sending, with learn-capture overlay.</p></div>
+      <div class="card"><h3>MIDI remote settings</h3><p>Define a hardware device, map its controls once, use them across all rigs.</p></div>
+    </div>
+
+    <h3><span class="dot"></span>DSP &amp; Effects</h3>
+    <div class="features">
+      <div class="card"><h3>Per-slot channel strip</h3><p>Gate, parametric EQ, compressor, chorus, reverb. Toggleable per slot.</p></div>
+      <div class="card"><h3>Sampler + waveform splice editor</h3><p>Load a WAV, set root note, trim with sample-accurate handles.</p></div>
+      <div class="card"><h3>Arpeggiator</h3><p>Up / Down / Up-Down / Random patterns, 0–4 octaves, gate time, BPM to 1 decimal.</p></div>
+      <div class="card"><h3>Octave harmonizer</h3><p>Generate sub/up octaves with mode shaping.</p></div>
+      <div class="card"><h3>MIDI effects</h3><p>Transposer and friends, per slot.</p></div>
+      <div class="card"><h3>Master FOH &amp; IEM FX buses</h3><p>Global reverb / EQ / compression before the outputs.</p></div>
+    </div>
+
+    <h3><span class="dot"></span>Live Reliability</h3>
+    <div class="features">
+      <div class="card"><h3>Panic button</h3><p>Sends All Notes Off to every plugin in the next audio block. Hardware-fail-safe.</p></div>
+      <div class="card"><h3>Atomic JSON persistence</h3><p>Every save writes to a temp file, renames atomically, and keeps a .bak. Crashes during save cannot corrupt your library.</p></div>
+      <div class="card"><h3>SEH-protected message loop</h3><p>If a misbehaving VST3 crashes, the engine survives and the show goes on.</p></div>
+      <div class="card"><h3>Per-plugin exception isolation</h3><p>One plugin throwing inside processBlock cannot kill the audio thread. The slot mutes; the rest of the rig keeps playing.</p></div>
+      <div class="card"><h3>Versioned rig format with migration</h3><p>v1 rigs auto-upgrade to v2. Unknown future versions are refused, not silently misinterpreted.</p></div>
+    </div>
+
+    <!-- Channel Strip / DYN Screenshot -->
+    <div style="margin: 40px 0 20px; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--bg-2); text-align: center;">
+      <div style="padding: 16px; border-bottom: 1px solid var(--border); font-family: var(--mono); font-size: 13px; color: var(--text-dim);">
+        📸 SCREENSHOT: Channel Strip / Dynamics Panel (Skeuomorphic dials for Gate, EQ, Compressor, Chorus, and Reverb)
+      </div>
+      <div style="padding: 60px 20px; background: radial-gradient(circle, rgba(77,208,225,0.05) 0%, transparent 70%); color: var(--text-faint); font-style: italic;">
+        [Insert channel_strip_dyn.png showing the built-in dynamics processor controls]
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="container">
+    <h2>How It <span class="accent">Works</span></h2>
+    <p class="section-sub">The signal path, and the song-switch sequence.</p>
+
+    <h3>Signal flow</h3>
+    <div class="diagram"><pre>
+                          Keyboard (any MIDI controller)
+                                    │  MIDI
+                                    ▼
+        ┌────────────────────────────────────────────────┐
+        │               OpenRigEngine                    │
+        │   ┌─────┬─────┬─────┬─────┬─────┬─────┐      │
+        │   │ S0  │ S1  │ S2  │ S3  │ S4  │ ... │      │  ← Linear rack
+        │   │ Mon │Kbd  │Organ│VSTi │Aux  │     │      │     (no cables)
+        │   └─────┴─────┴─────┴─────┴─────┴─────┘      │
+        │         │ FOH       │ IEM                      │  ← Dual bus
+        │         ▼           ▼                          │
+        │   Master FOH    Master IEM                     │
+        │     FX bus        FX bus                       │
+        └─────────┬──────────────┬───────────────────────┘
+                  │              │
+                  ▼              ▼
+              FOH Out        IEM Out
+    </pre></div>
+
+    <h3>Switching a song</h3>
+    <ol>
+      <li>SetlistManager calls <code>RigTransitioner::transitionToFile(nextSong)</code>.</li>
+      <li><code>RigBuilder</code> runs on a worker thread: instantiate any new plugins, restore state on reused ones, validate with a silent <code>processBlock</code>.</li>
+      <li>The transitioner takes the callback lock, swaps pointers only (no allocations, no state restore on the audio thread), and signals the message loop.</li>
+      <li>The old rig is unloaded. New rig is live. Total switch time: typically 200–800 ms; the loading overlay covers it.</li>
+      <li>If step 2 failed, the lock is never taken. The current rig keeps playing. <em>You will not know anything happened, by design.</em></li>
+    </ol>
+  </div>
+</section>
+
+<section>
+  <div class="container">
+    <h2>Download</h2>
+    <p class="section-sub">Pre-built Windows binaries from the GitHub Releases page. CI-built on every push to <code>main</code>.</p>
+
+    <div class="pill-row">
+      <span class="pill ok">Windows 10/11 x64</span>
+      <span class="pill">VST3 host</span>
+      <span class="pill warn">macOS / Linux — not yet</span>
+    </div>
+
+    <p>
+      <a class="btn btn-primary" href="https://github.com/davewaugh/davecore/releases">Download latest release</a>
+      &nbsp;
+      <a class="btn btn-secondary" href="https://github.com/davewaugh/davecore">View source</a>
+    </p>
+
+    <h3>Build from source</h3>
+    <p>Requires Visual Studio 2022+ with the C++ desktop workload, and <a href="https://juce.com">JUCE 8</a> at <code>C:/JUCE</code>.</p>
+    <pre><code>git clone https://github.com/davewaugh/davecore
+cd davecore
+cmake -B build -DJUCE_ROOT=C:/JUCE
+cmake --build build --config Release</code></pre>
+
+    <h3>Data location</h3>
+    <p>All user data lives under <code>%APPDATA%/OpenRig/</code>:</p>
+    <pre><code>%APPDATA%/OpenRig/
+├── songs/       Rig files (.json)
+├── sets/        Setlists
+├── backups/     Auto-rotated .bak of rigs
+└── settings/    User preferences, MIDI maps</code></pre>
+  </div>
+</section>
+
+<section id="make-it-yours">
+  <div class="container">
+    <h2>Development &amp; Open Source</h2>
+    <p class="section-sub">Built to be extended, customized, and owned.</p>
+    <p>
+      OpenRig was built using a modern, collaborative approach—pair-programming directly with AI coding assistants (including Antigravity, Gemini, and Claude) to build features rapidly. The result is a highly tailored, utility-focused application that addresses the specific stage needs of live keyboardists.
+    </p>
+    <p>
+      Because it's fully open source, you have absolute sovereignty over your rig. If a specific plugin behaves unexpectedly, or if you need to build custom MIDI routing behaviors for your hardware: the source is right there. You can clone the project, tweak the logic, compile a release, and run your custom version on stage.
+    </p>
+  </div>
+</section>
+
+<section>
+  <div class="container">
+    <h2>Philosophy</h2>
+    <p class="section-sub">A few principles drove every design decision.</p>
+    <ol>
+      <li><strong>Predictability over flexibility.</strong> A stage rig is not a sketchbook. Slots are fixed. Routing is fixed. You know exactly what sound comes out of which key, every time.</li>
+      <li><strong>The worst-case failure must be a no-op.</strong> A song switch that fails should leave the current rig playing. A plugin crash should leave the other slots playing. A panic button must work in the next audio block, always.</li>
+      <li><strong>Background work, foreground feel.</strong> Plugin loading, preloading, MIDI mapping, persistence — none of it blocks the audio thread, and as little as possible blocks the message thread.</li>
+      <li><strong>Own your data.</strong> Rigs are JSON. Backups are automatic. There is no cloud, no account, no telemetry. Your setlist is a folder of files you can read, edit, version-control, and back up with any tool.</li>
+    </ol>
+  </div>
+</section>
+
+<footer>
+  <div class="container">
+    <p>
+      Built with <a href="https://juce.com">JUCE 8</a>.
+      Engine, UI, and rig format by <a href="https://github.com/davewaugh">Dave Waugh</a>.
+    </p>
+    <p style="margin-top: 12px;">
+      Created with <a href="https://antigravity.dev">Antigravity</a> and KiloCode,
+      powered by <a href="https://deepmind.google/technologies/gemini/">Gemini</a>,
+      <a href="https://anthropic.com">Claude</a>, Minimax, Zai, and Xiaomi.
+    </p>
+  </div>
+</footer>
+
+</body>
+</html>

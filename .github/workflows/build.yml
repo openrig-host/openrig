@@ -1,0 +1,123 @@
+name: Build Windows
+
+on:
+  push:
+    branches: [main, master]
+    tags: ['v*']
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: write   # required for softprops/action-gh-release on tag push
+
+env:
+  JUCE_VERSION: '8.0.8'
+  ARTIFACT_NAME: OpenRig-Windows-x64
+
+jobs:
+  build:
+    name: Build OpenRig (Windows x64, MSVC, Release)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Cache JUCE
+        id: cache-juce
+        uses: actions/cache@v4
+        with:
+          path: C:/JUCE
+          key: juce-${{ runner.os }}-${{ env.JUCE_VERSION }}
+
+      - name: Install JUCE
+        if: steps.cache-juce.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          git clone --depth 1 --branch ${{ env.JUCE_VERSION }} \
+            https://github.com/juce-framework/JUCE.git C:/JUCE
+
+      - name: Set up MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Configure (CMake, VS 2022, x64)
+        shell: pwsh
+        run: |
+          cmake -S . -B build `
+            -G "Visual Studio 17 2022" -A x64 `
+            -DJUCE_ROOT="C:/JUCE"
+
+      - name: Build (Release)
+        run: cmake --build build --config Release --parallel
+
+      - name: Locate built binary
+        id: locate
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -Path build -Recurse -Filter "DaveCore.exe" |
+                 Select-Object -First 1
+          if (-not $exe) {
+            Write-Error "DaveCore.exe not found in build output"
+            exit 1
+          }
+          Write-Host "Found binary: $($exe.FullName)"
+          "binary_dir=$($exe.DirectoryName)" >> $env:GITHUB_OUTPUT
+
+      - name: Stage release payload
+        shell: pwsh
+        run: |
+          $srcDir = "${{ steps.locate.outputs.binary_dir }}"
+          $dst    = "release"
+          New-Item -ItemType Directory -Path $dst -Force | Out-Null
+          Copy-Item -Path "$srcDir\*" -Destination $dst -Recurse -Force
+
+          $ver   = if ($env:GITHUB_REF -match 'refs/tags/v(.+)') { $matches[1] } else { 'nightly' }
+          $short = $env:GITHUB_SHA.Substring(0, 7)
+          $lines = @(
+            "OpenRig Windows x64"
+            "Version: $ver"
+            "Build:   $short"
+            "Date:    $(Get-Date -Format 'u')"
+          )
+          Set-Content -Path (Join-Path $dst 'VERSION.txt') -Value $lines -Encoding UTF8
+
+          Write-Host "Staged contents:"
+          Get-ChildItem $dst | Select-Object Name,
+            @{n='Size(KB)';e={[math]::Round($_.Length/1KB,1)}} |
+            Format-Table -AutoSize
+
+      - name: Create release zip
+        id: zip
+        shell: pwsh
+        run: |
+          $ver = if ($env:GITHUB_REF -match 'refs/tags/v(.+)') { $matches[1] } else { 'nightly' }
+          $zip = "OpenRig-Windows-x64-$ver.zip"
+          Compress-Archive -Path release -DestinationPath $zip -CompressionLevel Optimal
+          Write-Host "Created $zip ($([math]::Round((Get-Item $zip).Length/1MB,2)) MB)"
+          "zip_path=$zip" >> $env:GITHUB_OUTPUT
+
+      - name: Upload folder artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: release/**
+          if-no-files-found: error
+
+      - name: Upload zip artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}-zip
+          path: ${{ steps.zip.outputs.zip_path }}
+          if-no-files-found: error
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.zip.outputs.zip_path }}
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

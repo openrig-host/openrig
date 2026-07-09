@@ -22,7 +22,7 @@ public:
   OpenRigApplication() {}
 
   const juce::String getApplicationName() override {
-    return ProjectInfo::projectName;
+    return "OpenRig";
   }
   const juce::String getApplicationVersion() override {
     return ProjectInfo::versionString;
