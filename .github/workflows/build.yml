@@ -2,10 +2,10 @@ name: Build Windows
 
 on:
   push:
-    branches: [main, master]
+    branches: [main, master, trunk]
     tags: ['v*']
   pull_request:
-    branches: [main, master]
+    branches: [main, master, trunk]
   workflow_dispatch:
 
 permissions:
@@ -57,10 +57,10 @@ jobs:
         id: locate
         shell: pwsh
         run: |
-          $exe = Get-ChildItem -Path build -Recurse -Filter "DaveCore.exe" |
+          $exe = Get-ChildItem -Path build -Recurse -Filter "OpenRig.exe" |
                  Select-Object -First 1
           if (-not $exe) {
-            Write-Error "DaveCore.exe not found in build output"
+            Write-Error "OpenRig.exe not found in build output"
             exit 1
           }
           Write-Host "Found binary: $($exe.FullName)"

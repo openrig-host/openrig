@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../JuceLibraryCode/JuceHeader.h"
+#include <JuceHeader.h>
 #include "RigLibrary.h"
 #include "RigSerializer.h"
 #include "BoutiqueLookAndFeel.h"

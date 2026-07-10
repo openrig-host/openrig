@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../JuceLibraryCode/JuceHeader.h"
+#include <JuceHeader.h>
 #include "RackSlot.h"
 #include "BoutiqueLookAndFeel.h"
 #include "ThemeManager.h"
