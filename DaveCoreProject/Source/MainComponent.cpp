@@ -1366,11 +1366,13 @@ void MainComponent::loadRigAsync(const juce::File &file, int buttonIndexForHighl
 
                     // Update active index in SetlistManager if this file belongs to the setlist
                     auto& sm = OpenRig::SetlistManager::getInstance();
-                    const auto& setups = sm.getSetups();
-                    for (int i = 0; i < setups.size(); ++i) {
-                        if (setups[i] == file) {
-                            sm.setActiveIndex(i);
-                            break;
+                    if (sm.getActiveFile() != file) {
+                        const auto& setups = sm.getSetups();
+                        for (int i = 0; i < setups.size(); ++i) {
+                            if (setups[i] == file) {
+                                sm.setActiveIndex(i);
+                                break;
+                            }
                         }
                     }
                     sm.triggerPreloadOfNext();
