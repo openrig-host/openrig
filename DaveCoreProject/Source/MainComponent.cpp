@@ -154,8 +154,8 @@ MainComponent::MainComponent() {
         juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "Setlist", "Please save the current rig first before adding it to the setlist.");
       }
     };
-    slp->onLoadSetupRequested = [this](const juce::File &file) {
-      loadRigFromFile(file);
+    slp->onLoadSetupRequested = [this](const juce::File &file, int row) {
+      loadRigFromFile(file, row);
     };
   }
 
@@ -757,8 +757,7 @@ void MainComponent::setupHeaderButtons() {
       auto& sm = OpenRig::SetlistManager::getInstance();
       if (sm.hasPrev()) {
           int idx = sm.getActiveIndex() - 1;
-          sm.setActiveIndex(idx);
-          loadRigFromFile(sm.getActiveFile());
+          loadRigFromFile(sm.getSetups()[idx], idx);
       }
   };
 
@@ -769,8 +768,7 @@ void MainComponent::setupHeaderButtons() {
       auto& sm = OpenRig::SetlistManager::getInstance();
       if (sm.hasNext()) {
           int idx = sm.getActiveIndex() + 1;
-          sm.setActiveIndex(idx);
-          loadRigFromFile(sm.getActiveFile());
+          loadRigFromFile(sm.getSetups()[idx], idx);
       }
   };
 
@@ -1326,7 +1324,7 @@ void MainComponent::resized() {
 
 void MainComponent::hideLoadingOverlay() { loadingOverlay.reset(); }
 
-void MainComponent::loadRigAsync(const juce::File &file, int buttonIndexForHighlight) {
+void MainComponent::loadRigAsync(const juce::File &file, int buttonIndexForHighlight, int targetSetlistIndex) {
   if (!transitioner || transitioner->isBusy()) {
     juce::AlertWindow::showMessageBoxAsync(
         juce::MessageBoxIconType::InfoIcon, "Transition Busy",
@@ -1341,14 +1339,14 @@ void MainComponent::loadRigAsync(const juce::File &file, int buttonIndexForHighl
 
   // Defer the transition slightly to guarantee that the message thread paints
   // the LoadingOverlay before heavy VST builds block the event loop.
-  juce::Timer::callAfterDelay(50, [this, file, highlight]() {
+  juce::Timer::callAfterDelay(50, [this, file, highlight, targetSetlistIndex]() {
     if (!transitioner)
       return;
 
     transitioner->transitionToFile(file,
         OpenRig::RigTransitioner::Callbacks{
             [this](juce::String progress) { setLoadingMessage(progress); },
-            [this, highlight, file, fileName = file.getFileNameWithoutExtension()](bool ok, juce::String message, int) {
+            [this, highlight, file, targetSetlistIndex, fileName = file.getFileNameWithoutExtension()](bool ok, juce::String message, int) {
                 hideLoadingOverlay();
                 if (ok) {
                     setupNameLabel.setText(fileName, juce::dontSendNotification);
@@ -1366,7 +1364,9 @@ void MainComponent::loadRigAsync(const juce::File &file, int buttonIndexForHighl
 
                     // Update active index in SetlistManager if this file belongs to the setlist
                     auto& sm = OpenRig::SetlistManager::getInstance();
-                    if (sm.getActiveFile() != file) {
+                    if (targetSetlistIndex >= 0) {
+                        sm.setActiveIndex(targetSetlistIndex);
+                    } else if (sm.getActiveFile() != file) {
                         const auto& setups = sm.getSetups();
                         for (int i = 0; i < setups.size(); ++i) {
                             if (setups[i] == file) {
@@ -1571,10 +1571,10 @@ void MainComponent::loadRigFile(int index) {
   loadRigAsync(file, index);
 }
 
-void MainComponent::loadRigFromFile(const juce::File &file) {
+void MainComponent::loadRigFromFile(const juce::File &file, int targetSetlistIndex) {
   if (!file.existsAsFile())
     return;
-  loadRigAsync(file, -1);
+  loadRigAsync(file, -1, targetSetlistIndex);
   setupNameLabel.setText(file.getFileNameWithoutExtension(),
                          juce::dontSendNotification);
 }

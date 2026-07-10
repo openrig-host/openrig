@@ -106,7 +106,7 @@ public:
     }
 
     std::function<void()> onAddCurrentRequested;
-    std::function<void(const juce::File&)> onLoadSetupRequested;
+    std::function<void(const juce::File&, int)> onLoadSetupRequested;
 
     void changeListenerCallback(juce::ChangeBroadcaster*) override {
         listBox.updateContent();
@@ -145,9 +145,8 @@ public:
     void listBoxItemDoubleClicked(int row, const juce::MouseEvent&) override {
         auto setups = SetlistManager::getInstance().getSetups();
         if (row >= 0 && row < setups.size()) {
-            SetlistManager::getInstance().setActiveIndex(row);
             if (onLoadSetupRequested)
-                onLoadSetupRequested(setups[row]);
+                onLoadSetupRequested(setups[row], row);
         }
     }
 

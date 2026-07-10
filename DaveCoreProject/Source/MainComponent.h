@@ -123,7 +123,7 @@ private:
   void loadSetupFromButton(int buttonIndex);
   void assignJsonToButton(int buttonIndex);
   void loadRigFile(int index);
-  void loadRigFromFile(const juce::File &file);
+  void loadRigFromFile(const juce::File &file, int targetSetlistIndex = -1);
   void loadSetFile(const juce::File &file);
   void saveButtonMappings();
   void loadButtonMappings();
@@ -147,7 +147,7 @@ private:
   void hideLoadingOverlay();
 
   // Begin an async (non-freezing) rig load from a file.
-  void loadRigAsync(const juce::File &file, int buttonIndexForHighlight = -1);
+  void loadRigAsync(const juce::File &file, int buttonIndexForHighlight = -1, int targetSetlistIndex = -1);
 
   // Windows managed by MainComponent to prevent shutdown crashes
   juce::OwnedArray<juce::DocumentWindow> activePluginWindows;
