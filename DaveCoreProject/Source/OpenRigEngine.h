@@ -146,6 +146,7 @@ public:
       }
     }
     iemPluginChain.clear();
+    lastAppliedPluginStates.clear();
   }
 
   int getNumSlots() const { return (int)slots.size(); }
@@ -2112,6 +2113,7 @@ public:
     auto key = stagingKeyFor(slotIdx, chainIdx, isFohOrChannel);
     if (stagingHasKey(key)) {
       loadPluginFromVar(slotIdx, chainIdx, vt, isFohOrChannel);
+      lastAppliedPluginStates[key] = newStateBase64;
       return;
     }
 
@@ -2137,15 +2139,19 @@ public:
 
     // Compare paths - if same, just update state
     if (currentPlugin && normalizePath(currentPath) == normalizedNewPath) {
+      // Avoid redundant setStateInformation if the patch/state is identical.
+      // This saves seconds/tens of seconds for heavy plugins (Kontakt, Omnisphere).
+      auto it = lastAppliedPluginStates.find(key);
+      if (it != lastAppliedPluginStates.end() && it->second == newStateBase64) {
+        logToFile("TRACE: Skipping setStateInformation for " + currentPlugin->getName() + " - state is unchanged.");
+        return;
+      }
+
       juce::MemoryBlock blob;
       blob.fromBase64Encoding(newStateBase64);
-      // Thread safety: setStateInformation should be on message thread
-      // importRigFromJson already holds the lock, so we're safe to call this if
-      // we assume import is on message thread.
-      // Ideally we would ensure this runs on message thread, but existing logic
-      // is synchronous here.
       try {
         currentPlugin->setStateInformation(blob.getData(), (int)blob.getSize());
+        lastAppliedPluginStates[key] = newStateBase64;
       } catch (...) {
         logToFile("WARNING: setStateInformation threw for reused plugin, continuing");
       }
@@ -2154,6 +2160,7 @@ public:
 
     // Different plugin or no plugin - load new one
     loadPluginFromVar(slotIdx, chainIdx, vt, isFohOrChannel);
+    lastAppliedPluginStates[key] = newStateBase64;
   }
 
   void loadPluginFromVar(int slotIdx, int chainIdx, const juce::var &vt,
@@ -2427,6 +2434,7 @@ public:
   juce::CriticalSection stagingLock;
   std::map<juce::String, std::unique_ptr<juce::AudioPluginInstance>> stagedPlugins;
   std::map<juce::String, std::unique_ptr<juce::AudioPluginInstance>> preloadedPlugins;
+  std::map<juce::String, juce::String> lastAppliedPluginStates;
 
 public:
   std::vector<PluginInfo> availablePlugins = {
