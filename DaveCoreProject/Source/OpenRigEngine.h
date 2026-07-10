@@ -1124,6 +1124,27 @@ public:
       sampObj->setProperty("slots", samplerSlots);
       st->setProperty("sampler", sampObj);
 
+      // Save Arpeggiator Settings
+      auto *arpObj = new juce::DynamicObject();
+      auto &arp = s->getArpeggiator();
+      arpObj->setProperty("enabled", arp.enabled.load());
+      arpObj->setProperty("bpm", (double)arp.bpm.load());
+      arpObj->setProperty("octavesUp", arp.octavesUp.load());
+      arpObj->setProperty("octavesDown", arp.octavesDown.load());
+      arpObj->setProperty("gate", (double)arp.gate.load());
+      arpObj->setProperty("patternIdx", arp.patternIdx.load());
+      st->setProperty("arpeggiator", arpObj);
+
+      // Save Harmonizer Settings
+      auto *harmObj = new juce::DynamicObject();
+      auto &harm = s->getHarmonizer();
+      harmObj->setProperty("enabled", harm.enabled.load());
+      harmObj->setProperty("octavesUp", harm.octavesUp.load());
+      harmObj->setProperty("octavesDown", harm.octavesDown.load());
+      harmObj->setProperty("africaMode", harm.africaMode.load());
+      harmObj->setProperty("harmonyTargetSlot", harm.harmonyTargetSlot.load());
+      st->setProperty("harmonizer", harmObj);
+
       // Save CC-to-Parameter mappings
       juce::Array<juce::var> ccMappingNodes;
       for (const auto &pair : s->getCCMappings()) {
