@@ -97,8 +97,9 @@ MainComponent::MainComponent() {
   // Async rig transitioner (Pillar B: trustworthy, non-freezing song switches)
   transitioner = std::make_unique<OpenRig::RigTransitioner>(engine);
 
-  // Listen for audio/MIDI device changes
+  // Listen for audio/MIDI/setlist changes
   deviceManager.addChangeListener(this);
+  OpenRig::SetlistManager::getInstance().addChangeListener(this);
 
   // Load persisted theme before applying the look and feel so the LnF reflects
   // the user's saved choice on first paint.
@@ -187,6 +188,7 @@ MainComponent::~MainComponent() {
     transitioner->stopTransition();
   activePluginWindows.clear();
   deviceManager.removeChangeListener(this);
+  OpenRig::SetlistManager::getInstance().removeChangeListener(this);
   ThemeManager::getInstance().removeChangeListener(this);
   saveAudioSettings();
   deviceManager.removeMidiInputDeviceCallback({}, this);
@@ -784,6 +786,12 @@ void MainComponent::setupHeaderButtons() {
   setupNameLabel.setFont(juce::FontOptions(22.0f, juce::Font::bold));
   setupNameLabel.setColour(juce::Label::textColourId, ThemeManager::get(Theme::Role::accent));
   setupNameLabel.setJustificationType(juce::Justification::centredLeft);
+
+  addAndMakeVisible(preloadStatusLabel);
+  preloadStatusLabel.setFont(juce::FontOptions(13.0f, juce::Font::italic));
+  preloadStatusLabel.setJustificationType(juce::Justification::centredRight);
+  preloadStatusLabel.setColour(juce::Label::textColourId, ThemeManager::get(Theme::Role::textDim));
+  updatePreloadStatus();
 }
 
 
@@ -1086,6 +1094,34 @@ void MainComponent::changeListenerCallback(juce::ChangeBroadcaster* source) {
     repaint();
     for (auto* c : getChildren())
       c->repaint();
+  } else if (source == &OpenRig::SetlistManager::getInstance()) {
+    updatePreloadStatus();
+  }
+}
+
+void MainComponent::updatePreloadStatus() {
+  auto& sm = OpenRig::SetlistManager::getInstance();
+  if (!sm.hasNext()) {
+    preloadStatusLabel.setText("", juce::dontSendNotification);
+    preloadStatusLabel.setVisible(false);
+    return;
+  }
+
+  juce::String nextName = sm.getNextFile().getFileNameWithoutExtension();
+  preloadStatusLabel.setVisible(true);
+
+  if (sm.isPreloading()) {
+    preloadStatusLabel.setText("Preloading next: " + nextName + "...", juce::dontSendNotification);
+    preloadStatusLabel.setColour(juce::Label::textColourId, ThemeManager::get(Theme::Role::warn));
+  } else if (sm.isPreloaded()) {
+    preloadStatusLabel.setText("Next Ready: " + nextName, juce::dontSendNotification);
+    preloadStatusLabel.setColour(juce::Label::textColourId, ThemeManager::get(Theme::Role::ok));
+  } else if (sm.isPreloadFailed()) {
+    preloadStatusLabel.setText("Preload Failed: " + nextName, juce::dontSendNotification);
+    preloadStatusLabel.setColour(juce::Label::textColourId, juce::Colour(0xffff4444));
+  } else {
+    preloadStatusLabel.setText("Next: " + nextName + " (Not Preloaded)", juce::dontSendNotification);
+    preloadStatusLabel.setColour(juce::Label::textColourId, ThemeManager::get(Theme::Role::textDim));
   }
 }
 
@@ -1174,6 +1210,7 @@ void MainComponent::resized() {
   loadBtn.setBounds(header.removeFromRight(100).reduced(5));
   nextSetlistBtn.setBounds(header.removeFromRight(40).reduced(5));
   prevSetlistBtn.setBounds(header.removeFromRight(40).reduced(5));
+  preloadStatusLabel.setBounds(header.removeFromRight(200).reduced(5));
 
   // Panic / Exit in middle-ish (Reset Audio is now in the settings overlay)
   panicBtn.setBounds(header.removeFromRight(80).reduced(5));

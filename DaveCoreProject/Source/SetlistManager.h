@@ -17,8 +17,14 @@ public:
     void preloadSetup(const juce::File& file) {
         stopPreloading();
         setupFile = file;
-        if (engine != nullptr && setupFile.existsAsFile())
+        isPreloaded = false;
+        isPreloadFailed = false;
+        if (engine != nullptr && setupFile.existsAsFile()) {
             startThread(juce::Thread::Priority::normal);
+            triggerChangeCallback();
+        } else {
+            triggerChangeCallback();
+        }
     }
 
     void stopPreloading() {
@@ -26,6 +32,8 @@ public:
             signalThreadShouldExit();
             waitForThreadToExit(3000);
         }
+        isPreloaded = false;
+        isPreloadFailed = false;
     }
 
     void run() override {
@@ -33,17 +41,44 @@ public:
         engine->clearPreloadedCache();
 
         auto loaded = RigSerializer::load(setupFile);
-        if (!loaded.ok) return;
+        if (!loaded.ok) {
+            isPreloadFailed = true;
+            triggerChangeCallback();
+            return;
+        }
 
         if (threadShouldExit()) return;
 
         // Build with isPreload = true so instances are stored in preloadedPlugins
-        RigBuilder::build(*engine, loaded.rig, nullptr, true);
+        auto buildResult = RigBuilder::build(*engine, loaded.rig, nullptr, true);
+        if (!buildResult.ok) {
+            isPreloadFailed = true;
+        } else {
+            isPreloaded = true;
+        }
+        triggerChangeCallback();
     }
 
+    bool isPreloading() const { return isThreadRunning(); }
+    bool getIsPreloaded() const { return isPreloaded; }
+    bool getIsPreloadFailed() const { return isPreloadFailed; }
+    juce::File getSetupFile() const { return setupFile; }
+
+    std::function<void()> onStateChanged;
+
 private:
+    void triggerChangeCallback() {
+        if (onStateChanged) {
+            juce::MessageManager::getInstance()->callAsync([this]() {
+                if (onStateChanged) onStateChanged();
+            });
+        }
+    }
+
     OpenRigEngine* engine;
     juce::File setupFile;
+    std::atomic<bool> isPreloaded{false};
+    std::atomic<bool> isPreloadFailed{false};
 };
 
 class SetlistManager : public juce::ChangeBroadcaster {
@@ -56,6 +91,22 @@ public:
     void setEngine(OpenRigEngine* newEngine) {
         engine = newEngine;
         preloaderThread = std::make_unique<SetlistPreloaderThread>(engine);
+        preloaderThread->onStateChanged = [this]() {
+            sendChangeMessage();
+        };
+    }
+
+    bool isPreloading() const {
+        return preloaderThread ? preloaderThread->isPreloading() : false;
+    }
+    bool isPreloaded() const {
+        return preloaderThread ? preloaderThread->getIsPreloaded() : false;
+    }
+    bool isPreloadFailed() const {
+        return preloaderThread ? preloaderThread->getIsPreloadFailed() : false;
+    }
+    juce::String getPreloadSetupName() const {
+        return preloaderThread ? preloaderThread->getSetupFile().getFileNameWithoutExtension() : "";
     }
 
     const juce::Array<juce::File>& getSetups() const { return setups; }
@@ -205,13 +256,18 @@ public:
         if (nextFile.existsAsFile()) {
             preloaderThread->preloadSetup(nextFile);
         } else {
+            preloaderThread->stopPreloading();
             engine->clearPreloadedCache();
+            sendChangeMessage();
         }
     }
 
 private:
     SetlistManager() {
         preloaderThread = std::make_unique<SetlistPreloaderThread>(nullptr);
+        preloaderThread->onStateChanged = [this]() {
+            sendChangeMessage();
+        };
     }
     ~SetlistManager() override {
         if (preloaderThread)

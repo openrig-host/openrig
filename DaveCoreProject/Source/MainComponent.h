@@ -133,6 +133,7 @@ private:
   void showScanResultsDialog(const OpenRigEngine::ScanResults &results);
   void showMasterPluginMenu(bool isFoh, int chainIndex);
   void openMasterPluginEditor(bool isFoh, int chainIndex);
+  void updatePreloadStatus();
 
   // --- Setup Helpers (extracted from constructor) ---
   void setupSlotComponents();
@@ -168,6 +169,7 @@ private:
   juce::Label cpuLabel{"cpuLabel", "CPU: 0%"};
   juce::Label ramLabel{"ramLabel", "RAM: 0%"};
   juce::Label setupNameLabel{"setupNameLabel", "No rig loaded"};
+  juce::Label preloadStatusLabel{"preloadStatusLabel", ""};
   juce::Rectangle<int> headerBounds;
   juce::Rectangle<int> masterColumnBounds;
   juce::ComboBox schemeSelector;
