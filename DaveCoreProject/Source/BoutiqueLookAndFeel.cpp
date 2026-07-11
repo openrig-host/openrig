@@ -249,7 +249,9 @@ void BoutiqueLookAndFeel::drawButtonText(juce::Graphics &g, juce::TextButton &bu
 
   float fontSize = 11.0f;
   int w = button.getWidth();
-  if (w < 26) {
+  if (w >= 70) {
+    fontSize = 24.0f;
+  } else if (w < 26) {
     fontSize = 7.0f; // extra tiny
   } else if (w < 32) {
     fontSize = 8.0f; // tiny

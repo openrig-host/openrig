@@ -781,7 +781,7 @@ void MainComponent::setupHeaderButtons() {
   ramLabel.setColour(juce::Label::textColourId, ThemeManager::get(Theme::Role::meterMid));
 
   addAndMakeVisible(setupNameLabel);
-  setupNameLabel.setFont(juce::FontOptions(22.0f, juce::Font::bold));
+  setupNameLabel.setFont(juce::FontOptions(32.0f, juce::Font::bold));
   setupNameLabel.setColour(juce::Label::textColourId, ThemeManager::get(Theme::Role::accent));
   setupNameLabel.setJustificationType(juce::Justification::centredLeft);
 
@@ -1189,30 +1189,31 @@ void MainComponent::paint(juce::Graphics &g) {
 void MainComponent::resized() {
   auto r = getLocalBounds();
 
-  // Header area - Row 1: buttons
-  auto header = r.removeFromTop(40);
-  headerBounds = header;
-  // Library sidebar toggle (left edge)
-  toggleLibraryBtn.setBounds(header.removeFromLeft(30).reduced(3));
-  // Add About Button (Icon) first
-  aboutBtn.setBounds(header.removeFromLeft(40).reduced(5));
+  // Header area - Row 1: Stage View (Large setup name + setlist nav)
+  auto stageHeader = r.removeFromTop(60);
+  setupNameLabel.setBounds(stageHeader.removeFromLeft(400).reduced(5));
+  nextSetlistBtn.setBounds(stageHeader.removeFromRight(80).reduced(5));
+  prevSetlistBtn.setBounds(stageHeader.removeFromRight(80).reduced(5));
+  preloadStatusLabel.setBounds(stageHeader.removeFromRight(200).reduced(10));
 
-  settingsGearBtn.setBounds(header.removeFromLeft(44).reduced(5));
-  midiMonitorLabel.setBounds(header.removeFromLeft(140).reduced(5));
-  midiMonitorToggle.setBounds(header.removeFromLeft(75).reduced(5));
-  cpuLabel.setBounds(header.removeFromLeft(70).reduced(5));
-  ramLabel.setBounds(header.removeFromLeft(70).reduced(5));
-  setupNameLabel.setBounds(header.removeFromLeft(240).reduced(5));
+  // Header area - Row 2: Controls & Meters
+  auto controlBar = r.removeFromTop(40);
+  headerBounds = stageHeader.getUnion(controlBar);
 
-  saveBtn.setBounds(header.removeFromRight(100).reduced(5));
-  loadBtn.setBounds(header.removeFromRight(100).reduced(5));
-  nextSetlistBtn.setBounds(header.removeFromRight(40).reduced(5));
-  prevSetlistBtn.setBounds(header.removeFromRight(40).reduced(5));
-  preloadStatusLabel.setBounds(header.removeFromRight(200).reduced(5));
+  toggleLibraryBtn.setBounds(controlBar.removeFromLeft(30).reduced(3));
+  aboutBtn.setBounds(controlBar.removeFromLeft(40).reduced(5));
+  settingsGearBtn.setBounds(controlBar.removeFromLeft(44).reduced(5));
+  midiMonitorLabel.setBounds(controlBar.removeFromLeft(140).reduced(5));
+  midiMonitorToggle.setBounds(controlBar.removeFromLeft(75).reduced(5));
+  cpuLabel.setBounds(controlBar.removeFromLeft(70).reduced(5));
+  ramLabel.setBounds(controlBar.removeFromLeft(70).reduced(5));
+
+  saveBtn.setBounds(controlBar.removeFromRight(100).reduced(5));
+  loadBtn.setBounds(controlBar.removeFromRight(100).reduced(5));
 
   // Panic / Exit in middle-ish (Reset Audio is now in the settings overlay)
-  panicBtn.setBounds(header.removeFromRight(80).reduced(5));
-  exitBtn.setBounds(header.removeFromRight(60).reduced(5));
+  panicBtn.setBounds(controlBar.removeFromRight(80).reduced(5));
+  exitBtn.setBounds(controlBar.removeFromRight(60).reduced(5));
 
   // Header area - Row 2: setup buttons (smaller)
   auto presetRow = r.removeFromTop(30);
