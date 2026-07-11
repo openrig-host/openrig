@@ -180,9 +180,12 @@ MainComponent::MainComponent() {
   refreshSceneButtons();
 
   LOG_INFO("OpenRig initialized successfully");
+  setWantsKeyboardFocus (true);
+  addKeyListener (this);
 }
 
 MainComponent::~MainComponent() {
+  removeKeyListener (this);
   stopTimer();
   if (transitioner)
     transitioner->stopTransition();
@@ -1741,5 +1744,21 @@ void MainComponent::mouseDown(const juce::MouseEvent &e) {
       return;
     }
   }
+}
+
+bool MainComponent::keyPressed (const juce::KeyPress& key, juce::Component*) {
+  if (key == juce::KeyPress::spaceKey) {
+    auto& sm = OpenRig::SetlistManager::getInstance();
+    if (sm.hasNext()) {
+      int idx = sm.getActiveIndex() + 1;
+      loadRigFromFile(sm.getSetups()[idx], idx);
+    }
+    return true;
+  }
+  else if (key.isKeyCode ('P') || key.isKeyCode ('p')) {
+    engine.triggerPanic();
+    return true;
+  }
+  return false;
 }
 

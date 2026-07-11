@@ -33,13 +33,15 @@ class MainComponent : public juce::Component,
                       public juce::MidiInputCallback,
                       public juce::AudioIODeviceCallback,
                       public juce::ChangeListener,
-                      public juce::Timer {
+                      public juce::Timer,
+                      public juce::KeyListener {
 public:
   //==============================================================================
   MainComponent();
   ~MainComponent() override;
 
   void timerCallback() override;
+  bool keyPressed (const juce::KeyPress& key, juce::Component* originatingComponent) override;
 
   // --- AudioIODeviceCallback ---
   void audioDeviceIOCallbackWithContext(
@@ -175,6 +177,7 @@ private:
   juce::ComboBox schemeSelector;
 
   juce::MidiMessageCollector midiCollector;
+
   bool mmcssRegistered = false; // Windows MMCSS audio thread priority flag
 #ifdef _WIN32
   HMODULE avrtModule = nullptr;
