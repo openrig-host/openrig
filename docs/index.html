@@ -14,10 +14,10 @@
     --bg-3: #f1f5f9;
     --panel: #ffffff;
     --border: #e2e8f0;
-    --text: #555555;
-    --text-dark: #333333;
-    --text-dim: #777777;
-    --text-faint: #888888;
+    --text: #334155;          /* slate 700 - much better contrast */
+    --text-dark: #0f172a;     /* slate 900 - much clearer headers */
+    --text-dim: #475569;      /* slate 600 */
+    --text-faint: #64748b;    /* slate 500 */
     --accent: #ed786a;        /* Warm coral-red accent color from Strongly Typed */
     --accent-2: #7c3aed;      /* purple */
     --warn: #ea580c;
@@ -34,9 +34,9 @@
     background: #f4f6f9;
     color: var(--text);
     font-family: var(--sans);
-    font-weight: 300;
-    line-height: 1.7em;
-    font-size: 16px;
+    font-weight: 400;         /* 400 instead of 300 for much better legibility */
+    line-height: 1.75em;
+    font-size: 18px;          /* 18px instead of 16px */
     -webkit-font-smoothing: antialiased;
   }
 
@@ -186,7 +186,7 @@
 
   h2 {
     font-family: 'Arvo', Georgia, serif;
-    font-size: 26px;
+    font-size: 32px;          /* 32px instead of 26px */
     margin: 0 0 12px;
     font-weight: 700;
     letter-spacing: 1px;
@@ -197,14 +197,14 @@
 
   .section-sub {
     color: var(--text-dim);
-    font-size: 16px;
+    font-size: 19px;          /* 19px instead of 16px */
     margin: 0 0 32px;
     max-width: 720px;
   }
 
   h3 {
     font-family: 'Source Sans Pro', sans-serif;
-    font-size: 16px;
+    font-size: 21px;          /* 21px instead of 16px */
     margin: 32px 0 16px;
     color: var(--text-dark);
     font-weight: 600;
@@ -253,14 +253,14 @@
 
   .card h3 {
     margin: 0 0 8px;
-    font-size: 15px;
+    font-size: 18px;          /* 18px instead of 15px */
     border-bottom: none;
     padding-bottom: 0;
   }
   .card p {
     margin: 0;
     color: var(--text-dim);
-    font-size: 14px;
+    font-size: 16px;          /* 16px instead of 14px */
     text-align: left;
   }
 
@@ -326,17 +326,17 @@
   }
   .warning h3 {
     margin: 0 0 8px;
-    font-size: 17px;
+    font-size: 20px;          /* 20px instead of 17px */
     color: var(--warn);
   }
   .warning p {
     margin: 0 0 10px;
     color: var(--text);
-    font-size: 15px;
+    font-size: 17px;          /* 17px instead of 15px */
   }
-  .warning ul { margin: 8px 0 0; padding-left: 22px; color: var(--text-dim); font-size: 14px; }
+  .warning ul { margin: 8px 0 0; padding-left: 22px; color: var(--text-dim); font-size: 16px; }
   .warning li { margin-bottom: 4px; }
-
+ 
   /* Honest-vibe callout */
   .honest {
     background: linear-gradient(180deg, rgba(77, 208, 225, 0.07), rgba(77, 208, 225, 0.02));
@@ -347,17 +347,17 @@
     margin: 0 auto 48px;
     max-width: 1100px;
     color: var(--text);
-    font-size: 15px;
+    font-size: 17px;          /* 17px instead of 15px */
   }
   .honest strong { color: var(--accent); }
   .honest a { color: var(--accent); }
-
+ 
   /* Tables */
   table.vst {
     width: 100%;
     border-collapse: collapse;
     margin: 16px 0 24px;
-    font-size: 14px;
+    font-size: 16px;          /* 16px instead of 14px */
   }
   table.vst th, table.vst td {
     text-align: left;
@@ -369,13 +369,13 @@
     background: var(--bg-2);
     color: var(--text-dim);
     font-weight: 600;
-    font-size: 12px;
+    font-size: 14px;          /* 14px instead of 12px */
     text-transform: uppercase;
     letter-spacing: 0.05em;
   }
   table.vst tr:hover td { background: var(--bg-2); }
   table.vst td:first-child { color: var(--text); font-weight: 500; }
-  table.vst td:nth-child(2) { color: var(--text-dim); font-family: var(--mono); font-size: 13px; }
+  table.vst td:nth-child(2) { color: var(--text-dim); font-family: var(--mono); font-size: 15px; }
 
   @media (max-width: 600px) {
     .hero { padding: 64px 0 48px; }
