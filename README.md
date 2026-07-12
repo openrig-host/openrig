@@ -29,6 +29,7 @@ All data under `%APPDATA%/OpenRig/`: `songs/`, `sets/`, `backups/`, `settings/`.
 ## Master Controller
 Yamaha CK88. MIDI channel routing is configurable (global default + per-slot override).
 
+
+Want a Windows binary? Skip over to https://github.com/openrig-host/openrig/releases
 ---
-*Created with Antigravity*
-*Last updated: June 2026*
+*Last updated: July 2026*
