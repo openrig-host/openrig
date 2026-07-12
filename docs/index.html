@@ -4,26 +4,27 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>OpenRig — The Sovereign Live Performance Engine</title>
-<meta name="description" content="A rack-based VST3 host built for live keyboardists. Atomic song switching, dual-bus mixing, MIDI learn, setlist preloading, and a panic button that works in the next audio block." />
-<style>
-  @import url("https://fonts.googleapis.com/css?family=Source+Sans+Pro:300,400,600|Arvo:700");
+<meta name="description" content="A rack-based VST3 host built for live keyboardists. Atomic song switching, dual-bus mixing, MIDI learn, setlist preloading, and a panic button that works in the next audio block." /><style>
+  @import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Arvo:wght@400;700&display=swap");
 
   :root {
-    --bg: #ffffff;
-    --bg-2: #f8fafc;
-    --bg-3: #f1f5f9;
-    --panel: #ffffff;
-    --border: #e2e8f0;
-    --text: #334155;          /* slate 700 - much better contrast */
-    --text-dark: #0f172a;     /* slate 900 - much clearer headers */
-    --text-dim: #475569;      /* slate 600 */
+    --bg: #080b11;
+    --bg-2: #0f131a;
+    --bg-3: #181d26;
+    --panel: rgba(15, 19, 26, 0.7);
+    --border: rgba(255, 255, 255, 0.08);
+    --border-hover: rgba(237, 120, 106, 0.3);
+    --text: #cbd5e1;          /* slate 300 */
+    --text-dark: #f8fafc;     /* slate 50 */
+    --text-dim: #94a3b8;      /* slate 400 */
     --text-faint: #64748b;    /* slate 500 */
-    --accent: #ed786a;        /* Warm coral-red accent color from Strongly Typed */
-    --accent-2: #7c3aed;      /* purple */
-    --warn: #ea580c;
-    --good: #16a34a;
+    --accent: #ed786a;        /* Warm coral-red accent color */
+    --accent-glow: rgba(237, 120, 106, 0.15);
+    --accent-2: #8b5cf6;      /* purple */
+    --warn: #f97316;
+    --good: #22c55e;
     --mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
-    --sans: 'Source Sans Pro', -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+    --sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
   }
 
   * { box-sizing: border-box; }
@@ -31,12 +32,12 @@
   html, body {
     margin: 0;
     padding: 0;
-    background: #f4f6f9;
+    background: var(--bg);
     color: var(--text);
     font-family: var(--sans);
-    font-weight: 400;         /* 400 instead of 300 for much better legibility */
-    line-height: 1.75em;
-    font-size: 18px;          /* 18px instead of 16px */
+    font-weight: 400;
+    line-height: 1.8em;
+    font-size: 18px;
     -webkit-font-smoothing: antialiased;
   }
 
@@ -44,12 +45,11 @@
     color: var(--text-dark); 
     text-decoration: none; 
     border-bottom: solid 1px var(--border);
-    transition: color 0.2s ease, border-color 0.2s ease;
+    transition: all 0.2s ease;
   }
   a:hover { 
     color: var(--accent); 
-    border-bottom-color: transparent;
-    text-decoration: none;
+    border-bottom-color: var(--accent);
   }
 
   code, kbd, pre {
@@ -62,7 +62,7 @@
     border: 1px solid var(--border);
     border-radius: 4px;
     padding: 2px 6px;
-    color: #0f172a;
+    color: #f8fafc;
   }
 
   pre {
@@ -81,39 +81,40 @@
 
   /* Layout */
   .container {
-    max-width: 1100px;
+    max-width: 1000px;
     margin: 0 auto;
     padding: 0 24px;
   }
 
   /* Hero */
   .hero {
-    padding: 80px 0 64px;
+    position: relative;
+    padding: 100px 0 80px;
     text-align: center;
-    background: #ffffff;
+    background: radial-gradient(circle at top, rgba(237, 120, 106, 0.1) 0%, transparent 65%);
     border-bottom: 1px solid var(--border);
-    margin-bottom: 48px;
+    margin-bottom: 0;
   }
 
   .badge {
     display: inline-block;
-    padding: 4px 12px;
+    padding: 4px 14px;
     border: 1px solid var(--border);
     border-radius: 999px;
     font-family: var(--mono);
-    font-size: 11px;
-    color: var(--text-dim);
-    background: var(--bg-2);
-    margin-bottom: 20px;
+    font-size: 12px;
+    color: var(--accent);
+    background: rgba(237, 120, 106, 0.05);
+    margin-bottom: 24px;
     letter-spacing: 0.05em;
     text-transform: uppercase;
   }
 
   h1 {
     font-family: 'Arvo', Georgia, serif;
-    font-size: clamp(36px, 5vw, 56px);
+    font-size: clamp(40px, 6vw, 64px);
     line-height: 1.2;
-    margin: 0 0 16px;
+    margin: 0 0 20px;
     font-weight: 700;
     letter-spacing: 1px;
     color: var(--text-dark);
@@ -121,73 +122,109 @@
   }
 
   .tagline {
-    font-size: clamp(16px, 1.8vw, 20px);
+    font-size: clamp(18px, 2.2vw, 22px);
     color: var(--text-dim);
-    max-width: 720px;
-    margin: 0 auto 32px;
+    max-width: 760px;
+    margin: 0 auto 36px;
     line-height: 1.6em;
   }
 
   .cta {
     display: inline-flex;
-    gap: 12px;
+    gap: 16px;
     flex-wrap: wrap;
     justify-content: center;
   }
 
   .btn {
-    display: inline-block;
-    padding: 12px 26px;
-    border-radius: 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 14px 30px;
+    border-radius: 8px;
     font-weight: 600;
     font-size: 14px;
     text-transform: uppercase;
-    letter-spacing: 1px;
-    border: 1px solid var(--border);
-    transition: all 0.2s ease;
-    border-bottom: 1px solid var(--border);
+    letter-spacing: 0.05em;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    cursor: pointer;
+    border: 1px solid transparent;
   }
 
   .btn:hover { 
-    transform: translateY(-1px); 
-    text-decoration: none; 
-    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+    transform: translateY(-2px); 
   }
 
   .btn-primary {
-    background: var(--accent);
+    background: linear-gradient(135deg, var(--accent) 0%, #ff8e80 100%);
     color: #ffffff;
-    border-color: var(--accent);
+    box-shadow: 0 4px 20px var(--accent-glow);
   }
   .btn-primary:hover { 
-    background: #f19084; 
-    border-color: #f19084;
-    color: #ffffff;
+    box-shadow: 0 6px 24px rgba(237, 120, 106, 0.35);
   }
 
   .btn-secondary {
-    background: var(--bg-2);
+    background: rgba(255, 255, 255, 0.04);
     color: var(--text-dark);
+    border: 1px solid var(--border);
   }
   .btn-secondary:hover { 
-    background: var(--bg-3); 
+    background: rgba(255, 255, 255, 0.08);
     border-color: var(--accent);
+  }
+
+  /* Screenshot Container Styles */
+  .screenshot-container {
+    margin: 48px auto 0;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    background: #0d0f14;
+    text-align: center;
+    max-width: 900px;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+    transition: all 0.3s ease;
+  }
+  .screenshot-container:hover {
+    border-color: var(--border-hover);
+    transform: translateY(-2px);
+    box-shadow: 0 25px 50px rgba(0, 0, 0, 0.5);
+  }
+  .screenshot-header {
+    padding: 12px 18px;
+    border-bottom: 1px solid var(--border);
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--text-dim);
+    background: #11151e;
+    text-align: left;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .screenshot-header::before {
+    content: "";
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
   }
 
   /* Section Frames */
   section {
-    padding: 48px;
-    background: #ffffff;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    box-shadow: 0 2px 12px rgba(0,0,0,0.02);
-    margin-bottom: 32px;
+    padding: 90px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  section:nth-of-type(even) {
+    background: rgba(255, 255, 255, 0.015);
   }
 
   h2 {
     font-family: 'Arvo', Georgia, serif;
-    font-size: 32px;          /* 32px instead of 26px */
-    margin: 0 0 12px;
+    font-size: 34px;
+    margin: 0 0 16px;
     font-weight: 700;
     letter-spacing: 1px;
     text-transform: uppercase;
@@ -197,78 +234,85 @@
 
   .section-sub {
     color: var(--text-dim);
-    font-size: 19px;          /* 19px instead of 16px */
-    margin: 0 0 32px;
-    max-width: 720px;
+    font-size: 20px;
+    margin: 0 0 40px;
+    max-width: 800px;
+    line-height: 1.5;
   }
 
   h3 {
-    font-family: 'Source Sans Pro', sans-serif;
-    font-size: 21px;          /* 21px instead of 16px */
-    margin: 32px 0 16px;
+    font-family: 'Inter', sans-serif;
+    font-size: 22px;
+    margin: 48px 0 20px;
     color: var(--text-dark);
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 1px;
-    border-bottom: 2px solid var(--bg-3);
-    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 10px;
+    display: flex;
+    align-items: center;
   }
   h3 .dot {
     display: inline-block;
     width: 8px; height: 8px;
     background: var(--accent);
     border-radius: 50%;
-    margin-right: 8px;
-    transform: translateY(-1px);
+    margin-right: 12px;
   }
 
   /* Grids */
   .features {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-    gap: 20px;
+    gap: 24px;
   }
 
   .card {
-    background: var(--bg-2);
+    background: rgba(255, 255, 255, 0.02);
     border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 22px;
-    transition: all 0.2s ease;
+    border-radius: 8px;
+    padding: 28px;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   }
   .card:hover { 
     border-color: var(--accent); 
-    transform: translateY(-2px);
-    box-shadow: 0 4px 15px rgba(0,0,0,0.03);
+    background: rgba(255, 255, 255, 0.04);
+    transform: translateY(-4px);
+    box-shadow: 0 10px 30px rgba(237, 120, 106, 0.05);
   }
 
   .card .icon {
     display: inline-block;
     font-family: var(--mono);
     color: var(--accent);
-    font-size: 12px;
-    margin-bottom: 8px;
+    font-size: 13px;
+    margin-bottom: 12px;
     letter-spacing: 0.05em;
+    font-weight: 600;
   }
 
   .card h3 {
-    margin: 0 0 8px;
-    font-size: 18px;          /* 18px instead of 15px */
+    margin: 0 0 12px;
+    font-size: 19px;
     border-bottom: none;
     padding-bottom: 0;
+    text-transform: none;
+    letter-spacing: 0;
   }
   .card p {
     margin: 0;
     color: var(--text-dim);
-    font-size: 16px;          /* 16px instead of 14px */
+    font-size: 16px;
     text-align: left;
+    line-height: 1.6;
   }
 
   /* Architecture diagram */
   .diagram {
     background: var(--bg-2);
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: 8px;
     padding: 24px;
     overflow-x: auto;
   }
@@ -278,111 +322,115 @@
     padding: 0;
     margin: 0;
     color: var(--text-dark);
-    font-size: 13px;
+    font-size: 14px;
     line-height: 1.5;
   }
 
   /* Footer */
   footer {
-    padding: 64px 0;
+    padding: 80px 0;
     text-align: center;
     color: var(--text-faint);
-    font-size: 14px;
-    background: #ffffff;
+    font-size: 15px;
+    background: var(--bg-2);
     border-top: 1px solid var(--border);
-    margin-top: 64px;
   }
   footer a { color: var(--text-dim); }
 
   /* Pills */
   .pill-row {
     display: flex;
-    gap: 8px;
+    gap: 10px;
     flex-wrap: wrap;
-    margin: 16px 0 32px;
+    margin: 24px 0 40px;
   }
   .pill {
     display: inline-block;
-    padding: 4px 10px;
+    padding: 6px 14px;
     border-radius: 999px;
-    background: var(--bg-3);
+    background: rgba(255, 255, 255, 0.04);
     border: 1px solid var(--border);
     font-family: var(--mono);
-    font-size: 12px;
+    font-size: 13px;
     color: var(--text-dim);
   }
-  .pill.ok { color: var(--good); border-color: rgba(102, 187, 106, 0.3); }
-  .pill.warn { color: var(--warn); border-color: rgba(255, 112, 67, 0.3); }
+  .pill.ok { color: var(--good); border-color: rgba(34, 197, 94, 0.3); background: rgba(34, 197, 94, 0.05); }
+  .pill.warn { color: var(--warn); border-color: rgba(249, 115, 22, 0.3); background: rgba(249, 115, 22, 0.05); }
 
   /* Warning banner */
   .warning {
-    background: linear-gradient(180deg, rgba(255, 112, 67, 0.08), rgba(255, 112, 67, 0.02));
-    border: 1px solid rgba(255, 112, 67, 0.4);
+    background: linear-gradient(180deg, rgba(249, 115, 22, 0.08), rgba(249, 115, 22, 0.02));
+    border: 1px solid rgba(249, 115, 22, 0.3);
     border-left: 4px solid var(--warn);
-    border-radius: 10px;
-    padding: 20px 24px;
-    margin: -32px auto 48px;
-    max-width: 1100px;
+    border-radius: 12px;
+    padding: 28px 32px;
+    margin: 48px auto;
+    max-width: 1000px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
   }
   .warning h3 {
-    margin: 0 0 8px;
-    font-size: 20px;          /* 20px instead of 17px */
+    margin: 0 0 12px;
+    font-size: 22px;
     color: var(--warn);
+    border: none;
+    padding: 0;
   }
   .warning p {
-    margin: 0 0 10px;
+    margin: 0 0 12px;
     color: var(--text);
-    font-size: 17px;          /* 17px instead of 15px */
+    font-size: 17px;
   }
-  .warning ul { margin: 8px 0 0; padding-left: 22px; color: var(--text-dim); font-size: 16px; }
-  .warning li { margin-bottom: 4px; }
- 
+  .warning ul { margin: 12px 0 0; padding-left: 24px; color: var(--text-dim); font-size: 16px; }
+  .warning li { margin-bottom: 6px; }
+
   /* Honest-vibe callout */
   .honest {
-    background: linear-gradient(180deg, rgba(77, 208, 225, 0.07), rgba(77, 208, 225, 0.02));
-    border: 1px solid rgba(77, 208, 225, 0.35);
-    border-left: 4px solid var(--accent);
-    border-radius: 10px;
-    padding: 18px 24px;
-    margin: 0 auto 48px;
-    max-width: 1100px;
+    background: linear-gradient(180deg, rgba(139, 92, 246, 0.08), rgba(139, 92, 246, 0.02));
+    border: 1px solid rgba(139, 92, 246, 0.3);
+    border-left: 4px solid var(--accent-2);
+    border-radius: 12px;
+    padding: 28px 32px;
+    margin: 48px auto;
+    max-width: 1000px;
     color: var(--text);
-    font-size: 17px;          /* 17px instead of 15px */
+    font-size: 17px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
   }
-  .honest strong { color: var(--accent); }
+  .honest strong { color: var(--text-dark); }
   .honest a { color: var(--accent); }
- 
+
   /* Tables */
   table.vst {
     width: 100%;
     border-collapse: collapse;
-    margin: 16px 0 24px;
-    font-size: 16px;          /* 16px instead of 14px */
+    margin: 24px 0 32px;
+    font-size: 16px;
   }
   table.vst th, table.vst td {
     text-align: left;
-    padding: 10px 12px;
+    padding: 14px 16px;
     border-bottom: 1px solid var(--border);
     vertical-align: top;
   }
   table.vst th {
-    background: var(--bg-2);
+    background: rgba(255, 255, 255, 0.02);
     color: var(--text-dim);
     font-weight: 600;
-    font-size: 14px;          /* 14px instead of 12px */
+    font-size: 13px;
     text-transform: uppercase;
     letter-spacing: 0.05em;
   }
-  table.vst tr:hover td { background: var(--bg-2); }
-  table.vst td:first-child { color: var(--text); font-weight: 500; }
-  table.vst td:nth-child(2) { color: var(--text-dim); font-family: var(--mono); font-size: 15px; }
+  table.vst tr:hover td { background: rgba(255, 255, 255, 0.02); }
+  table.vst td:first-child { color: var(--text-dark); font-weight: 500; }
+  table.vst td:nth-child(2) { color: var(--text-dim); font-family: var(--mono); font-size: 14px; }
 
-  @media (max-width: 600px) {
-    .hero { padding: 64px 0 48px; }
-    section { padding: 56px 0; }
-    h2 { font-size: 26px; }
+  @media (max-width: 768px) {
+    section { padding: 60px 0; }
+    h2 { font-size: 28px; }
+    .features { grid-template-columns: 1fr; }
+    .btn { width: 100%; }
   }
-</style>
+</style>e>
 </head>
 <body>
 
@@ -400,13 +448,9 @@
     </div>
 
     <!-- App Main Interface Screenshot placed prominently at top -->
-    <div style="margin: 48px auto 0; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--bg-2); text-align: center; max-width: 900px; box-shadow: 0 10px 30px rgba(0,0,0,0.05);">
-      <div style="padding: 12px; border-bottom: 1px solid var(--border); font-family: var(--mono); font-size: 13px; color: var(--text-dim);">
-        📸 OpenRig Live Mixer Interface
-      </div>
-      <div style="background: #111418;">
-        <img src="main_mixer_view.png" alt="OpenRig Main Mixer Screen" style="max-width: 100%; height: auto; display: block; margin: 0 auto;" />
-      </div>
+    <div class="screenshot-container">
+      <div class="screenshot-header">OpenRig Live Mixer Interface</div>
+      <img src="main_mixer_view.png" alt="OpenRig Main Mixer Screen" style="max-width: 100%; height: auto; display: block; margin: 0 auto;" />
     </div>
   </div>
 </div>
@@ -463,13 +507,9 @@
     </div>
 
     <!-- Note Range / Learning Screenshot -->
-    <div style="margin: 40px 0; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--bg-2); text-align: center;">
-      <div style="padding: 12px; border-bottom: 1px solid var(--border); font-family: var(--mono); font-size: 13px; color: var(--text-dim);">
-        📸 MIDI Note-Range Learn Screen
-      </div>
-      <div style="background: #111418;">
-        <img src="note_range_learn.png" alt="OpenRig MIDI Note-Range Learn Screen" style="max-width: 100%; height: auto; display: block; margin: 0 auto;" />
-      </div>
+    <div class="screenshot-container" style="margin-bottom: 40px;">
+      <div class="screenshot-header">MIDI Note-Range Learn Screen</div>
+      <img src="note_range_learn.png" alt="OpenRig MIDI Note-Range Learn Screen" style="max-width: 100%; height: auto; display: block; margin: 0 auto;" />
     </div>
 
     <p style="margin-top: 32px; color: var(--text-dim); font-style: italic;">
@@ -493,13 +533,9 @@
     </div>
 
     <!-- Active VST Windows Screenshot -->
-    <div style="margin: 40px 0 20px; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--bg-2); text-align: center;">
-      <div style="padding: 12px; border-bottom: 1px solid var(--border); font-family: var(--mono); font-size: 13px; color: var(--text-dim);">
-        📸 Active VST Editors
-      </div>
-      <div style="background: #111418;">
-        <img src="active_vst_windows.png" alt="OpenRig Active VST Editors" style="max-width: 100%; height: auto; display: block; margin: 0 auto;" />
-      </div>
+    <div class="screenshot-container" style="margin-bottom: 40px;">
+      <div class="screenshot-header">Active VST Editors</div>
+      <img src="active_vst_windows.png" alt="OpenRig Active VST Editors" style="max-width: 100%; height: auto; display: block; margin: 0 auto;" />
     </div>
 
     <h3><span class="dot"></span>Songs, Scenes &amp; Setlists</h3>
@@ -520,13 +556,9 @@
     </div>
 
     <!-- CC Assignment Manager Screenshot -->
-    <div style="margin: 40px 0 20px; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--bg-2); text-align: center;">
-      <div style="padding: 12px; border-bottom: 1px solid var(--border); font-family: var(--mono); font-size: 13px; color: var(--text-dim);">
-        📸 CC Assignment Manager Screen
-      </div>
-      <div style="background: #111418;">
-        <img src="cc_assignment_manager.png" alt="OpenRig CC Assignment Manager Screen" style="max-width: 100%; height: auto; display: block; margin: 0 auto;" />
-      </div>
+    <div class="screenshot-container" style="margin-bottom: 40px;">
+      <div class="screenshot-header">CC Assignment Manager Screen</div>
+      <img src="cc_assignment_manager.png" alt="OpenRig CC Assignment Manager Screen" style="max-width: 100%; height: auto; display: block; margin: 0 auto;" />
     </div>
 
     <h3><span class="dot"></span>DSP &amp; Effects</h3>
@@ -549,13 +581,9 @@
     </div>
 
     <!-- Channel Strip / DYN Screenshot -->
-    <div style="margin: 40px 0 20px; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--bg-2); text-align: center;">
-      <div style="padding: 12px; border-bottom: 1px solid var(--border); font-family: var(--mono); font-size: 13px; color: var(--text-dim);">
-        📸 Channel Strip / Dynamics Panel
-      </div>
-      <div style="background: #111418;">
-        <img src="channel_strip_dyn.png" alt="OpenRig Channel Strip Dynamics Screen" style="max-width: 100%; height: auto; display: block; margin: 0 auto;" />
-      </div>
+    <div class="screenshot-container" style="margin-bottom: 40px;">
+      <div class="screenshot-header">Channel Strip / Dynamics Panel</div>
+      <img src="channel_strip_dyn.png" alt="OpenRig Channel Strip Dynamics Screen" style="max-width: 100%; height: auto; display: block; margin: 0 auto;" />
     </div>
   </div>
 </section>
