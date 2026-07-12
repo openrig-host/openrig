@@ -161,7 +161,7 @@ private:
   juce::Slider masterFohSlider;
   juce::Slider masterIemSlider;
   juce::Label fohLabel{"fohLabel", "FOH"};
-  juce::Label iemLabel{"iemLabel", "DAVE EARS"};
+  juce::Label iemLabel{"iemLabel", "IEM"};
   juce::TextButton fohFxBtns[3], fohEditGuiBtns[3];
   juce::TextButton iemFxBtns[3], iemEditGuiBtns[3];
   float masterFohL = 0.0f, masterFohR = 0.0f;

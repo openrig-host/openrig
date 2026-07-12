@@ -395,8 +395,8 @@
       A rack-based VST3 host built for one job: getting you through a live set without a single dropout, a stuck note, or a fumbled song switch.
     </p>
     <div class="cta">
-      <a class="btn btn-primary" href="https://github.com/davewaugh/davecore/releases">Download for Windows</a>
-      <a class="btn btn-secondary" href="https://github.com/davewaugh/davecore">View on GitHub</a>
+      <a class="btn btn-primary" href="https://github.com/openrig-host/openrig/releases/latest">Download for Windows</a>
+      <a class="btn btn-secondary" href="https://github.com/openrig-host/openrig">View on GitHub</a>
     </div>
 
     <!-- App Main Interface Screenshot placed prominently at top -->
@@ -600,26 +600,26 @@
 <section>
   <div class="container">
     <h2>Download</h2>
-    <p class="section-sub">Pre-built Windows binaries from the GitHub Releases page. CI-built on every push to <code>main</code>.</p>
+    <p class="section-sub">Ready-to-run Windows binary with ASIO support. No installer, no build step — grab it from GitHub Releases.</p>
 
     <div class="pill-row">
       <span class="pill ok">Windows 10/11 x64</span>
       <span class="pill">VST3 host</span>
+      <span class="pill ok">ASIO + WASAPI</span>
       <span class="pill warn">macOS / Linux — not yet</span>
     </div>
 
     <p>
-      <a class="btn btn-primary" href="https://github.com/davewaugh/davecore/releases">Download latest release</a>
+      <a class="btn btn-primary" href="https://github.com/openrig-host/openrig/releases/latest">Download latest release</a>
       &nbsp;
-      <a class="btn btn-secondary" href="https://github.com/davewaugh/davecore">View source</a>
+      <a class="btn btn-secondary" href="https://github.com/openrig-host/openrig">View source</a>
     </p>
 
-    <h3>Build from source</h3>
-    <p>Requires Visual Studio 2022+ with the C++ desktop workload, and <a href="https://juce.com">JUCE 8</a> at <code>C:/JUCE</code>.</p>
-    <pre><code>git clone https://github.com/davewaugh/davecore
-cd davecore
-cmake -B build -DJUCE_ROOT=C:/JUCE
-cmake --build build --config Release</code></pre>
+    <h3>Compiling it yourself</h3>
+    <p>
+      Building from source needs the full JUCE 8 toolchain <em>plus the Steinberg ASIO SDK</em> — it's not a one-command build.
+      See the complete step-by-step guide in <a href="https://github.com/openrig-host/openrig/blob/trunk/BUILDING.md">BUILDING.md</a>.
+    </p>
 
     <h3>Data location</h3>
     <p>All user data lives under <code>%APPDATA%/OpenRig/</code>:</p>
@@ -660,8 +660,9 @@ cmake --build build --config Release</code></pre>
 <footer>
   <div class="container">
     <p>
-      Built with <a href="https://juce.com">JUCE 8</a>.
-      Engine, UI, and rig format by <a href="https://github.com/davewaugh">Dave Waugh</a>.
+      Built with <a href="https://juce.com">JUCE 8</a>. &middot;
+      Licensed under the <a href="https://www.gnu.org/licenses/gpl-3.0.html">GNU GPL v3</a>
+      &mdash; ASIO-enabled builds permitted under the SDK's GPL option.
     </p>
     <p style="margin-top: 12px;">
       Created with <a href="https://antigravity.dev">Antigravity</a> and KiloCode,

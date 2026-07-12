@@ -188,30 +188,35 @@ Other keyboards will work as MIDI sources, but the per-slot MIDI channel routing
 
 ## Download
 
-Pre-built Windows binaries are available from the [Releases page](https://github.com/davewaugh/davecore/releases). The CI workflow builds on every push to `main` and attaches a zip to tagged releases.
+Pre-built Windows binaries (with **ASIO support**) are on the [Releases page](https://github.com/openrig-host/openrig/releases). The download is a ready-to-run `OpenRig.exe` — no installer, no build step.
 
-> The engine compiles clean (Debug x64 → `OpenRig.exe`). Release builds are produced automatically by GitHub Actions.
+> Binaries are built locally by the author and uploaded by hand to each Release. There is no auto-build: the ASIO build can't be produced on a public CI runner because ASIO requires Steinberg's proprietary SDK.
+
+**Latest release:** https://github.com/openrig-host/openrig/releases/latest
 
 ### Requirements
 - Windows 10 / 11 (64-bit)
 - A VST3-compatible sound card / audio interface
-- ASIO recommended for live use (the engine falls back to WASAPI)
+- An **ASIO driver** for your interface (recommended for live use). Without one, the engine falls back to WASAPI.
 
-### Build from source
+### Compiling it yourself
 
-You need:
-- **Visual Studio 2022 or newer** with the "Desktop development with C++" workload (this is the C++ IDE — *not* Visual Basic, which is a different language)
-- **[JUCE 8](https://juce.com)** cloned to `C:/JUCE`
-- **CMake** 3.15+
+> ⚠️ **ASIO SDK licensing:** the Steinberg ASIO SDK headers **cannot be bundled** in this repository. Before building, download the SDK yourself from the official [Steinberg Developer Portal](https://www.steinberg.net/developers/) (free), then extract its header files into:
+> ```
+> C:\JUCE\modules\juce_audio_devices\native\asio\
+> ```
+> This exact path is required — it's where the project's `AppConfig.h` looks. (This is also why there's no auto-build: the ASIO SDK can't live in a public repo or run on CI.)
 
-```bash
-git clone https://github.com/davewaugh/davecore
-cd davecore
-cmake -B build -G "Visual Studio 17 2022" -A x64 -DJUCE_ROOT=C:/JUCE
-cmake --build build --config Release
-```
+To build, you need:
+1. **Visual Studio 2022+** with the "Desktop development with C++" workload
+2. **[JUCE 8](https://juce.com)** installed at `C:\JUCE`
+3. **Steinberg ASIO SDK** — downloaded and placed as above
 
-Or open `DaveCoreProject/DaveCore.jucer` in the Projucer and let it generate a solution for you.
+Then open `DaveCoreProject/Builds/VisualStudio2026/DaveCore.sln` in Visual Studio, set **Release / x64**, and build. Output: `OpenRig.exe`.
+
+For the full walkthrough (incl. troubleshooting and the command-line MSBuild path), see **[BUILDING.md](BUILDING.md)**.
+
+> Want to skip ASIO entirely? You can build without it — the app still runs, just without the ASIO device type (WASAPI only).
 
 ---
 
@@ -232,9 +237,9 @@ This codebase was developed end-to-end with AI coding tools ([Antigravity](https
    - *"Fix this crash when I load my Arturia plugin."*
 5. **Iterate.** The agent has the full source — types, comments, architecture-review doc, the lot. It can make real changes, not just stubs.
 
-The author's tool of choice is Antigravity, but anything that can read a JUCE 8 / C++17 codebase will work. You will need the build environment described above (Visual Studio, JUCE 8, CMake) to compile whatever the agent produces.
+The author's tool of choice is Antigravity, but anything that can read a JUCE 8 / C++17 codebase will work. You will need the build environment described in [BUILDING.md](BUILDING.md) (Visual Studio, JUCE 8, and the Steinberg ASIO SDK) to compile whatever the agent produces.
 
-**If you build something useful, a PR back is welcome but not required.** This is a personal project; there is no roadmap obligation and no review SLA.
+**If you build something useful, a PR back is welcome but not required** — *unless* you distribute your modified version, in which case the [GPL v3](LICENSE) requires you to publish your changes under the same license. Personal/private use has no such obligation.
 
 ---
 
@@ -251,7 +256,7 @@ A few principles drove every design decision:
 
 ## Roadmap
 
-- [x] **CI build of release binaries** (GitHub Actions) — *wired up*
+- [x] **Theme engine** — 5 selectable themes including a light theme
 - [ ] **DPI-aware layout** for HiDPI stage displays
 - [ ] **Arpeggiator persistence** in the rig JSON
 - [ ] **Out-of-process plugin hosting** (current SEH wrapper is containment, not isolation)
@@ -263,7 +268,14 @@ See [`DaveCore_Wishlist.md`](DaveCore_Wishlist.md) for the long-form wishlist an
 
 ## License
 
-TBD. Treat this as "source-available, no warranty" until a license file is added.
+**OpenRig is licensed under the [GNU General Public License v3.0](LICENSE).**
+
+The GPL v3 was chosen deliberately: the Steinberg ASIO SDK — which OpenRig links for low-latency audio — is offered under GPL v3 as an alternative to its proprietary license. By licensing OpenRig under GPL v3, the published ASIO-enabled binaries are compliant with the ASIO SDK's terms **without** needing a separate signed agreement from Steinberg.
+
+What that means in practice:
+- You're free to use, study, modify, and redistribute OpenRig, including the ASIO builds.
+- If you **distribute** a modified version (binary or source), you must release your changes under GPL v3 and make the corresponding source available.
+- The ASIO SDK itself still may not be redistributed in this repo — builders download it themselves per [BUILDING.md](BUILDING.md).
 
 ## Credits
 
