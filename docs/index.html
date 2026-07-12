@@ -430,7 +430,59 @@
     .features { grid-template-columns: 1fr; }
     .btn { width: 100%; }
   }
-</style>e>
+
+  /* Lightbox / Modal */
+  .lightbox {
+    display: none;
+    position: fixed;
+    z-index: 10000;
+    padding-top: 40px;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    overflow: auto;
+    background-color: rgba(6, 8, 12, 0.95);
+    backdrop-filter: blur(12px);
+    cursor: zoom-out;
+  }
+  .lightbox-content {
+    margin: auto;
+    display: block;
+    max-width: 92%;
+    max-height: 88vh;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    box-shadow: 0 25px 60px rgba(0, 0, 0, 0.6);
+    animation: zoom 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  @keyframes zoom {
+    from { transform: scale(0.96); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
+  }
+  .lightbox-close {
+    position: absolute;
+    top: 20px;
+    right: 30px;
+    color: var(--text-dim);
+    font-size: 36px;
+    font-weight: 300;
+    transition: 0.2s;
+    cursor: pointer;
+  }
+  .lightbox-close:hover {
+    color: var(--accent);
+  }
+  
+  /* Make screenshots interactive */
+  .screenshot-container img {
+    cursor: zoom-in;
+    transition: opacity 0.2s ease;
+  }
+  .screenshot-container img:hover {
+    opacity: 0.9;
+  }
+</style>
 </head>
 <body>
 
@@ -700,5 +752,47 @@
   </div>
 </footer>
 
+  <!-- Lightbox / Modal for full screen image viewing -->
+  <div id="lightbox" class="lightbox">
+    <span class="lightbox-close">&times;</span>
+    <img class="lightbox-content" id="lightbox-img" src="" alt="Enlarged screenshot" />
+  </div>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const lightbox = document.getElementById('lightbox');
+      const lightboxImg = document.getElementById('lightbox-img');
+      const closeBtn = document.querySelector('.lightbox-close');
+
+      // Attach click listener to all screenshots
+      document.querySelectorAll('.screenshot-container img').forEach(img => {
+        img.addEventListener('click', () => {
+          lightbox.style.display = 'block';
+          lightboxImg.src = img.src;
+          document.body.style.overflow = 'hidden'; // Disable page scrolling while lightbox is active
+        });
+      });
+
+      // Close on clicking the close button, the background overlay, or pressing Escape
+      const closeLightbox = () => {
+        lightbox.style.display = 'none';
+        document.body.style.overflow = ''; // Re-enable page scrolling
+      };
+
+      lightbox.addEventListener('click', (e) => {
+        if (e.target !== lightboxImg) {
+          closeLightbox();
+        }
+      });
+
+      closeBtn.addEventListener('click', closeLightbox);
+
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && lightbox.style.display === 'block') {
+          closeLightbox();
+        }
+      });
+    });
+  </script>
 </body>
 </html>
