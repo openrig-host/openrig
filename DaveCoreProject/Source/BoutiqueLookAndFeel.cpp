@@ -248,15 +248,14 @@ void BoutiqueLookAndFeel::drawButtonText(juce::Graphics &g, juce::TextButton &bu
                                                         : juce::TextButton::textColourOffId));
 
   float fontSize = 11.0f;
-  int w = button.getWidth();
-  if (w >= 70) {
+  auto text = button.getButtonText();
+  if (text == "LOAD RIG" || text == "SAVE RIG") {
     fontSize = 24.0f;
-  } else if (w < 26) {
-    fontSize = 7.0f; // extra tiny
-  } else if (w < 32) {
-    fontSize = 8.0f; // tiny
-  } else if (w < 45) {
-    fontSize = 9.0f; // small
+  } else {
+    int w = button.getWidth();
+    if (w < 35) {
+      fontSize = 9.0f;
+    }
   }
 
   g.setFont(juce::FontOptions(fontSize, juce::Font::bold));
