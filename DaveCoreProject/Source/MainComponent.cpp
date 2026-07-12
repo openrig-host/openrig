@@ -804,7 +804,6 @@ void MainComponent::setupSetupButtons() {
   saveSetBtn.setColour(juce::TextButton::buttonColourId, ThemeManager::get(Theme::Role::ok));
   loadSetBtn.setColour(juce::TextButton::buttonColourId, ThemeManager::get(Theme::Role::warn));
   setupBuilderBtn.setColour(juce::TextButton::buttonColourId, ThemeManager::get(Theme::Role::accent));
-  setupBuilderBtn.setColour(juce::TextButton::textColourOffId, ThemeManager::get(Theme::Role::textOnAccent));
   
   saveSetBtn.onClick = [this] { saveSetToFile(); };
   loadSetBtn.onClick = [this] { loadSetFromFile(); };
