@@ -958,7 +958,7 @@ void RackSlotComponent::mouseDown(const juce::MouseEvent &e) {
     }
     return;
   }
-  if (e.y <= 8) {
+  if (e.eventComponent == this && e.y <= 8) {
     showColorPalette();
   }
 }
