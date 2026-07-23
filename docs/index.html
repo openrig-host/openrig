@@ -81,7 +81,7 @@
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
     border-bottom: 1px solid var(--border-subtle);
-    padding: 16px 0;
+    padding: 14px 0;
   }
 
   .nav-inner {
@@ -98,16 +98,10 @@
   }
 
   .brand-logo {
-    width: 32px;
-    height: 32px;
-    background: linear-gradient(135deg, var(--coral), #ff8e80);
+    width: 34px;
+    height: 34px;
     border-radius: 8px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-weight: 800;
-    color: #fff;
-    font-size: 16px;
+    object-fit: cover;
     box-shadow: 0 0 15px var(--coral-glow);
   }
 
@@ -338,6 +332,40 @@
     display: flex;
     align-items: center;
     gap: 6px;
+  }
+
+  /* Image Feature Blocks */
+  .feature-media-block {
+    margin: 40px 0;
+    background: var(--bg-card);
+    border: 1px solid var(--border-subtle);
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+  }
+
+  .feature-media-block img {
+    width: 100%;
+    height: auto;
+    display: block;
+    cursor: zoom-in;
+    transition: opacity 0.2s ease;
+  }
+
+  .feature-media-block img:hover {
+    opacity: 0.92;
+  }
+
+  .feature-media-label {
+    padding: 12px 18px;
+    background: rgba(10, 14, 22, 0.9);
+    border-top: 1px solid var(--border-subtle);
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
   }
 
   /* Key Feature Cards Grid */
@@ -651,7 +679,7 @@
 <header class="navbar">
   <div class="container nav-inner">
     <a href="#" class="brand">
-      <div class="brand-logo">O</div>
+      <img src="OpenRig_Icon.png" alt="OpenRig Logo" class="brand-logo" />
       <span class="brand-name">OpenRig</span>
     </a>
     <ul class="nav-links">
@@ -755,6 +783,15 @@
       </div>
     </div>
 
+    <!-- Active VST Editor Window Showcase -->
+    <div class="feature-media-block" style="margin-top: 50px;">
+      <img src="active_vst_windows.png" alt="OpenRig Active Floating VST Editors" onclick="openImageModal(this.src)" />
+      <div class="feature-media-label">
+        <span>Floating VST3 Editors & Instrument Windows</span>
+        <span class="zoom-hint">🔍 Expand Screenshot</span>
+      </div>
+    </div>
+
     <!-- Stage Prep Banner -->
     <div class="callout-stage">
       <h3>⚠️ Stage Preparation Recommendation</h3>
@@ -801,6 +838,24 @@
       <div class="card">
         <h3>Absolute Data Sovereignty</h3>
         <p>No cloud sync, no accounts, no telemetry. Your patches are standard human-readable JSON files you fully control.</p>
+      </div>
+    </div>
+
+    <!-- Dual Feature Media Showcase -->
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(450px, 1fr)); gap: 24px; margin-top: 48px;">
+      <div class="feature-media-block" style="margin: 0;">
+        <img src="note_range_learn.png" alt="Note Range Split & Key Learn" onclick="openImageModal(this.src)" />
+        <div class="feature-media-label">
+          <span>MIDI Key Range & Visual Split Map</span>
+          <span class="zoom-hint">🔍 Expand</span>
+        </div>
+      </div>
+      <div class="feature-media-block" style="margin: 0;">
+        <img src="cc_assignment_manager.png" alt="CC Assignment Manager" onclick="openImageModal(this.src)" />
+        <div class="feature-media-label">
+          <span>Arm & Wiggle MIDI CC Mapping</span>
+          <span class="zoom-hint">🔍 Expand</span>
+        </div>
       </div>
     </div>
   </div>
@@ -857,6 +912,15 @@
         <div class="step-num">4</div>
         <div class="step-title">Rollback Safety</div>
         <div class="step-desc">If a background build fails, the swap never happens and the current rig stays live.</div>
+      </div>
+    </div>
+
+    <!-- Dynamics & DSP Feature Media -->
+    <div class="feature-media-block" style="margin-top: 50px;">
+      <img src="channel_strip_dyn.png" alt="Channel Strip Dynamics and EQ Interface" onclick="openImageModal(this.src)" />
+      <div class="feature-media-label">
+        <span>Integrated Channel Strip DSP: Parametric EQ, Dynamics, Gate & Reverb</span>
+        <span class="zoom-hint">🔍 Expand Screenshot</span>
       </div>
     </div>
   </div>
@@ -943,16 +1007,17 @@
   }
 
   // Lightbox functionality
-  const showcaseImgs = document.querySelectorAll('.showcase-img');
   const lightbox = document.getElementById('lightbox');
   const lightboxImg = document.getElementById('lightbox-img');
 
-  showcaseImgs.forEach(img => {
-    img.addEventListener('click', () => {
-      lightbox.style.display = 'block';
-      lightboxImg.src = img.src;
-      document.body.style.overflow = 'hidden';
-    });
+  function openImageModal(src) {
+    lightbox.style.display = 'block';
+    lightboxImg.src = src;
+    document.body.style.overflow = 'hidden';
+  }
+
+  document.querySelectorAll('.showcase-img').forEach(img => {
+    img.addEventListener('click', () => openImageModal(img.src));
   });
 
   function closeLightbox() {
