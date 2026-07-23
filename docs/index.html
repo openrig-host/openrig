@@ -718,23 +718,25 @@
     <!-- Interactive Showcase Switcher -->
     <div class="showcase-wrapper">
       <div class="showcase-tabs">
-        <button class="tab-btn active" onclick="switchTab(0)">Live Mixer Interface</button>
-        <button class="tab-btn" onclick="switchTab(1)">Active VST Editors</button>
-        <button class="tab-btn" onclick="switchTab(2)">Note-Range Learn</button>
-        <button class="tab-btn" onclick="switchTab(3)">CC Assignment Manager</button>
-        <button class="tab-btn" onclick="switchTab(4)">Channel Strip Dynamics</button>
+        <button class="tab-btn active" onclick="switchTab(0)">Full 12-Slot Live Rig</button>
+        <button class="tab-btn" onclick="switchTab(1)">Channel Strip DSP</button>
+        <button class="tab-btn" onclick="switchTab(2)">Arpeggiator & MIDI FX</button>
+        <button class="tab-btn" onclick="switchTab(3)">8-Pad Sampler & Waveform</button>
+        <button class="tab-btn" onclick="switchTab(4)">Active VST Editors</button>
+        <button class="tab-btn" onclick="switchTab(5)">Arm & Wiggle CC Manager</button>
       </div>
 
       <div class="showcase-viewport">
-        <img src="main_mixer_view.png" class="showcase-img active" alt="OpenRig Live Mixer Interface" />
+        <img src="full_mixer_v2.png" class="showcase-img active" alt="OpenRig Full 12-Slot Live Mixer Interface" />
+        <img src="channel_strip_dsp.png" class="showcase-img" alt="Channel Strip Processing & Convolution Panel" />
+        <img src="midi_effects_panel.png" class="showcase-img" alt="Arpeggiator Transpose & Octaver MIDI FX" />
+        <img src="sampler_splice_editor.png" class="showcase-img" alt="8-Pad Sampler & Waveform Splice Handle Editor" />
         <img src="active_vst_windows.png" class="showcase-img" alt="OpenRig Active VST Editors" />
-        <img src="note_range_learn.png" class="showcase-img" alt="MIDI Note-Range Learn Screen" />
         <img src="cc_assignment_manager.png" class="showcase-img" alt="CC Assignment Manager Screen" />
-        <img src="channel_strip_dyn.png" class="showcase-img" alt="Channel Strip Dynamics Screen" />
       </div>
 
       <div class="showcase-caption">
-        <span id="tab-caption-text">Main rack interface featuring linear channel strips and dual-bus controls.</span>
+        <span id="tab-caption-text">Full 12-slot live mixer interface with setlist manager, dual FOH/IEM mixes, and peak VU metering.</span>
         <span class="zoom-hint">🔍 Click image to expand</span>
       </div>
     </div>
@@ -783,12 +785,21 @@
       </div>
     </div>
 
-    <!-- Active VST Editor Window Showcase -->
-    <div class="feature-media-block" style="margin-top: 50px;">
-      <img src="active_vst_windows.png" alt="OpenRig Active Floating VST Editors" onclick="openImageModal(this.src)" />
-      <div class="feature-media-label">
-        <span>Floating VST3 Editors & Instrument Windows</span>
-        <span class="zoom-hint">🔍 Expand Screenshot</span>
+    <!-- Dual Output FOH & IEM VU Metering Showcase -->
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 24px; margin-top: 48px; align-items: center;">
+      <div>
+        <span class="section-tag">Dual Bus FOH & IEM</span>
+        <h3 style="font-size: 24px; font-weight: 700; color: #fff; margin-bottom: 12px;">Independent Master Faders & Analog Peak VU Meters</h3>
+        <p style="color: var(--text-muted); font-size: 16px;">
+          Keep full control over what goes to Front of House versus your In-Ear Monitors. Routing outputs independently allows you to crank stage monitors without clipping the main venue mix.
+        </p>
+      </div>
+      <div class="feature-media-block" style="margin: 0; text-align: center;">
+        <img src="vu_meters_detail.png" alt="Analog VU Meters & FOH IEM Dual Bus Faders" onclick="openImageModal(this.src)" style="max-height: 380px; object-fit: contain; margin: 0 auto;" />
+        <div class="feature-media-label">
+          <span>Analog Peak VU Metering & Dual Bus Routing</span>
+          <span class="zoom-hint">🔍 Expand</span>
+        </div>
       </div>
     </div>
 
@@ -844,16 +855,16 @@
     <!-- Dual Feature Media Showcase -->
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(450px, 1fr)); gap: 24px; margin-top: 48px;">
       <div class="feature-media-block" style="margin: 0;">
-        <img src="note_range_learn.png" alt="Note Range Split & Key Learn" onclick="openImageModal(this.src)" />
+        <img src="midi_effects_panel.png" alt="Arpeggiator Transpose & Octaver MIDI FX" onclick="openImageModal(this.src)" />
         <div class="feature-media-label">
-          <span>MIDI Key Range & Visual Split Map</span>
+          <span>MIDI FX: Transposer, Arpeggiator & Harmonizer</span>
           <span class="zoom-hint">🔍 Expand</span>
         </div>
       </div>
       <div class="feature-media-block" style="margin: 0;">
-        <img src="cc_assignment_manager.png" alt="CC Assignment Manager" onclick="openImageModal(this.src)" />
+        <img src="sampler_splice_editor.png" alt="8-Pad Sampler & Waveform Splice Handle Editor" onclick="openImageModal(this.src)" />
         <div class="feature-media-label">
-          <span>Arm & Wiggle MIDI CC Mapping</span>
+          <span>8 One-Shot Pad Sampler & Waveform Splice Handles</span>
           <span class="zoom-hint">🔍 Expand</span>
         </div>
       </div>
@@ -917,9 +928,9 @@
 
     <!-- Dynamics & DSP Feature Media -->
     <div class="feature-media-block" style="margin-top: 50px;">
-      <img src="channel_strip_dyn.png" alt="Channel Strip Dynamics and EQ Interface" onclick="openImageModal(this.src)" />
+      <img src="channel_strip_dsp.png" alt="Channel Strip Dynamics and EQ Interface" onclick="openImageModal(this.src)" />
       <div class="feature-media-label">
-        <span>Integrated Channel Strip DSP: Parametric EQ, Dynamics, Gate & Reverb</span>
+        <span>Integrated Channel Strip DSP: Noise Gate, EQ, Compression, Reverb/Chorus & Aux Sends</span>
         <span class="zoom-hint">🔍 Expand Screenshot</span>
       </div>
     </div>
@@ -981,11 +992,12 @@
 
 <script>
   const captions = [
-    "Main rack interface featuring linear channel strips and dual-bus controls.",
+    "Full 12-slot live mixer interface with setlist manager, dual FOH/IEM mixes, and peak VU metering.",
+    "Integrated channel strip DSP featuring Noise Gate, 3-Band Parametric EQ, Compressor, Space FX, and Aux Sends.",
+    "MIDI FX module with Transposer, Arpeggiator pattern generator, and Octaver Harmonizer.",
+    "8 One-Shot Pad Sampler with drag-and-drop WAV support and sample-accurate waveform splice handles.",
     "Active VST3 floating editor windows showing synth & sampler controls.",
-    "MIDI Note-Range learn screen allowing rapid visual key splitting.",
-    "Arm-then-wiggle CC Assignment Manager for physical controller mapping.",
-    "Built-in channel strip dynamics panel with EQ, compression, gate & FX."
+    "Arm-then-wiggle CC Assignment Manager for physical controller mapping."
   ];
 
   function switchTab(index) {
