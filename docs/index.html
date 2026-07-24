@@ -695,10 +695,10 @@
 <!-- Hero Section -->
 <section class="hero">
   <div class="container">
-    <div class="badge">
+    <a href="https://github.com/openrig-host/openrig/releases/latest" id="latest-release-badge" class="badge" style="text-decoration: none;" target="_blank" rel="noopener">
       <span class="badge-pulse"></span>
-      v1.0 · Sovereign Windows VST3 Host
-    </div>
+      <span id="badge-release-text">Latest Release · Windows VST3 Host</span>
+    </a>
     <h1>Built for the Stage.<br/><span class="highlight">Zero Stuck Notes. Zero Dropouts.</span></h1>
     <p class="hero-tagline">
       OpenRig is built with one mission: make setting up your live rig an absolute breeze, then completely get out of your way on stage. So you can perform music—not run an IT desk.
@@ -1041,14 +1041,22 @@
     if (e.key === 'Escape') closeLightbox();
   });
 
-  function copyPath() {
-    const text = document.getElementById('appdata-path').innerText;
-    navigator.clipboard.writeText(text).then(() => {
-      const btn = document.querySelector('.copy-btn');
-      btn.innerText = 'Copied!';
-      setTimeout(() => btn.innerText = 'Copy Path', 2000);
-    });
+  // Dynamically fetch latest GitHub release
+  async function fetchLatestRelease() {
+    try {
+      const res = await fetch('https://api.github.com/repos/openrig-host/openrig/releases/latest');
+      if (!res.ok) return;
+      const data = await res.json();
+      const badgeText = document.getElementById('badge-release-text');
+      if (data.tag_name && badgeText) {
+        badgeText.textContent = `Latest: ${data.tag_name} · Windows VST3 Host`;
+      }
+    } catch (e) {
+      // Fallback stays static
+    }
   }
+
+  fetchLatestRelease();
 </script>
 
 </body>
