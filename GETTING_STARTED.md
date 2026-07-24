@@ -27,24 +27,21 @@ When OpenRig launches for the first time, click the **Settings ⚙️** icon in 
 
 ---
 
-## 3. Load Your First Rig (Demo / Saved Setlist)
+## 3. Populating Your VST3 Plugins (First Run)
 
-OpenRig comes with simple preset management and setlist preloading out of the box:
+On a new installation, OpenRig scans standard Windows VST3 system directories (e.g. `C:\Program Files\Common Files\VST3`) to locate your installed instruments and effects:
 
-1. Click **LOAD RIG** in the top right header (or click **Setlist** in the left sidebar).
-2. Select a rig file (e.g., `Warm Piano`, `Hungry-wolf-setup`, or any `.json` patch).
-3. OpenRig will instantiate the channels off-thread and swap them in under 1 second without audio dropouts.
-4. Play your keyboard—you should hear audio metering through the **FOH** and **IEM** master faders!
+1. Click **Settings ⚙️** (or open the **Plugin Registry** menu).
+2. Click **Scan VST3 Plugins** to populate your local plugin list.
+3. Custom VST3 directories can also be added under **Settings → Plugin Paths**.
 
 ---
 
-## 4. Building Your Own Setup (Adding VST3 Plugins)
-
-Building a custom 12-slot rack from scratch is fast and intuitive:
+## 4. Load Your First Rig or Build a Slot
 
 ### Step A: Load a VST3 Instrument into a Slot
 1. Click **[EMPTY]** on any available channel strip slot (Slots 1–12).
-2. Select your VST3 plugin from the scanned plugin list (e.g., *Hammond B-3X*, *Kontakt 8*, *ZENOLOGY*, *JUNO-106*).
+2. Select your VST3 plugin from the populated plugin list (e.g., *Hammond B-3X*, *Kontakt 8*, *ZENOLOGY*, *JUNO-106*).
 3. Click the plugin title on the strip to open its native floating editor UI.
 
 ### Step B: Set Key Split / Note Range (**NR**)
