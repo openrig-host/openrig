@@ -10,7 +10,7 @@
 
 A rack-based VST3 host (and MIDI router) built for one job: getting you through a live set without a single dropout, a stuck note, or a fumbled song switch.
 
-[Download](#download) · [Quick Start](#quick-start) · [Features](#features) · [How It Works](#how-it-works) · [Tested Plugins](#tested-vst-compatibility) · [Make It Yours](#make-it-yours) · [Roadmap](#roadmap)
+[Download](#download) · [Getting Started](GETTING_STARTED.md) · [Features](#features) · [How It Works](#how-it-works) · [Tested Plugins](#tested-vst-compatibility) · [Make It Yours](#make-it-yours) · [Roadmap](#roadmap)
 
 <br/>
 
@@ -67,6 +67,8 @@ This is not a DAW. It's a stage instrument.
 2. **Configure your Audio & MIDI**: Open `Settings`, select your **ASIO** driver (or WASAPI), and enable your primary MIDI keyboard controller.
 3. **Load a Rig or Build a Slot**: Click **LOAD RIG** to open a setlist/song, or click **[EMPTY]** on any strip slot to load a VST3 plugin instrument.
 4. **Set Up Key Range & MIDI Learn**: Click **NR** on a strip to set key split range via play-to-learn, or **CC** to arm-and-wiggle map your hardware knobs.
+
+> For a full step-by-step walkthrough, see **[GETTING_STARTED.md](GETTING_STARTED.md)**.
 
 ---
 
