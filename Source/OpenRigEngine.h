@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Logger.h"
 #include "RackSlot.h"
 #include "Scene.h"
 #include "RigModel.h"
@@ -20,20 +21,14 @@
 #include <intrin.h> // For _mm_pause()
 #endif
 
-// Simple file logger for debugging. Guarded so the (dead-code) Sequential
-// engine's duplicate definition cannot cause an ODR violation if both headers
-// are ever included in the same TU, and locked so concurrent off-audio-thread
-// callers don't corrupt the file. NOTE: never call this from the audio thread.
-#ifndef OPENRIG_LOGTOFILE_DEFINED
-#define OPENRIG_LOGTOFILE_DEFINED
-inline void logToFile(const juce::String &msg) {
-  static juce::CriticalSection logFileLock;
-  static juce::File logFile(
-      juce::File::getSpecialLocation(juce::File::userDesktopDirectory)
-          .getChildFile("OpenRig_log.txt"));
-  const juce::ScopedLock sl(logFileLock);
-  logFile.appendText(juce::Time::getCurrentTime().toString(true, true) + " - " +
-                     msg + "\n");
+#ifndef OPENRIG_PINDLL_DEFINED
+#define OPENRIG_PINDLL_DEFINED
+inline void pinDllInMemory(const juce::String &path) {
+#if JUCE_WINDOWS
+  if (path.isNotEmpty()) {
+    ::LoadLibraryW(path.toWideCharPointer());
+  }
+#endif
 }
 #endif
 
@@ -103,10 +98,10 @@ public:
   }
 
   ~OpenRigEngine() {
-    // 1. Stop any pending jobs and clear the job array FIRST
-    threadPool.removeAllJobs(true,
-                             100); // Short timeout since we're not using it
-    preallocatedJobs.clear();      // Delete all job objects
+    if (engineAlive) engineAlive->store(false);
+    // 1. Stop any pending jobs and wait for worker threads to finish FIRST
+    threadPool.removeAllJobs(true, 5000); // 5s timeout to guarantee worker threads finish
+    preallocatedJobs.clear();             // Delete all job objects safely
 
     // 2. Now safe to release plugins
     releaseAllPlugins();
@@ -147,6 +142,11 @@ public:
     }
     iemPluginChain.clear();
     lastAppliedPluginStates.clear();
+
+    // Close all opened MIDI output devices.
+    juce::SpinLock::ScopedLockType mol(midiOutputLock);
+    midiOutputs.clear();
+    midiOutputIndexById.clear();
   }
 
   int getNumSlots() const { return (int)slots.size(); }
@@ -157,6 +157,7 @@ public:
 
   void loadScene(int index) {
     if (index >= 0 && index < (int)scenes.size()) {
+      panicTriggered.store(true); // Silence active notes so transpose changes don't cause stuck notes
       auto &scene = scenes[index];
       for (size_t i = 0; i < slots.size() && i < scene.slotStates.size(); ++i) {
         auto* slot = slots[i].get();
@@ -191,6 +192,10 @@ public:
         dsp.reverbEnabled.store(st.reverbEnabled);
         dsp.reverbSize.store(st.reverbSize);
         dsp.reverbMix.store(st.reverbMix);
+        dsp.irEnabled.store(st.irEnabled);
+        dsp.irMix.store(st.irMix);
+        if (st.irPath.isNotEmpty())
+          dsp.getIRReverb().loadIR(juce::File(st.irPath));
 
         // Arpeggiator
         auto& arp = slot->getArpeggiator();
@@ -293,6 +298,9 @@ public:
         st.reverbEnabled = dsp.reverbEnabled.load();
         st.reverbSize = dsp.reverbSize.load();
         st.reverbMix = dsp.reverbMix.load();
+        st.irEnabled = dsp.irEnabled.load();
+        st.irMix = dsp.irMix.load();
+        st.irPath = dsp.getIRReverb().getLoadedPath();
 
         // Arpeggiator
         const auto& arp = slot->getArpeggiator();
@@ -359,6 +367,9 @@ public:
       st.reverbEnabled = dsp.reverbEnabled.load();
       st.reverbSize = dsp.reverbSize.load();
       st.reverbMix = dsp.reverbMix.load();
+      st.irEnabled = dsp.irEnabled.load();
+      st.irMix = dsp.irMix.load();
+      st.irPath = dsp.getIRReverb().getLoadedPath();
 
       // Arpeggiator
       const auto& arp = slot->getArpeggiator();
@@ -413,16 +424,17 @@ public:
     // corrupted sumToBuses (the fork-join reuse hazard), with no pool locking.
     std::atomic<uint32_t> setupToken{0};
     std::atomic<uint32_t> completedToken{0};
+    std::atomic<uint32_t> activeToken{0};
 
     void setup(const float *const *input, int numCh, std::atomic<int> &c) {
       rawInput = input;
       numInputChannels = numCh;
       counter = &c;
-      setupToken.fetch_add(1, std::memory_order_acq_rel); // new expected completion
+      activeToken.store(setupToken.fetch_add(1, std::memory_order_acq_rel) + 1, std::memory_order_release);
     }
 
     JobStatus runJob() override {
-      const uint32_t myToken = setupToken.load(std::memory_order_acquire);
+      const uint32_t myToken = activeToken.load(std::memory_order_acquire);
       juce::ScopedNoDenormals noDenormals;
 
 #ifdef _WIN32
@@ -524,7 +536,7 @@ public:
   std::function<void(ScanResults)> onScanFinished;
 
   void scanForPlugins() {
-    juce::File vstFolder("C:\\Program Files\\Common Files\\VST3");
+    juce::File vstFolder = OpenRigConstants::getVst3Directory();
     if (!vstFolder.exists() || !vstFolder.isDirectory()) {
       juce::AlertWindow::showMessageBoxAsync(
           juce::MessageBoxIconType::WarningIcon, "Scan Error",
@@ -533,19 +545,23 @@ public:
     }
 
     // Run in background to avoid UI freeze
-    std::thread([this, vstFolder]() {
+    auto alive = engineAlive;
+    std::thread([this, alive, vstFolder]() {
       ScanResults results;
       std::vector<PluginInfo> foundPlugins;
 
       // Recursive scan for .vst3 files using modern RangedDirectoryIterator
       for (const auto &entry : juce::RangedDirectoryIterator(
                vstFolder, true, "*.vst3", juce::File::findFiles)) {
+        if (!alive->load()) return;
         juce::File f = entry.getFile();
         PluginInfo info;
         info.name = f.getFileNameWithoutExtension();
         info.path = f.getFullPathName();
         foundPlugins.push_back(info);
       }
+
+      if (!alive->load()) return;
 
       // Compare with availablePlugins
       {
@@ -580,9 +596,11 @@ public:
         }
       }
 
+      if (!alive->load()) return;
+
       // Call callback on UI thread
-      juce::MessageManager::callAsync([this, results]() {
-        if (onScanFinished)
+      juce::MessageManager::callAsync([this, alive, results]() {
+        if (alive->load() && onScanFinished)
           onScanFinished(results);
       });
     }).detach();
@@ -739,13 +757,20 @@ public:
 
     // Panic Button Trigger
     if (panicTriggered.exchange(false)) {
-      // DBG removed for real-time safety
+      for (auto &slot : slots) {
+        if (slot) {
+          slot->getArpeggiator().reset();
+          slot->getHarmonizer().reset();
+          slot->getSampler().reset();
+        }
+      }
       for (auto &smb : slotMidiBuffers) {
-        smb.addEvent(juce::MidiMessage::allNotesOff(1), 0);
-        smb.addEvent(juce::MidiMessage::allSoundOff(1), 0);
-        smb.addEvent(juce::MidiMessage::controllerEvent(1, 64, 0),
-                     0); // Sustain Off
-        smb.addEvent(juce::MidiMessage::allControllersOff(1), 0);
+        for (int ch = 1; ch <= 16; ++ch) {
+          smb.addEvent(juce::MidiMessage::allNotesOff(ch), 0);
+          smb.addEvent(juce::MidiMessage::allSoundOff(ch), 0);
+          smb.addEvent(juce::MidiMessage::controllerEvent(ch, 64, 0), 0); // Sustain Off
+          smb.addEvent(juce::MidiMessage::allControllersOff(ch), 0);
+        }
       }
     }
 
@@ -841,6 +866,24 @@ public:
       return;
     }
 
+    if (engineWedged.load()) {
+      bool allFinished = true;
+      for (int i = 0; i < numActiveSlots; ++i) {
+        if (preallocatedJobs[i]->completedToken.load(std::memory_order_acquire) !=
+            preallocatedJobs[i]->setupToken.load(std::memory_order_acquire)) {
+          allFinished = false;
+          break;
+        }
+      }
+      if (!allFinished) {
+        audioUnderrunFlag.store(true);
+        aux1Bus.clear();
+        aux2Bus.clear();
+        return;
+      }
+      engineWedged.store(false);
+    }
+
     // setup() bumps each job's completion token; we then wait for
     // completedToken == setupToken. Because a late/stale worker carries an OLD
     // token, it can never falsely satisfy a later block's wait, so reused jobs
@@ -888,6 +931,7 @@ public:
     }
 
     if (timedOut) {
+      engineWedged.store(true);
       audioUnderrunFlag.store(true);
       aux1Bus.clear();
       aux2Bus.clear();
@@ -923,6 +967,30 @@ public:
       auxReturns[i]->sumToBuses(scratch, fohBus, iemBus, dummyAux1, dummyAux2);
     }
 
+    // --- Forward per-slot MIDI OUT to hardware devices ---
+    // Each chain slot flagged as MIDI OUT captured its filtered/routed MIDI in
+    // processBlock. Send it now (after the fork-join completes). The try-lock
+    // means a device being opened on the message thread can never block (or
+    // corrupt) the audio thread; on the rare miss we simply skip this block.
+    {
+      juce::SpinLock::ScopedTryLockType mol(midiOutputLock);
+      if (mol.isLocked() && !midiOutputs.empty()) {
+        for (int i = 0; i < (int)slots.size(); ++i) {
+          auto *s = slots[i].get();
+          for (int c = 0; c < 3; ++c) {
+            if (!s->isChainSlotMidiOut(c))
+              continue;
+            const auto &buf = s->getMidiOutChainBuffer(c);
+            if (buf.isEmpty())
+              continue;
+            int devIdx = s->getChainSlotMidiOutDeviceIndex(c);
+            if (devIdx >= 0 && devIdx < (int)midiOutputs.size() && midiOutputs[devIdx])
+              midiOutputs[devIdx]->sendBlockOfMessagesNow(buf);
+          }
+        }
+      }
+    }
+
     // --- Master FX Processing ---
     // Apply Master Fader Levels BEFORE FX (or typically after sums, but before
     // output)
@@ -930,12 +998,18 @@ public:
     iemBus.applyGain(iemMasterLevel);
 
     for (auto &plugin : fohPluginChain) {
-      if (plugin)
-        plugin->processBlock(fohBus, emptyMidiBuf);
+      if (plugin) {
+        OpenRigLog::safeExecutePluginCall([&]() {
+          plugin->processBlock(fohBus, emptyMidiBuf);
+        }, "fohBus processBlock (" + plugin->getName() + ")");
+      }
     }
     for (auto &plugin : iemPluginChain) {
-      if (plugin)
-        plugin->processBlock(iemBus, emptyMidiBuf);
+      if (plugin) {
+        OpenRigLog::safeExecutePluginCall([&]() {
+          plugin->processBlock(iemBus, emptyMidiBuf);
+        }, "iemBus processBlock (" + plugin->getName() + ")");
+      }
     }
 
     // --- Post-load mute + fade-in ---
@@ -1102,6 +1176,15 @@ public:
       stripObj->setProperty("eqHigh", (double)strip.highShelfGain);
       stripObj->setProperty("compEnabled", (bool)strip.compEnabled);
       stripObj->setProperty("compAmount", (double)strip.compAmount);
+      stripObj->setProperty("chorusEnabled", (bool)strip.chorusEnabled);
+      stripObj->setProperty("chorusRate", (double)strip.chorusRate);
+      stripObj->setProperty("chorusMix", (double)strip.chorusMix);
+      stripObj->setProperty("reverbEnabled", (bool)strip.reverbEnabled);
+      stripObj->setProperty("reverbSize", (double)strip.reverbSize);
+      stripObj->setProperty("reverbMix", (double)strip.reverbMix);
+      stripObj->setProperty("irEnabled", (bool)strip.irEnabled);
+      stripObj->setProperty("irMix", (double)strip.irMix);
+      stripObj->setProperty("irPath", strip.getIRReverb().getLoadedPath());
       st->setProperty("strip", stripObj);
 
       // Save Sampler Settings
@@ -1235,6 +1318,9 @@ public:
         stateObj->setProperty("reverbEnabled", st.reverbEnabled);
         stateObj->setProperty("reverbSize", (double)st.reverbSize);
         stateObj->setProperty("reverbMix", (double)st.reverbMix);
+        stateObj->setProperty("irEnabled", st.irEnabled);
+        stateObj->setProperty("irMix", (double)st.irMix);
+        stateObj->setProperty("irPath", st.irPath);
 
         // Arpeggiator
         stateObj->setProperty("arpEnabled", st.arpEnabled);
@@ -1479,7 +1565,18 @@ public:
           for (int p = 0; p < chainArr->size(); ++p) {
             auto pv = chainArr->getReference(p);
             if (pv.isObject()) {
-              loadPluginFromVarSmart(i, p, pv, true);
+              bool isMo = pv.getProperty("isMidiOut", false);
+              juce::String moDev = pv.getProperty("midiOutDevice", "").toString();
+              if (isMo && moDev.isNotEmpty()) {
+                // MIDI OUT destination: open the device and bind this chain slot.
+                int devIdx = getOrCreateMidiOutput(moDev);
+                s->setChainSlotMidiOut(p, devIdx,
+                                       (int)pv.getProperty("midiOutChannel", 1),
+                                       moDev, midiOutputNameForIdentifier(moDev));
+              } else {
+                loadPluginFromVarSmart(i, p, pv, true);
+                s->clearChainSlotMidiOut(p); // plugin replaces any midi-out config
+              }
               // Per-instrument stacking settings
               if (p < 3) {
                 auto& cs = s->getChainSlotSettings(p);
@@ -1549,6 +1646,9 @@ public:
             st.reverbEnabled = stv.getProperty("reverbEnabled", false);
             st.reverbSize = (float)stv.getProperty("reverbSize", 0.5);
             st.reverbMix = (float)stv.getProperty("reverbMix", 0.0);
+            st.irEnabled = stv.getProperty("irEnabled", false);
+            st.irMix = (float)stv.getProperty("irMix", 0.3);
+            st.irPath = stv.getProperty("irPath", juce::String()).toString();
 
             // Arpeggiator
             st.arpEnabled = stv.getProperty("arpEnabled", false);
@@ -1631,6 +1731,7 @@ public:
   }
 
   OpenRig::Song getSongRepresentation(const juce::String& songName = "Current Rig") {
+    juce::ScopedLock sl(lock);
     OpenRig::Song song;
     song.name = songName;
     song.fohMasterLevel = fohMasterLevel;
@@ -1765,6 +1866,10 @@ public:
             ps.highNote = cs.highNote.load();
             ps.level = cs.level.load();
             ps.enabled = cs.enabled.load();
+            // MIDI OUT target (mutually exclusive with a plugin instance)
+            ps.isMidiOut = s->isChainSlotMidiOut(pIdx);
+            ps.midiOutDevice = s->getChainSlotMidiOutIdentifier(pIdx);
+            ps.midiOutChannel = s->getChainSlotMidiOutChannel(pIdx);
             slot.chain.push_back(ps);
         }
 
@@ -1837,6 +1942,9 @@ public:
     songSlot.strip.reverbEnabled = stripData.reverbEnabled;
     songSlot.strip.reverbSize = stripData.reverbSize;
     songSlot.strip.reverbMix = stripData.reverbMix;
+    songSlot.strip.irEnabled = stripData.irEnabled;
+    songSlot.strip.irMix = stripData.irMix;
+    songSlot.strip.irPath = stripData.getIRReverb().getLoadedPath();
 
     auto& arpData = s->getArpeggiator();
     songSlot.arpeggiator.enabled = arpData.enabled.load();
@@ -1903,6 +2011,10 @@ public:
       ps.highNote = cs.highNote.load();
       ps.level = cs.level.load();
       ps.enabled = cs.enabled.load();
+      // MIDI OUT target (mutually exclusive with a plugin instance)
+      ps.isMidiOut = s->isChainSlotMidiOut(pIdx);
+      ps.midiOutDevice = s->getChainSlotMidiOutIdentifier(pIdx);
+      ps.midiOutChannel = s->getChainSlotMidiOutChannel(pIdx);
       songSlot.chain.push_back(ps);
     }
 
@@ -1949,6 +2061,10 @@ public:
     stripData.reverbEnabled = songSlot.strip.reverbEnabled;
     stripData.reverbSize = songSlot.strip.reverbSize;
     stripData.reverbMix = songSlot.strip.reverbMix;
+    stripData.irEnabled = songSlot.strip.irEnabled;
+    stripData.irMix = songSlot.strip.irMix;
+    if (songSlot.strip.irPath.isNotEmpty())
+      stripData.getIRReverb().loadIR(juce::File(songSlot.strip.irPath));
     stripData.prepare(currentSampleRate);
 
     auto& arpLive = s->getArpeggiator();
@@ -2002,9 +2118,18 @@ public:
     }
     s->clearChainPreserve(pluginsToReuse);
     for (int p = 0; p < (int)songSlot.chain.size(); ++p) {
-      if (songSlot.chain[p].path.isNotEmpty()) {
+      if (songSlot.chain[p].isMidiOut && songSlot.chain[p].midiOutDevice.isNotEmpty()) {
+        // MIDI OUT destination takes over this chain slot.
+        const auto& ps = songSlot.chain[p];
+        int devIdx = getOrCreateMidiOutput(ps.midiOutDevice);
+        s->setChainSlotMidiOut(p, devIdx, ps.midiOutChannel, ps.midiOutDevice,
+                               midiOutputNameForIdentifier(ps.midiOutDevice));
+      } else if (songSlot.chain[p].path.isNotEmpty()) {
         juce::var pv = songSlotToPluginVar(songSlot.chain[p]);
         loadPluginFromVarSmart(slotIdx, p, pv, true);
+        s->clearChainSlotMidiOut(p); // plugin replaces any midi-out config
+      } else {
+        s->clearChainSlotMidiOut(p);
       }
     }
 
@@ -2308,6 +2433,69 @@ public:
   }
   int getDefaultMidiChannel() const { return defaultMidiChannel.load(); }
 
+  // --- MIDI OUT device management ---
+  // Returns (name, identifier) pairs for every available MIDI output device.
+  juce::Array<std::pair<juce::String, juce::String>> getAvailableMidiOutputs() const {
+    juce::Array<std::pair<juce::String, juce::String>> out;
+    for (const auto &d : juce::MidiOutput::getAvailableDevices())
+      out.add({d.name, d.identifier});
+    return out;
+  }
+
+  // Open (or reuse) a MIDI output device by identifier. Returns a stable index
+  // into midiOutputs, or -1 on failure. Message-thread only.
+  int getOrCreateMidiOutput(const juce::String &identifier) {
+    if (identifier.isEmpty())
+      return -1;
+    {
+      juce::SpinLock::ScopedLockType sl(midiOutputLock);
+      auto it = midiOutputIndexById.find(identifier);
+      if (it != midiOutputIndexById.end())
+        return it->second;
+    }
+    auto dev = juce::MidiOutput::openDevice(identifier);
+    if (!dev) {
+      logToFile("WARNING: Failed to open MIDI output device: " + identifier);
+      return -1;
+    }
+    juce::SpinLock::ScopedLockType sl(midiOutputLock);
+    auto it = midiOutputIndexById.find(identifier);
+    if (it != midiOutputIndexById.end())
+      return it->second; // another thread opened it first
+    int idx = (int)midiOutputs.size();
+    midiOutputIndexById[identifier] = idx;
+    midiOutputs.push_back(std::move(dev));
+    logToFile("Opened MIDI output device: " + identifier);
+    return idx;
+  }
+
+  juce::String midiOutputNameForIdentifier(const juce::String &id) const {
+    for (const auto &d : juce::MidiOutput::getAvailableDevices())
+      if (d.identifier == id)
+        return d.name;
+    return {};
+  }
+
+  // Configure a chain slot to send MIDI OUT to a device (by identifier).
+  // Message-thread only. Mutually exclusive with hosting a plugin.
+  void setSlotChainMidiOut(int slotIdx, int chainIdx,
+                           const juce::String &deviceIdentifier, int channel) {
+    if (slotIdx < 0 || slotIdx >= (int)slots.size())
+      return;
+    juce::ScopedLock sl(lock);
+    int devIdx = getOrCreateMidiOutput(deviceIdentifier);
+    juce::String name = midiOutputNameForIdentifier(deviceIdentifier);
+    slots[slotIdx]->setChainSlotMidiOut(chainIdx, devIdx, channel,
+                                        deviceIdentifier, name);
+  }
+
+  void clearSlotChainMidiOut(int slotIdx, int chainIdx) {
+    if (slotIdx < 0 || slotIdx >= (int)slots.size())
+      return;
+    juce::ScopedLock sl(lock);
+    slots[slotIdx]->clearChainSlotMidiOut(chainIdx);
+  }
+
   void setFohOutputOffset(int offset) { fohOutputOffset = offset; }
   void setIemOutputOffset(int offset) { iemOutputOffset = offset; }
   int getFohOutputOffset() const { return fohOutputOffset; }
@@ -2390,6 +2578,8 @@ private:
   std::vector<std::unique_ptr<RackSlot>> auxReturns;
   std::atomic<bool> isLoading{false};
   std::atomic<bool> audioUnderrunFlag{false}; // set when a block bailed to silence
+  std::atomic<bool> engineWedged{false};      // set when worker timeout occurs
+  std::shared_ptr<std::atomic<bool>> engineAlive = std::make_shared<std::atomic<bool>>(true);
 
   // Parallel Processing Support
   juce::OwnedArray<SlotProcessJob> preallocatedJobs;
@@ -2416,6 +2606,14 @@ private:
   std::atomic<int> iemOutputOffset{2}; // Hardware channels 3+4
 
   juce::CriticalSection lock;
+
+  // Opened MIDI output devices for chain-slot MIDI OUT routing. Devices are
+  // created on the message thread and appended (never destroyed while running);
+  // the audio thread reads midiOutputs[idx] under a try-lock so an opening
+  // device can never corrupt/block playback.
+  juce::SpinLock midiOutputLock;
+  std::vector<std::unique_ptr<juce::MidiOutput>> midiOutputs;
+  std::map<juce::String, int> midiOutputIndexById;
 
 #ifdef _WIN32
   HMODULE avrtModule = nullptr;
@@ -2551,6 +2749,7 @@ public:
 
     // Create instance synchronously
     juce::String errorMessage;
+    pinDllInMemory(pluginPath);
     auto instance = formatManager.createPluginInstance(
         desc, currentSampleRate, currentBlockSize, errorMessage);
 
@@ -2562,6 +2761,7 @@ public:
       // CRITICAL: Lock while swapping the actual instance in the rack
       {
         juce::ScopedLock sl(lock);
+        slotVec[realIdx]->clearChainSlotMidiOut(chainIndex); // plugin replaces midi-out
         slotVec[realIdx]->setPluginInChain(chainIndex, std::move(instance));
         if (chainIndex == 0)
           slotVec[realIdx]->setName(slotVec[realIdx]->getPluginName(0));
@@ -2619,6 +2819,7 @@ public:
 
     juce::PluginDescription desc = *descriptions[0];
     juce::String errorMessage;
+    pinDllInMemory(pluginPath);
     auto instance = formatManager.createPluginInstance(
         desc, currentSampleRate, currentBlockSize, errorMessage);
 
@@ -2709,6 +2910,7 @@ public:
 
     logToFile("TRACE: buildPluginFromVar creating instance for " + descs[0]->name);
     try {
+      pinDllInMemory(path);
       auto instance = formatManager.createPluginInstance(
           *descs[0], currentSampleRate,
           currentBlockSize > 0 ? currentBlockSize : 512, error);
@@ -2721,14 +2923,26 @@ public:
       configureStereoLayout(instance.get());
 
       logToFile("TRACE: buildPluginFromVar calling prepareToPlay for " + instance->getName());
-      instance->prepareToPlay(currentSampleRate,
-                              currentBlockSize > 0 ? currentBlockSize : 512);
+      bool prepOk = OpenRigLog::safeExecutePluginCall([&]() {
+        instance->prepareToPlay(currentSampleRate,
+                                currentBlockSize > 0 ? currentBlockSize : 512);
+      }, "prepareToPlay (" + instance->getName() + ")");
+      if (!prepOk) {
+        error = "plugin prepareToPlay faulted/crashed";
+        logToFile("TRACE: buildPluginFromVar prepareToPlay faulted for: " + instance->getName());
+        return false;
+      }
 
       juce::MemoryBlock blob;
       blob.fromBase64Encoding(stateBase64);
       if (blob.getSize() > 0) {
         logToFile("TRACE: buildPluginFromVar setting state information (" + juce::String(blob.getSize()) + " bytes) for " + instance->getName());
-        instance->setStateInformation(blob.getData(), (int)blob.getSize());
+        bool stateOk = OpenRigLog::safeExecutePluginCall([&]() {
+          instance->setStateInformation(blob.getData(), (int)blob.getSize());
+        }, "setStateInformation (" + instance->getName() + ")");
+        if (!stateOk) {
+          logToFile("WARN: setStateInformation faulted for plugin: " + instance->getName() + " - continuing with default state.");
+        }
       }
 
       logToFile("TRACE: buildPluginFromVar successfully built: " + instance->getName());

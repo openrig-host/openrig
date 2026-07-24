@@ -37,6 +37,11 @@ struct SlotState {
   float reverbSize = 0.5f;
   float reverbMix = 0.0f;
 
+  // IR / convolution reverb
+  bool irEnabled = false;
+  float irMix = 0.3f;
+  juce::String irPath;
+
   // Arpeggiator
   bool arpEnabled = false;
   float arpBpm = 120.0f;

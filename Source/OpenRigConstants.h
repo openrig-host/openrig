@@ -38,6 +38,11 @@ constexpr int kMeterSegments = 16;
 // --- MIDI Configuration ---
 constexpr int kDefaultMidiChannel = 1;
 constexpr int kSustainPedalCC = 64;
+constexpr int kMidiMaxVelocity = 127;
+constexpr int kMidiMaxCCValue = 127;
+
+// --- Reliability Configuration ---
+constexpr int kMaxPluginExceptionsBeforeBypass = 5;
 
 // --- CK88 (Roland) Default CCs ---
 // Pre-configured CC numbers for the CK88's physical knobs/sliders so the
@@ -62,6 +67,19 @@ constexpr int kCk88Drawbar1CC = 86;    // 1' drawbar
 inline juce::File getAppDirectory() {
     return juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
         .getChildFile("OpenRig");
+}
+inline juce::File getVst3Directory() {
+#if JUCE_MAC
+    return juce::File("/Library/Audio/Plug-Ins/VST3");
+#elif JUCE_LINUX
+    return juce::File("/usr/lib/vst3");
+#else
+    juce::File progFiles = juce::File::getSpecialLocation(juce::File::globalApplicationsDirectory);
+    juce::File vst3Dir = progFiles.getChildFile("Common Files").getChildFile("VST3");
+    if (vst3Dir.exists() && vst3Dir.isDirectory())
+        return vst3Dir;
+    return juce::File("C:\\Program Files\\Common Files\\VST3");
+#endif
 }
 inline juce::File getSongsDirectory() {
     return getAppDirectory().getChildFile("songs");

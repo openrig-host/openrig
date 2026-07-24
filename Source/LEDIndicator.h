@@ -16,10 +16,8 @@ public:
       currentIntensity = 1.0f;
       startTimer(50); // Start decay timer
     } else {
-      // Immediate off? Or let decay handle it if we just pulse it?
-      // Usually for MIDI we pulse it.
-      // If we want static ON/OFF:
-      // currentIntensity = 0.0f;
+      currentIntensity = 0.0f;
+      stopTimer();
     }
     repaint();
   }

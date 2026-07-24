@@ -9,6 +9,8 @@ AssetLoader &AssetLoader::getInstance() {
 
 std::unique_ptr<juce::Drawable>
 AssetLoader::loadSVG(const juce::String &resourceName) {
+  juce::ScopedLock sl(cacheLock);
+
   // Check cache first
   auto it = assetCache.find(resourceName);
   if (it != assetCache.end() && it->second != nullptr)
@@ -76,6 +78,7 @@ void AssetLoader::preloadAssets() {
 
 std::unique_ptr<juce::Drawable>
 AssetLoader::getCachedAsset(const juce::String &name) {
+  juce::ScopedLock sl(cacheLock);
   auto it = assetCache.find(name);
   if (it != assetCache.end() && it->second != nullptr) {
     return it->second->createCopy();
@@ -84,10 +87,12 @@ AssetLoader::getCachedAsset(const juce::String &name) {
 }
 
 bool AssetLoader::isAssetCached(const juce::String &name) const {
+  juce::ScopedLock sl(cacheLock);
   return assetCache.find(name) != assetCache.end();
 }
 
 void AssetLoader::clearCache() {
+  juce::ScopedLock sl(cacheLock);
   assetCache.clear();
   LOG_INFO("Asset cache cleared");
 }

@@ -28,6 +28,7 @@ public:
     learnButton.setColour(juce::TextButton::buttonColourId,
                           ThemeManager::get(Theme::Role::ok));
     learnButton.onClick = [this] {
+      learning = false;
       if (auto* co = findParentComponentOfClass<juce::CallOutBox>()) {
         co->dismiss();
       }

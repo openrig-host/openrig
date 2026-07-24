@@ -46,6 +46,9 @@ bool RigSerializer::varToSong(const juce::var& rig, Song& out) {
             ps.highNote = (int)v.getProperty("highNote", 127);
             ps.level = (float)v.getProperty("level", 1.0);
             ps.enabled = (bool)v.getProperty("enabled", true);
+            ps.isMidiOut = v.getProperty("isMidiOut", false);
+            ps.midiOutDevice = v.getProperty("midiOutDevice", "").toString();
+            ps.midiOutChannel = (int)v.getProperty("midiOutChannel", 1);
         }
         return ps;
     };
@@ -143,6 +146,9 @@ bool RigSerializer::varToSong(const juce::var& rig, Song& out) {
                 slot.strip.reverbEnabled = so->hasProperty("reverbEnabled") ? (bool)so->getProperty("reverbEnabled") : false;
                 slot.strip.reverbSize = so->hasProperty("reverbSize") ? (float)so->getProperty("reverbSize") : 0.5f;
                 slot.strip.reverbMix = so->hasProperty("reverbMix") ? (float)so->getProperty("reverbMix") : 0.0f;
+                slot.strip.irEnabled = so->hasProperty("irEnabled") ? (bool)so->getProperty("irEnabled") : false;
+                slot.strip.irMix = so->hasProperty("irMix") ? (float)so->getProperty("irMix") : 0.3f;
+                slot.strip.irPath = so->hasProperty("irPath") ? so->getProperty("irPath").toString() : juce::String();
         }
 
             if (auto* maps = cv.getProperty("ccMappings", juce::var()).getArray()) {
@@ -229,6 +235,9 @@ juce::var RigSerializer::songToVar(const Song& song) {
         o->setProperty("highNote", ps.highNote);
         o->setProperty("level", (double)ps.level);
         o->setProperty("enabled", ps.enabled);
+        o->setProperty("isMidiOut", ps.isMidiOut);
+        o->setProperty("midiOutDevice", ps.midiOutDevice);
+        o->setProperty("midiOutChannel", ps.midiOutChannel);
         return juce::var(o);
     };
 
@@ -293,6 +302,9 @@ juce::var RigSerializer::songToVar(const Song& song) {
         stripObj->setProperty("reverbEnabled", (bool)s.strip.reverbEnabled);
         stripObj->setProperty("reverbSize", (double)s.strip.reverbSize);
         stripObj->setProperty("reverbMix", (double)s.strip.reverbMix);
+        stripObj->setProperty("irEnabled", (bool)s.strip.irEnabled);
+        stripObj->setProperty("irMix", (double)s.strip.irMix);
+        stripObj->setProperty("irPath", s.strip.irPath);
         st->setProperty("strip", stripObj);
         auto* arpObj = new juce::DynamicObject();
         arpObj->setProperty("enabled", s.arpeggiator.enabled);
@@ -353,7 +365,7 @@ juce::var RigSerializer::songToVar(const Song& song) {
 
         juce::Array<juce::var> chainNodes;
         for (const auto& ps : s.chain) {
-            if (ps.path.isNotEmpty())
+            if (ps.path.isNotEmpty() || ps.isMidiOut)
                 chainNodes.add(writePluginState(ps));
             else
                 chainNodes.add(juce::var());
@@ -396,6 +408,9 @@ juce::String RigSerializer::serializeStrip(const SongSlot& slot) {
         o->setProperty("highNote", ps.highNote);
         o->setProperty("level", (double)ps.level);
         o->setProperty("enabled", ps.enabled);
+        o->setProperty("isMidiOut", ps.isMidiOut);
+        o->setProperty("midiOutDevice", ps.midiOutDevice);
+        o->setProperty("midiOutChannel", ps.midiOutChannel);
         return juce::var(o);
     };
 
@@ -440,6 +455,9 @@ juce::String RigSerializer::serializeStrip(const SongSlot& slot) {
     stripObj->setProperty("reverbEnabled", (bool)slot.strip.reverbEnabled);
     stripObj->setProperty("reverbSize", (double)slot.strip.reverbSize);
     stripObj->setProperty("reverbMix", (double)slot.strip.reverbMix);
+    stripObj->setProperty("irEnabled", (bool)slot.strip.irEnabled);
+    stripObj->setProperty("irMix", (double)slot.strip.irMix);
+    stripObj->setProperty("irPath", slot.strip.irPath);
     st->setProperty("strip", stripObj);
         auto* arpObj = new juce::DynamicObject();
         arpObj->setProperty("enabled", slot.arpeggiator.enabled);
@@ -501,7 +519,7 @@ juce::String RigSerializer::serializeStrip(const SongSlot& slot) {
 
     juce::Array<juce::var> chainNodes;
     for (const auto& ps : slot.chain) {
-        if (ps.path.isNotEmpty())
+        if (ps.path.isNotEmpty() || ps.isMidiOut)
             chainNodes.add(writePluginState(ps));
         else
             chainNodes.add(juce::var());
@@ -564,6 +582,9 @@ bool RigSerializer::readStripFromFile(const juce::File& file, SongSlot& outSlot)
         outSlot.strip.reverbEnabled = so->hasProperty("reverbEnabled") ? (bool)so->getProperty("reverbEnabled") : false;
         outSlot.strip.reverbSize = so->hasProperty("reverbSize") ? (float)so->getProperty("reverbSize") : 0.5f;
         outSlot.strip.reverbMix = so->hasProperty("reverbMix") ? (float)so->getProperty("reverbMix") : 0.0f;
+        outSlot.strip.irEnabled = so->hasProperty("irEnabled") ? (bool)so->getProperty("irEnabled") : false;
+        outSlot.strip.irMix = so->hasProperty("irMix") ? (float)so->getProperty("irMix") : 0.3f;
+        outSlot.strip.irPath = so->hasProperty("irPath") ? so->getProperty("irPath").toString() : juce::String();
     }
 
     if (auto* av = cv.getProperty("arpeggiator", juce::var()).getDynamicObject()) {
@@ -643,6 +664,9 @@ bool RigSerializer::readStripFromFile(const juce::File& file, SongSlot& outSlot)
                 ps.highNote = (int)pv.getProperty("highNote", 127);
                 ps.level = (float)pv.getProperty("level", 1.0);
                 ps.enabled = (bool)pv.getProperty("enabled", true);
+                ps.isMidiOut = pv.getProperty("isMidiOut", false);
+                ps.midiOutDevice = pv.getProperty("midiOutDevice", "").toString();
+                ps.midiOutChannel = (int)pv.getProperty("midiOutChannel", 1);
             }
             outSlot.chain.push_back(ps);
         }

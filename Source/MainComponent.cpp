@@ -159,8 +159,6 @@ MainComponent::MainComponent() {
     };
   }
 
-  transitioner = std::make_unique<OpenRig::RigTransitioner>(engine);
-
   // Final setup
   setSize(OpenRigConstants::kDefaultWindowWidth,
           OpenRigConstants::kDefaultWindowHeight);
@@ -257,10 +255,20 @@ void MainComponent::setupSlotComponents() {
         menu.addItem(p + 1, engine.getAvailablePluginName(p));
       }
       menu.addSeparator();
+      menu.addItem(-2, "Send MIDI OUT...", slot != nullptr && !slot->isChainSlotMidiOut(chainIndex));
       menu.addItem(-1, "(No Plugin)");
 
       menu.showMenuAsync(juce::PopupMenu::Options(), [this, i, slot, comp,
                                                       chainIndex](int result) {
+        if (result == -2) {
+          showSlotMidiOutDialog(i, chainIndex);
+          return;
+        }
+        if (result > 0 || result == -1) {
+          if (auto *oldInstance = slot->getPluginInstance(chainIndex)) {
+            closePluginWindowForInstance(oldInstance);
+          }
+        }
         if (result > 0) {
           loadingOverlay.reset(new LoadingOverlay());
           addAndMakeVisible(loadingOverlay.get());
@@ -277,11 +285,17 @@ void MainComponent::setupSlotComponents() {
                   comp->repaint();
               });
         } else if (result == -1) {
+          engine.clearSlotChainMidiOut(i, chainIndex);
           juce::ScopedLock sl(engine.getCallbackLock());
           slot->setPluginInChain(chainIndex, nullptr);
           comp->repaint();
         }
       });
+    };
+
+    // MIDI OUT destination editor (reuses the slot's chain config + dialog)
+    comp->onEditMidiOut = [this, i](int chainIndex) {
+      showSlotMidiOutDialog(i, chainIndex);
     };
 
     // Editor open callback
@@ -784,9 +798,14 @@ void MainComponent::setupHeaderButtons() {
   ramLabel.setColour(juce::Label::textColourId, ThemeManager::get(Theme::Role::meterMid));
 
   addAndMakeVisible(setupNameLabel);
-  setupNameLabel.setFont(juce::FontOptions(32.0f, juce::Font::bold));
+  setupNameLabel.setFont(juce::FontOptions(22.0f, juce::Font::bold));
   setupNameLabel.setColour(juce::Label::textColourId, ThemeManager::get(Theme::Role::accent));
   setupNameLabel.setJustificationType(juce::Justification::centredLeft);
+
+  addAndMakeVisible(clockLabel);
+  clockLabel.setFont(juce::FontOptions(13.0f, juce::Font::bold));
+  clockLabel.setColour(juce::Label::textColourId, ThemeManager::get(Theme::Role::accent).withAlpha(0.7f));
+  clockLabel.setJustificationType(juce::Justification::centred);
 
   addAndMakeVisible(preloadStatusLabel);
   preloadStatusLabel.setFont(juce::FontOptions(13.0f, juce::Font::italic));
@@ -934,14 +953,19 @@ void MainComponent::setupMasterSection() {
     engine.setIemMasterLevel((float)masterIemSlider.getValue());
   };
 
-  // Labels
+  // Labels & VU Meters
   addAndMakeVisible(fohLabel);
   addAndMakeVisible(iemLabel);
+  addAndMakeVisible(masterVuMeterL);
+  addAndMakeVisible(masterVuMeterR);
 
   // FX Slots for FOH / IEM masters
   for (int i = 0; i < 3; ++i) {
     addAndMakeVisible(fohFxBtns[i]);
-    fohFxBtns[i].setButtonText(engine.getMasterPluginName(true, i).isEmpty() ? "[EMPTY]" : engine.getMasterPluginName(true, i));
+    bool fohHas = !engine.getMasterPluginName(true, i).isEmpty();
+    fohFxBtns[i].getProperties().set("isPluginSlot", true);
+    fohFxBtns[i].getProperties().set("hasPlugin", fohHas);
+    fohFxBtns[i].setButtonText(fohHas ? engine.getMasterPluginName(true, i) : "[EMPTY]");
     fohFxBtns[i].onClick = [this, i] { showMasterPluginMenu(true, i); };
 
     addAndMakeVisible(fohEditGuiBtns[i]);
@@ -949,7 +973,10 @@ void MainComponent::setupMasterSection() {
     fohEditGuiBtns[i].onClick = [this, i] { openMasterPluginEditor(true, i); };
 
     addAndMakeVisible(iemFxBtns[i]);
-    iemFxBtns[i].setButtonText(engine.getMasterPluginName(false, i).isEmpty() ? "[EMPTY]" : engine.getMasterPluginName(false, i));
+    bool iemHas = !engine.getMasterPluginName(false, i).isEmpty();
+    iemFxBtns[i].getProperties().set("isPluginSlot", true);
+    iemFxBtns[i].getProperties().set("hasPlugin", iemHas);
+    iemFxBtns[i].setButtonText(iemHas ? engine.getMasterPluginName(false, i) : "[EMPTY]");
     iemFxBtns[i].onClick = [this, i] { showMasterPluginMenu(false, i); };
 
     addAndMakeVisible(iemEditGuiBtns[i]);
@@ -958,7 +985,7 @@ void MainComponent::setupMasterSection() {
 
     // Color styles matching routing destinations
     fohFxBtns[i].setColour(juce::TextButton::buttonColourId, ThemeManager::get(Theme::Role::foh).darker(0.3f));
-    iemFxBtns[i].setColour(juce::TextButton::buttonColourId, juce::Colours::dodgerblue.darker(0.3f));
+    iemFxBtns[i].setColour(juce::TextButton::buttonColourId, ThemeManager::get(Theme::Role::iem).darker(0.3f));
   }
 }
 
@@ -1021,6 +1048,66 @@ void MainComponent::showAboutDialog() {
       juce::MessageBoxIconType::InfoIcon,
       "About OpenRig",
       "OpenRig Live Performance Host\nVersion 1.0.0\n\nOptimized for reliable, low-latency live synth rigs.");
+}
+
+void MainComponent::showSlotMidiOutDialog(int slotIdx, int chainIdx) {
+  auto *slot = engine.getSlot(slotIdx);
+  if (slot == nullptr)
+    return;
+
+  auto *w = new juce::AlertWindow(
+      "MIDI OUT Destination",
+      "Forward this chain slot's MIDI (after note-range + transpose filtering) "
+      "to a hardware/software output device instead of a plugin.",
+      juce::MessageBoxIconType::NoIcon);
+
+  auto devices = juce::MidiOutput::getAvailableDevices();
+  juce::StringArray deviceNames;
+  juce::StringArray deviceIds;
+  deviceNames.add("(none)");
+  deviceIds.add("");
+  for (const auto &d : devices) {
+    deviceNames.add(d.name);
+    deviceIds.add(d.identifier);
+  }
+
+  juce::String currentId = slot->getChainSlotMidiOutIdentifier(chainIdx);
+  int curDev = juce::jmax(0, deviceIds.indexOf(currentId));
+
+  w->addComboBox("device", deviceNames, "Output device:");
+  w->getComboBoxComponent("device")->setSelectedItemIndex(curDev,
+                                                          juce::dontSendNotification);
+
+  juce::StringArray channels;
+  for (int c = 1; c <= 16; ++c)
+    channels.add("Channel " + juce::String(c));
+  w->addComboBox("channel", channels, "MIDI channel:");
+  w->getComboBoxComponent("channel")->setSelectedItemIndex(
+      juce::jlimit(0, 15, slot->getChainSlotMidiOutChannel(chainIdx) - 1),
+      juce::dontSendNotification);
+
+  w->addButton("OK", 1, juce::KeyPress(juce::KeyPress::returnKey));
+  w->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+
+  juce::Component::SafePointer<juce::AlertWindow> safeW(w);
+  w->enterModalState(
+      true,
+      juce::ModalCallbackFunction::create(
+          [this, slotIdx, chainIdx, deviceIds, safeW](int result) {
+            if (safeW != nullptr && result == 1) {
+              int devSel = safeW->getComboBoxComponent("device")->getSelectedItemIndex();
+              int ch = safeW->getComboBoxComponent("channel")->getSelectedItemIndex() + 1;
+              if (devSel <= 0) {
+                engine.clearSlotChainMidiOut(slotIdx, chainIdx);
+              } else {
+                engine.setSlotChainMidiOut(slotIdx, chainIdx,
+                                            deviceIds[devSel], ch);
+              }
+              repaint();
+            }
+            if (safeW != nullptr)
+              delete safeW.getComponent();
+          }));
 }
 
 void MainComponent::showConfigOverlay() {
@@ -1191,31 +1278,43 @@ void MainComponent::paint(juce::Graphics &g) {
 void MainComponent::resized() {
   auto r = getLocalBounds();
 
-  // Header area - Row 1: Stage View (Large setup name + setlist nav)
-  auto stageHeader = r.removeFromTop(60);
-  setupNameLabel.setBounds(stageHeader.removeFromLeft(400).reduced(5));
-  nextSetlistBtn.setBounds(stageHeader.removeFromRight(80).reduced(5));
-  prevSetlistBtn.setBounds(stageHeader.removeFromRight(80).reduced(5));
-  preloadStatusLabel.setBounds(stageHeader.removeFromRight(200).reduced(10));
+  // Header area - Row 1: Stage View (setup name + setlist nav)
+  auto stageHeader = r.removeFromTop(38);
+  setupNameLabel.setBounds(stageHeader.removeFromLeft(320).reduced(4));
 
-  // Header area - Row 2: Controls & Meters
-  auto controlBar = r.removeFromTop(40);
+  // Right side: Setlist Navigation
+  nextSetlistBtn.setBounds(stageHeader.removeFromRight(55).reduced(3));
+  prevSetlistBtn.setBounds(stageHeader.removeFromRight(55).reduced(3));
+  preloadStatusLabel.setBounds(stageHeader.removeFromRight(140).reduced(4));
+
+  // Header area - Row 2: Controls, Telemetry & Clock
+  auto controlBar = r.removeFromTop(34);
   headerBounds = stageHeader.getUnion(controlBar);
 
+  // Left Controls
   toggleLibraryBtn.setBounds(controlBar.removeFromLeft(30).reduced(3));
-  aboutBtn.setBounds(controlBar.removeFromLeft(40).reduced(5));
-  settingsGearBtn.setBounds(controlBar.removeFromLeft(44).reduced(5));
-  midiMonitorLabel.setBounds(controlBar.removeFromLeft(140).reduced(5));
-  midiMonitorToggle.setBounds(controlBar.removeFromLeft(75).reduced(5));
-  cpuLabel.setBounds(controlBar.removeFromLeft(70).reduced(5));
-  ramLabel.setBounds(controlBar.removeFromLeft(70).reduced(5));
+  aboutBtn.setBounds(controlBar.removeFromLeft(40).reduced(4));
+  settingsGearBtn.setBounds(controlBar.removeFromLeft(44).reduced(4));
+  midiMonitorLabel.setBounds(controlBar.removeFromLeft(130).reduced(4));
+  midiMonitorToggle.setBounds(controlBar.removeFromLeft(75).reduced(4));
 
-  saveBtn.setBounds(controlBar.removeFromRight(100).reduced(5));
-  loadBtn.setBounds(controlBar.removeFromRight(100).reduced(5));
+  // Right Actions
+  saveBtn.setBounds(controlBar.removeFromRight(95).reduced(4));
+  loadBtn.setBounds(controlBar.removeFromRight(95).reduced(4));
+  panicBtn.setBounds(controlBar.removeFromRight(75).reduced(4));
+  exitBtn.setBounds(controlBar.removeFromRight(60).reduced(4));
 
-  // Panic / Exit in middle-ish (Reset Audio is now in the settings overlay)
-  panicBtn.setBounds(controlBar.removeFromRight(80).reduced(5));
-  exitBtn.setBounds(controlBar.removeFromRight(60).reduced(5));
+  // Center: Telemetry + Clock packed together
+  auto centerBar = controlBar.reduced(4, 2);
+  int telemetryWidth = 68;
+  int clockWidth = 90;
+  int totalCenter = telemetryWidth * 3 + clockWidth;
+  int startX = centerBar.getCentreX() - totalCenter / 2;
+  cpuLabel.setBounds(startX, centerBar.getY(), telemetryWidth, centerBar.getHeight());
+  ramLabel.setBounds(startX + telemetryWidth, centerBar.getY(), telemetryWidth, centerBar.getHeight());
+  latencyLabel.setColour(juce::Label::textColourId, ThemeManager::get(Theme::Role::warn));
+  latencyLabel.setBounds(startX + telemetryWidth * 2, centerBar.getY(), telemetryWidth, centerBar.getHeight());
+  clockLabel.setBounds(startX + telemetryWidth * 3, centerBar.getY(), clockWidth, centerBar.getHeight());
 
   // Header area - Row 2: setup buttons (smaller)
   auto presetRow = r.removeFromTop(30);
@@ -1264,18 +1363,24 @@ void MainComponent::resized() {
       libraryPanel->setBounds(0, 0, 0, 0);
   }
 
-  // Master sliders area (wider for VU meters)
-  auto masterArea = r.removeFromRight(100);
+  // Master sliders area (wider for VU meters & faders)
+  auto masterArea = r.removeFromRight(170);
   masterColumnBounds = masterArea;  // snapshot before slicing for timer repaint
 
-  // 1. Labels at the very top
+  // 1. Dual Retro Analog VU Meters at top of master section (wide rectangular ratio)
+  auto vuArea = masterArea.removeFromTop(62).reduced(2);
+  auto vuL = vuArea.removeFromLeft(vuArea.getWidth() / 2);
+  masterVuMeterL.setBounds(vuL.reduced(1));
+  masterVuMeterR.setBounds(vuArea.reduced(1));
+
+  // 2. Labels
   auto labels = masterArea.removeFromTop(20);
-  fohLabel.setBounds(labels.removeFromLeft(50));
+  fohLabel.setBounds(labels.removeFromLeft(labels.getWidth() / 2));
   iemLabel.setBounds(labels);
 
-  // 2. FX Slots (3 slots)
+  // 3. FX Slots (3 slots)
   auto fxArea = masterArea.removeFromTop(70);
-  auto fohFxArea = fxArea.removeFromLeft(50);
+  auto fohFxArea = fxArea.removeFromLeft(fxArea.getWidth() / 2);
   auto iemFxArea = fxArea;
 
   for (int i = 0; i < 3; ++i) {
@@ -1290,8 +1395,8 @@ void MainComponent::resized() {
     iemFxBtns[i].setBounds(iRow);
   }
 
-  // 3. Faders take the rest (with space for meters)
-  masterFohSlider.setBounds(masterArea.removeFromLeft(50).reduced(8, 2));
+  // 4. Faders take the rest
+  masterFohSlider.setBounds(masterArea.removeFromLeft(masterArea.getWidth() / 2).reduced(8, 2));
   masterIemSlider.setBounds(masterArea.reduced(8, 2));
 
   // Channel Strips (horizontal arrangement in center)
@@ -1335,6 +1440,7 @@ void MainComponent::loadRigAsync(const juce::File &file, int buttonIndexForHighl
     return;
   }
 
+  closeAllPluginWindows();
   showLoadingOverlay("SWITCHING SONG",
                      "Loading " + file.getFileNameWithoutExtension() + "...");
 
@@ -1351,6 +1457,7 @@ void MainComponent::loadRigAsync(const juce::File &file, int buttonIndexForHighl
             [this](juce::String progress) { setLoadingMessage(progress); },
             [this, highlight, file, targetSetlistIndex, fileName = file.getFileNameWithoutExtension()](bool ok, juce::String message, int) {
                 hideLoadingOverlay();
+                closeOrphanedPluginWindows();
                 if (ok) {
                     setupNameLabel.setText(fileName, juce::dontSendNotification);
                     for (auto *comp : rackSlotComponents)
@@ -1413,10 +1520,7 @@ void MainComponent::assignJsonToButton(int buttonIndex) {
 }
 
 void MainComponent::saveButtonMappings() {
-  auto mappingsFile =
-      juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
-          .getChildFile("OpenRig")
-          .getChildFile("button_mappings.json");
+  auto mappingsFile = OpenRig::RigLibrary::buttonMappingsFile();
   mappingsFile.getParentDirectory().createDirectory();
 
   auto *root = new juce::DynamicObject();
@@ -1430,10 +1534,7 @@ void MainComponent::saveButtonMappings() {
 }
 
 void MainComponent::loadButtonMappings() {
-  auto mappingsFile =
-      juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
-          .getChildFile("OpenRig")
-          .getChildFile("button_mappings.json");
+  auto mappingsFile = OpenRig::RigLibrary::buttonMappingsFile();
 
   if (!mappingsFile.existsAsFile())
     return;
@@ -1463,12 +1564,34 @@ void MainComponent::timerCallback() {
   ramLabel.setText("RAM: --", juce::dontSendNotification);
 #endif
 
+  // Round-trip latency readout (input + output buffer latency)
+  if (auto* dev = deviceManager.getCurrentAudioDevice()) {
+    double sr = dev->getCurrentSampleRate();
+    int inL = dev->getInputLatencyInSamples();
+    int outL = dev->getOutputLatencyInSamples();
+    double ms = 0.0;
+    if (sr > 0.0) {
+      if (inL + outL > 0)
+        ms = (inL + outL) / sr * 1000.0;
+      else
+        ms = dev->getCurrentBufferSizeSamples() * 2.0 / sr * 1000.0;
+    }
+    latencyLabel.setText("LAT: " + juce::String(ms, 1) + "ms",
+                         juce::dontSendNotification);
+  } else {
+    latencyLabel.setText("LAT: --", juce::dontSendNotification);
+  }
+
   // Surface any audio underruns (a block bailed to silence: wedged worker or an
   // unprepared rack). consumeAudioUnderrun() atomically clears the flag.
   if (engine.consumeAudioUnderrun())
     OpenRigLog::log(OpenRigLog::Level::Warning,
                     "Audio underrun: a block emitted silence "
                     "(worker stall or rack not prepared).");
+
+  // Update live performance clock
+  auto now = juce::Time::getCurrentTime();
+  clockLabel.setText(now.formatted("%I:%M:%S %p"), juce::dontSendNotification);
 
   // Sync Master FX buttons
   for (int i = 0; i < 3; ++i) {
@@ -1481,7 +1604,10 @@ void MainComponent::timerCallback() {
                                                  : iemName);
   }
 
-  // Update master meters
+  // Update master meters & analog VU meters
+  masterVuMeterL.setLevel(engine.getFohPeakL());
+  masterVuMeterR.setLevel(engine.getFohPeakR());
+
   float decay = 0.85f;
   masterFohL = std::max(OpenRigLog::amplitudeToLogScale(engine.getFohPeakL()),
                         masterFohL * decay);
@@ -1508,6 +1634,11 @@ void MainComponent::showMasterPluginMenu(bool isFoh, int chainIndex) {
   menu.addItem(-1, "(No Plugin)");
 
   menu.showMenuAsync(juce::PopupMenu::Options(), [this, isFoh, chainIndex](int result) {
+    if (result > 0 || result == -1) {
+      if (auto *oldInstance = engine.getMasterPluginInstance(isFoh, chainIndex)) {
+        closePluginWindowForInstance(oldInstance);
+      }
+    }
     if (result > 0) {
       loadingOverlay.reset(new LoadingOverlay());
       addAndMakeVisible(loadingOverlay.get());
@@ -1522,12 +1653,17 @@ void MainComponent::showMasterPluginMenu(bool isFoh, int chainIndex) {
             } else {
               auto name = engine.getMasterPluginName(isFoh, chainIndex);
               auto &btn = isFoh ? fohFxBtns[chainIndex] : iemFxBtns[chainIndex];
-              btn.setButtonText(name.isEmpty() ? "[EMPTY]" : name);
+              bool hasPlugin = !name.isEmpty();
+              btn.getProperties().set("isPluginSlot", true);
+              btn.getProperties().set("hasPlugin", hasPlugin);
+              btn.setButtonText(hasPlugin ? name : "[EMPTY]");
             }
           });
     } else if (result == -1) {
       engine.loadPluginIntoMasterBus(isFoh, chainIndex, -1, [this, isFoh, chainIndex](bool, const juce::String &) {
         auto &btn = isFoh ? fohFxBtns[chainIndex] : iemFxBtns[chainIndex];
+        btn.getProperties().set("isPluginSlot", true);
+        btn.getProperties().set("hasPlugin", false);
         btn.setButtonText("[EMPTY]");
       });
     }
@@ -1735,7 +1871,7 @@ void MainComponent::mouseDown(const juce::MouseEvent &e) {
 
             } else if (result == 2) {
               engine.clearSceneMidiTrigger(sceneIdx);
-              engine.exportRigToJson(); // trigger auto-save
+              saveButtonMappings(); // Persist scene MIDI trigger changes to disk
               refreshSceneButtons();
             }
           });
@@ -1745,7 +1881,10 @@ void MainComponent::mouseDown(const juce::MouseEvent &e) {
   }
 }
 
-bool MainComponent::keyPressed (const juce::KeyPress& key, juce::Component*) {
+bool MainComponent::keyPressed (const juce::KeyPress& key, juce::Component* originatingComponent) {
+  if (dynamic_cast<juce::TextEditor*>(originatingComponent) != nullptr)
+    return false;
+
   if (key == juce::KeyPress::spaceKey) {
     auto& sm = OpenRig::SetlistManager::getInstance();
     if (sm.hasNext()) {
@@ -1759,5 +1898,48 @@ bool MainComponent::keyPressed (const juce::KeyPress& key, juce::Component*) {
     return true;
   }
   return false;
+}
+
+void MainComponent::closePluginWindowForInstance(juce::AudioPluginInstance* instance) {
+  if (!instance)
+    return;
+  for (int i = activePluginWindows.size() - 1; i >= 0; --i) {
+    if (auto *pw = dynamic_cast<PluginWindow*>(activePluginWindows[i])) {
+      if (pw->pluginInstance == instance) {
+        activePluginWindows.remove(i);
+      }
+    }
+  }
+}
+
+void MainComponent::closeOrphanedPluginWindows() {
+  std::vector<juce::AudioPluginInstance*> activeInstances;
+  for (int slotIdx = 0; slotIdx < engine.getNumSlots(); ++slotIdx) {
+    if (auto *slot = engine.getSlot(slotIdx)) {
+      for (int chainIdx = 0; chainIdx < 3; ++chainIdx) {
+        if (auto *pi = slot->getPluginInstance(chainIdx))
+          activeInstances.push_back(pi);
+      }
+    }
+  }
+  for (int i = 0; i < 3; ++i) {
+    if (auto *pi = engine.getMasterPluginInstance(true, i))
+      activeInstances.push_back(pi);
+    if (auto *pi = engine.getMasterPluginInstance(false, i))
+      activeInstances.push_back(pi);
+  }
+
+  for (int i = activePluginWindows.size() - 1; i >= 0; --i) {
+    if (auto *pw = dynamic_cast<PluginWindow*>(activePluginWindows[i])) {
+      bool found = (std::find(activeInstances.begin(), activeInstances.end(), pw->pluginInstance) != activeInstances.end());
+      if (!found) {
+        activePluginWindows.remove(i);
+      }
+    }
+  }
+}
+
+void MainComponent::closeAllPluginWindows() {
+  activePluginWindows.clear();
 }
 

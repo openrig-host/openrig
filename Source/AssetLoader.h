@@ -66,7 +66,8 @@ private:
    */
   juce::File getAssetsDirectory() const;
 
-  // Cache of loaded drawables
+  // Cache of loaded drawables protected by cacheLock
+  mutable juce::CriticalSection cacheLock;
   std::unordered_map<juce::String, std::unique_ptr<juce::Drawable>> assetCache;
 
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AssetLoader)

@@ -4,9 +4,17 @@
 
 ### The Sovereign Live Performance Engine
 
-A rack-based VST3 host built for one job: getting you through a live set without a single dropout, a stuck note, or a fumbled song switch.
+[![Latest Release](https://img.shields.io/github/v/release/openrig-host/openrig?color=ed786a&label=Latest%20Release)](https://github.com/openrig-host/openrig/releases/latest)
+[![Platform](https://img.shields.io/badge/platform-Windows%20x64-blue.svg)](https://github.com/openrig-host/openrig/releases)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0.html)
 
-[Download](#download) · [Features](#features) · [How It Works](#how-it-works) · [Tested Plugins](#tested-vst-compatibility) · [Make It Yours](#make-it-yours) · [Roadmap](#roadmap)
+A rack-based VST3 host (and MIDI router) built for one job: getting you through a live set without a single dropout, a stuck note, or a fumbled song switch.
+
+[Download](#download) · [Quick Start](#quick-start) · [Features](#features) · [How It Works](#how-it-works) · [Tested Plugins](#tested-vst-compatibility) · [Make It Yours](#make-it-yours) · [Roadmap](#roadmap)
+
+<br/>
+
+![OpenRig Live Mixer Interface](docs/full_mixer_v2.png)
 
 </div>
 
@@ -41,13 +49,24 @@ OpenRig is a Windows desktop application that hosts your VST3 instruments and ef
 
 It's built around the realities of playing a keyboard live:
 
+- **Splits. Triggering samples. Arpeggiators. Octaves and harmonizers. Set, and forget.**
 - **You can't reload a song in the middle of a verse.** Songs switch in the background, atomic, with rollback if something goes wrong.
 - **The sound guy and the in-ear mix are not the same mix.** Every slot sends independently to FOH and IEM.
 - **A stuck note cannot end the show.** A panic button kills all MIDI in one audio block. Always.
-- **Your modwheel must hit the B3X and only the B3X.** Per-slot MIDI channel routing, plus full CC mapping with arm-then-wiggle learn.
+- **Your modwheel must hit the B3X and only the B3X.** Per-slot MIDI channel routing, CC remapping, and full arm-then-wiggle CC learn.
+- **Some sounds live in hardware, not plugins.** Any slot can send MIDI OUT to an external synth/module instead of hosting a VST.
 - **The next song needs to be ready before you call it.** Setlists preload the next rig in a background thread while you play.
 
 This is not a DAW. It's a stage instrument.
+
+---
+
+## Quick Start
+
+1. **Download the latest release**: Grab `OpenRig.exe` from [GitHub Releases](https://github.com/openrig-host/openrig/releases/latest) (no installer required).
+2. **Configure your Audio & MIDI**: Open `Settings`, select your **ASIO** driver (or WASAPI), and enable your primary MIDI keyboard controller.
+3. **Load a Rig or Build a Slot**: Click **LOAD RIG** to open a setlist/song, or click **[EMPTY]** on any strip slot to load a VST3 plugin instrument.
+4. **Set Up Key Range & MIDI Learn**: Click **NR** on a strip to set key split range via play-to-learn, or **CC** to arm-and-wiggle map your hardware knobs.
 
 ---
 
@@ -74,7 +93,9 @@ This is not a DAW. It's a stage instrument.
 - **MIDI remote settings** — define a hardware device, map its controls once, use them across all rigs.
 
 ### DSP & Effects
-- **Per-slot channel strip** — gate, parametric EQ, compressor, chorus, reverb. Toggleable per slot.
+![Channel Strip DSP](docs/channel_strip_dsp.png)
+
+- **Per-slot channel strip** — noise gate, high-pass + low/high shelves, compressor, chorus, convolution **IR reverb** (load your own impulse response), all toggleable per slot.
 - **Sampler with waveform splice editor** — load a WAV, set root note, trim the start/end with sample-accurate handles.
 - **Arpeggiator** — patterns (Up / Down / Up-Down / Random), 0–4 octave range, gate time, BPM-locked to 1 decimal.
 - **Octave harmonizer** — generate sub/up octaves with mode shaping.

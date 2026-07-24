@@ -30,6 +30,7 @@ public:
 
   std::function<void(int)> onShowPluginMenu;
   std::function<void(int)> onOpenEditor;
+  std::function<void(int)> onEditMidiOut; // edit a chain slot's MIDI OUT destination
   std::function<void()> onShowCCDialog;
   std::function<void()> onShowNoteRangeDialog;
   std::function<void()> onShowChannelStrip;

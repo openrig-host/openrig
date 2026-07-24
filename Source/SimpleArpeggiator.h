@@ -31,13 +31,22 @@ public:
     }
 
     void processBlock(juce::MidiBuffer& midi, int numSamples) {
-        if (!enabled.load()) return;
+        if (!enabled.load()) {
+            if (soundingNote >= 0) {
+                midi.addEvent(juce::MidiMessage::noteOff(1, soundingNote), 0);
+                soundingNote = -1;
+            }
+            if (heldNotesCount > 0) {
+                reset();
+            }
+            return;
+        }
 
         float currentBpm = bpm.load();
         if (currentBpm < 1.0f) currentBpm = 1.0f;
 
-        int up = octavesUp.load();
-        int down = octavesDown.load();
+        int up = juce::jlimit(0, 4, octavesUp.load());
+        int down = juce::jlimit(0, 4, octavesDown.load());
         float g = gate.load();
         Pattern pat = static_cast<Pattern>(patternIdx.load());
 

@@ -61,16 +61,19 @@ public:
     
     void startNote(int midiNoteNumber, float velocity, juce::SynthesiserSound* sound, int /*currentPitchWheelPosition*/) override {
         if (auto* s = dynamic_cast<CustomSamplerSound*>(sound)) {
+            double sr = getSampleRate();
+            if (sr <= 0.0) sr = 44100.0;
+
             double pitchOffset = s->pitchOffsetSemitones.load();
             double noteOffset = midiNoteNumber - s->rootNote.load() + pitchOffset;
-            pitchRatio = std::pow(2.0, noteOffset / 12.0) * (s->sourceSampleRate / getSampleRate());
+            pitchRatio = std::pow(2.0, noteOffset / 12.0) * (s->sourceSampleRate / sr);
             
             sourceSamplePosition = s->startRatio.load() * s->length;
             lgain = velocity * s->volume.load();
             rgain = lgain;
             
             envelopeLevel = 1.0f;
-            envelopeReleaseCoeff = 1.0f - (float)std::exp(-1.0f / (s->params.release * getSampleRate()));
+            envelopeReleaseCoeff = 1.0f - (float)std::exp(-1.0f / (std::max(0.001, s->params.release) * sr));
             isReleasing = false;
         }
     }
@@ -171,9 +174,18 @@ public:
         synth.setCurrentPlaybackSampleRate(sampleRate);
     }
     
+    void reset() {
+        synth.allNotesOff(0, false);
+    }
+
     void processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages) {
-        if (!enabled.load())
+        if (!enabled.load()) {
+            if (wasEnabled.exchange(false)) {
+                synth.allNotesOff(0, false);
+            }
             return;
+        }
+        wasEnabled.store(true);
             
         synth.renderNextBlock(buffer, midiMessages, 0, buffer.getNumSamples());
     }
@@ -210,7 +222,9 @@ public:
                 
                 // Update key range
                 juce::BigInteger keys;
-                keys.setRange(config.keyLow, config.keyHigh - config.keyLow + 1, true);
+                int low = juce::jlimit(0, 127, juce::jmin(config.keyLow, config.keyHigh));
+                int high = juce::jlimit(0, 127, juce::jmax(config.keyLow, config.keyHigh));
+                keys.setRange(low, high - low + 1, true);
                 sound->midiNotesRange = keys;
             }
         }
@@ -226,8 +240,13 @@ public:
 
 private:
     void reloadSound(int slotIdx) {
-        synth.clearSounds();
-        sounds[slotIdx] = nullptr;
+        if (sounds[slotIdx] != nullptr) {
+            for (int i = synth.getNumSounds() - 1; i >= 0; --i) {
+                if (synth.getSound(i) == sounds[slotIdx])
+                    synth.removeSound(i);
+            }
+            sounds[slotIdx] = nullptr;
+        }
         
         auto path = configs[slotIdx].wavPath;
         if (path.isNotEmpty()) {
@@ -236,7 +255,9 @@ private:
                 std::unique_ptr<juce::AudioFormatReader> reader(formatManager.createReaderFor(file));
                 if (reader != nullptr) {
                     juce::BigInteger keys;
-                    keys.setRange(configs[slotIdx].keyLow, configs[slotIdx].keyHigh - configs[slotIdx].keyLow + 1, true);
+                    int low = juce::jlimit(0, 127, juce::jmin(configs[slotIdx].keyLow, configs[slotIdx].keyHigh));
+                    int high = juce::jlimit(0, 127, juce::jmax(configs[slotIdx].keyLow, configs[slotIdx].keyHigh));
+                    keys.setRange(low, high - low + 1, true);
                     
                     auto* newSound = new CustomSamplerSound(
                         "slot_" + juce::String(slotIdx),
@@ -254,18 +275,13 @@ private:
                     newSound->endRatio.store(configs[slotIdx].endRatio);
                     
                     sounds[slotIdx] = newSound;
+                    synth.addSound(newSound);
                 }
-            }
-        }
-        
-        // Re-add all non-null sounds to keep order consistent and prevent index desync
-        for (int i = 0; i < 8; ++i) {
-            if (sounds[i] != nullptr) {
-                synth.addSound(sounds[i]);
             }
         }
     }
 
+    std::atomic<bool> wasEnabled{false};
     juce::Synthesiser synth;
     juce::AudioFormatManager formatManager;
     double currentSampleRate = 44100.0;

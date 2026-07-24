@@ -7,7 +7,7 @@ class WaveformSpliceEditor : public juce::Component,
                              public juce::ChangeListener {
 public:
     WaveformSpliceEditor(std::function<void(float, float)> onRatiosChanged)
-        : cache(5),
+        : cache(64),
           thumbnail(256, formatManager, cache),
           onChangedCallback(onRatiosChanged)
     {
@@ -45,7 +45,7 @@ public:
         g.fillRoundedRectangle(bounds, 4.0f);
 
         // Draw Waveform
-        if (thumbnail.getNumChannels() > 0) {
+        if (thumbnail.getTotalLength() > 0.0) {
             g.setColour(ThemeManager::get(Theme::Role::iem).withAlpha(0.6f));
             thumbnail.drawChannels(g, getLocalBounds().reduced(2), 0.0, thumbnail.getTotalLength(), 1.0f);
 

@@ -33,8 +33,7 @@ public:
         if (needsFlush.exchange(false)) {
             for (int note = 0; note < 128; ++note) {
                 if (refCount[note] > 0) {
-                    output.addEvent(juce::MidiMessage::noteOff(1, note), 0);
-                    targetOutput.addEvent(juce::MidiMessage::noteOff(1, note), 0);
+                    destinationBuffer.addEvent(juce::MidiMessage::noteOff(1, note), 0);
                 }
             }
             std::fill(std::begin(refCount), std::end(refCount), 0);

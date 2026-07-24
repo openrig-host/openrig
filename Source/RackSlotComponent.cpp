@@ -378,8 +378,12 @@ RackSlotComponent::RackSlotComponent(RackSlot &s, int index, juce::LookAndFeel &
     editGuiBtns[i].setColour(juce::TextButton::textColourOffId,
                              ThemeManager::get(Theme::Role::text));
     editGuiBtns[i].onClick = [this, i] {
-      if (onOpenEditor)
+      if (slot.isChainSlotMidiOut(i)) {
+        if (onEditMidiOut)
+          onEditMidiOut(i);
+      } else if (onOpenEditor) {
         onOpenEditor(i);
+      }
     };
   }
 
@@ -581,6 +585,10 @@ void RackSlotComponent::timerCallback() {
     }
 
     auto name = slot.getPluginName(i);
+    bool isMidiOut = slot.isChainSlotMidiOut(i);
+    if (isMidiOut)
+      name = "\xe2\x86\x92 " + slot.getChainSlotMidiOutName(i) +
+             " ch" + juce::String(slot.getChainSlotMidiOutChannel(i));
     if (i >= prevSlotNames.size()) {
       prevSlotNames.add("");
     }
@@ -589,12 +597,19 @@ void RackSlotComponent::timerCallback() {
       slotBtns[i].setButtonText(name.isEmpty() ? "Slot " + juce::String(i + 1)
                                                : name);
     }
-    bool hasPlugin = slot.getPluginInstance(i) != nullptr;
+    bool hasPlugin = slot.getPluginInstance(i) != nullptr || isMidiOut;
     if (hasPlugin)
       anyPlugin = true;
+    editGuiBtns[i].setButtonText(isMidiOut ? "M" : "E");
+    slotBtns[i].getProperties().set("isPluginSlot", true);
+    slotBtns[i].getProperties().set("hasPlugin", hasPlugin);
     slotBtns[i].setColour(juce::TextButton::buttonColourId,
-                          hasPlugin ? ThemeManager::get(Theme::Role::ok).darker(0.3f)
-                                    : ThemeManager::get(Theme::Role::panel));
+                          isMidiOut ? ThemeManager::get(Theme::Role::midiPC).darker(0.3f)
+                                    : (hasPlugin ? ThemeManager::get(Theme::Role::ok).darker(0.35f)
+                                                 : ThemeManager::get(Theme::Role::panel)));
+    slotBtns[i].setColour(juce::TextButton::textColourOffId,
+                          hasPlugin ? ThemeManager::get(Theme::Role::text)
+                                    : ThemeManager::get(Theme::Role::textDim));
   }
   if (anyPlugin != cachedHasAnyPlugin) {
     cachedHasAnyPlugin = anyPlugin;
@@ -742,7 +757,7 @@ void RackSlotComponent::paint(juce::Graphics &g) {
     juce::Colour trackColor =
         hasCustomColor ? customColor : ThemeManager::get(Theme::Role::accent);
     for (int i = 0; i < 3; ++i) {
-      if (slot.getPluginInstance(i) != nullptr) {
+      if (slot.getPluginInstance(i) != nullptr || slot.isChainSlotMidiOut(i)) {
         auto sb = slotBtns[i].getBounds().toFloat().expanded(1.0f);
         g.setColour(trackColor.withAlpha(0.12f));
         g.fillRoundedRectangle(sb, 3.0f);
@@ -1137,7 +1152,9 @@ void RackSlotComponent::itemDropped(
 void RackSlotComponent::showPluginConfigMenu(int chainIndex) {
   if (chainIndex < 0 || chainIndex >= slot.getChainSize())
     return;
-  if (!slot.getPluginInstance(chainIndex))
+  // Allow the per-layer config (note range/level/enable) for both plugin and
+  // MIDI OUT chain slots.
+  if (!slot.getPluginInstance(chainIndex) && !slot.isChainSlotMidiOut(chainIndex))
     return;
 
   auto *comp = new PluginStackConfigComp(slot, chainIndex);
@@ -1181,12 +1198,13 @@ juce::String RackSlotComponent::getActiveNoteRangeString() const {
   bool hasInstruments = false;
 
   for (int i = 0; i < 3; ++i) {
-    if (auto* p = slot.getPluginInstance(i)) {
-      if (p->getPluginDescription().isInstrument && slot.getChainSlotSettings(i).enabled.load()) {
-        stackLow = juce::jmin(stackLow, slot.getChainSlotSettings(i).lowNote.load());
-        stackHigh = juce::jmax(stackHigh, slot.getChainSlotSettings(i).highNote.load());
-        hasInstruments = true;
-      }
+    bool isInst = slot.isChainSlotMidiOut(i);
+    if (auto* p = slot.getPluginInstance(i))
+      isInst = isInst || p->getPluginDescription().isInstrument;
+    if (isInst && slot.getChainSlotSettings(i).enabled.load()) {
+      stackLow = juce::jmin(stackLow, slot.getChainSlotSettings(i).lowNote.load());
+      stackHigh = juce::jmax(stackHigh, slot.getChainSlotSettings(i).highNote.load());
+      hasInstruments = true;
     }
   }
 

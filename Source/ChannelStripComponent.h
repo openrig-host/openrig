@@ -196,6 +196,55 @@ public:
       slot.getStrip().reverbMix = (float)reverbMixKnob.getValue();
     };
 
+    // IR / convolution reverb
+    addAndMakeVisible(irToggle);
+    irToggle.setButtonText("IR");
+    irToggle.setClickingTogglesState(true);
+    irToggle.setColour(juce::TextButton::buttonOnColourId, ThemeManager::get(Theme::Role::iem));
+    irToggle.getProperties().set("useToggleSwitch", true);
+    irToggle.setToggleState(slot.getStrip().irEnabled.load(), juce::dontSendNotification);
+    irToggle.onClick = [this] {
+      slot.getStrip().irEnabled.store(irToggle.getToggleState());
+    };
+
+    addAndMakeVisible(irLoadBtn);
+    irLoadBtn.setButtonText("LOAD IR");
+    irLoadBtn.setColour(juce::TextButton::buttonColourId, ThemeManager::get(Theme::Role::iem));
+    irLoadBtn.setTooltip("Load an impulse response (.wav) for convolution reverb / cab sim");
+    irLoadBtn.onClick = [this] {
+      irChooser = std::make_unique<juce::FileChooser>(
+          "Load Impulse Response (.wav)",
+          juce::File::getSpecialLocation(juce::File::userMusicDirectory), "*.wav");
+      auto flags = juce::FileBrowserComponent::openMode |
+                   juce::FileBrowserComponent::canSelectFiles;
+      irChooser->launchAsync(flags, [this](const juce::FileChooser& fc) {
+        auto f = fc.getResult();
+        if (f == juce::File()) return;
+        if (slot.getStrip().getIRReverb().loadIR(f)) {
+          irNameLabel.setText(f.getFileName(), juce::dontSendNotification);
+          irToggle.setToggleState(true, juce::sendNotification);
+          slot.getStrip().irEnabled.store(true);
+        }
+      });
+    };
+
+    addAndMakeVisible(irMixKnob);
+    irMixKnob.setRange(0.0, 1.0, 0.01);
+    irMixKnob.setValue(slot.getStrip().irMix.load(), juce::dontSendNotification);
+    irMixKnob.setTooltip("IR Wet Mix");
+    irMixKnob.onValueChange = [this] {
+      slot.getStrip().irMix.store((float)irMixKnob.getValue());
+    };
+
+    addAndMakeVisible(irNameLabel);
+    irNameLabel.setColour(juce::Label::textColourId, ThemeManager::get(Theme::Role::textDim));
+    irNameLabel.setFont(juce::FontOptions(12.0f));
+    {
+      auto p = slot.getStrip().getIRReverb().getLoadedPath();
+      irNameLabel.setText(p.isEmpty() ? "(no IR loaded)" : juce::File(p).getFileName(),
+                          juce::dontSendNotification);
+    }
+
     // Chorus
     addAndMakeVisible(chorusToggle);
     chorusToggle.setButtonText("CHORUS");
@@ -345,6 +394,13 @@ public:
     chorusRateKnob.setBounds(col4X + 20, sectionY + 132, (colW - 50) / 2, 55);
     chorusMixKnob.setBounds(col4X + 20 + (colW - 50) / 2, sectionY + 132, (colW - 50) / 2, 55);
 
+    // IR / convolution reverb row (bottom of panel)
+    int irY = 385;
+    irToggle.setBounds(20, irY, 60, 24);
+    irLoadBtn.setBounds(90, irY, 90, 24);
+    irMixKnob.setBounds(190, irY - 6, 90, 60);
+    irNameLabel.setBounds(290, irY, getWidth() - 300, 24);
+
     int custY = sectionY + sectionH + 20;
     nameLabel.setBounds(20, custY, 100, 24);
     nameEditor.setBounds(130, custY, 200, 24);
@@ -394,6 +450,13 @@ private:
   juce::TextButton chorusToggle;
   BigKnob chorusRateKnob{" Hz"};
   BigKnob chorusMixKnob{" Mix"};
+
+  // IR / convolution reverb
+  juce::TextButton irToggle;
+  juce::TextButton irLoadBtn{"LOAD IR"};
+  BigKnob irMixKnob{" Mix"};
+  juce::Label irNameLabel{"irNameLabel", "(no IR loaded)"};
+  std::unique_ptr<juce::FileChooser> irChooser;
 
   juce::Label nameLabel;
   juce::TextEditor nameEditor;

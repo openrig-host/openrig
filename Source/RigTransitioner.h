@@ -128,13 +128,14 @@ public:
         //    Timeout prevents hanging if a plugin blocks during state restore.
         postProgress("Applying...");
         logToFile("TRACE: RigTransitioner dispatching applyRig to main thread.");
-        juce::WaitableEvent done;
-        juce::MessageManager::getInstance()->callAsync([this, &loaded, &done]() {
+        auto sharedRig = std::make_shared<juce::var>(std::move(loaded.rig));
+        auto doneEvent = std::make_shared<juce::WaitableEvent>();
+        juce::MessageManager::getInstance()->callAsync([this, sharedRig, doneEvent]() {
             logToFile("TRACE: RigTransitioner applying rig on main thread.");
-            engine.applyRig(loaded.rig);
-            done.signal();
+            engine.applyRig(*sharedRig);
+            doneEvent->signal();
         });
-        if (!done.wait(60000)) {
+        if (!doneEvent->wait(60000)) {
             logToFile("ERROR: applyRig timed out (60s)");
             engine.clearStagingCache();
             postComplete(false, "Apply timed out (60s) — possible plugin hang", 0);

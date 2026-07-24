@@ -11,12 +11,13 @@
 */
 class ParamChangeDetector : public juce::AudioProcessorListener {
 public:
+  juce::Component::SafePointer<juce::Component> safeOwner;
   std::function<void(juce::AudioProcessor *, int)> onParameterChanged;
 
   void audioProcessorParameterChanged(juce::AudioProcessor *processor,
                                       int parameterIndex, float) override {
-    juce::MessageManager::callAsync([this, processor, parameterIndex] {
-      if (onParameterChanged)
+    juce::MessageManager::callAsync([safe = safeOwner, this, processor, parameterIndex] {
+      if (safe != nullptr && onParameterChanged)
         onParameterChanged(processor, parameterIndex);
     });
   }

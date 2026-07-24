@@ -2,6 +2,7 @@
 
 #include "OpenRigConstants.h"
 #include "JuceHeader.h"
+#include <juce_dsp/juce_dsp.h>
 #include <atomic>
 #include <cmath>
 
@@ -316,6 +317,76 @@ private:
 };
 
 // ==============================================================================
+// CONVOLUTION REVERB (IR loader)
+// Impulse-response reverb / cab sim via juce::dsp::Convolution. loadIR() is
+// wait-free-safe from the message thread while processBlock() runs on the
+// audio thread (Convolution swaps the IR atomically when ready).
+// ==============================================================================
+class ConvolutionReverb {
+public:
+  void prepare(double sampleRate, int maxBlockSize) {
+    sr = sampleRate;
+    blockSize = juce::jmax(maxBlockSize, 8192);
+    wetBuffer.setSize(2, blockSize, false, false, true);
+    juce::dsp::ProcessSpec spec;
+    spec.sampleRate = sr;
+    spec.maximumBlockSize = (juce::uint32) blockSize;
+    spec.numChannels = 2;
+    convolution.prepare(spec);
+  }
+
+  // Loads an IR (.wav). Only reloads if the path changed. Message-thread only.
+  bool loadIR(const juce::File &f) {
+    if (!f.existsAsFile()) return false;
+    if (f.getFullPathName() == loadedPath && hasIR) return true;
+    convolution.loadImpulseResponse(f,
+        juce::dsp::Convolution::Stereo::yes,
+        juce::dsp::Convolution::Trim::yes,
+        0,
+        juce::dsp::Convolution::Normalise::yes);
+    loadedPath = f.getFullPathName();
+    hasIR = true;
+    return true;
+  }
+
+  bool hasIrLoaded() const { return hasIR; }
+  const juce::String &getLoadedPath() const { return loadedPath; }
+
+  void processBlock(juce::AudioBuffer<float> &buffer, bool enabled, float mix) {
+    if (!enabled || !hasIR || mix <= 0.001f)
+      return;
+    const int n = juce::jmin(buffer.getNumSamples(), wetBuffer.getNumSamples());
+    const int chans = buffer.getNumChannels();
+    if (n <= 0) return;
+    for (int c = 0; c < 2; ++c)
+      wetBuffer.copyFrom(c, 0, buffer, juce::jmin(c, chans - 1), 0, n);
+    juce::dsp::AudioBlock<float> wetBlock(wetBuffer);
+    juce::dsp::ProcessContextReplacing<float> ctx(wetBlock);
+    convolution.process(ctx);
+    const float w = mix, d = 1.0f - mix;
+    for (int c = 0; c < chans; ++c) {
+      auto *dry = buffer.getWritePointer(c);
+      const float *wet = wetBuffer.getReadPointer(juce::jmin(c, 1));
+      for (int i = 0; i < n; ++i)
+        dry[i] = dry[i] * d + wet[i] * w;
+    }
+  }
+
+  void reset() {
+    convolution.reset();
+    wetBuffer.clear();
+  }
+
+private:
+  juce::dsp::Convolution convolution;
+  juce::AudioBuffer<float> wetBuffer;
+  double sr = 44100.0;
+  int blockSize = 512;
+  bool hasIR = false;
+  juce::String loadedPath;
+};
+
+// ==============================================================================
 // MAIN PROCESSOR WRAPPER
 // ==============================================================================
 class ChannelStripProcessor {
@@ -327,6 +398,7 @@ public:
   SimpleComp compL, compR;
   SimpleChorus chorusL, chorusR;
   juce::Reverb reverb;
+  ConvolutionReverb irReverb;
 
   // Parameters (Atomic for thread-safety)
   std::atomic<bool> gateEnabled{false};
@@ -348,6 +420,13 @@ public:
   std::atomic<float> reverbSize{0.5f};
   std::atomic<float> reverbMix{0.0f};
 
+  // IR / convolution reverb
+  std::atomic<bool> irEnabled{false};
+  std::atomic<float> irMix{0.3f};
+
+  ConvolutionReverb &getIRReverb() { return irReverb; }
+  const ConvolutionReverb &getIRReverb() const { return irReverb; }
+
   void prepare(double sampleRate) {
     gateL.prepare(sampleRate);
     gateR.prepare(sampleRate);
@@ -358,6 +437,7 @@ public:
     chorusL.prepare(sampleRate);
     chorusR.prepare(sampleRate);
     reverb.setSampleRate(sampleRate);
+    irReverb.prepare(sampleRate, 4096);
   }
 
   void processBlock(juce::AudioBuffer<float> &buffer) {
@@ -438,6 +518,9 @@ public:
         reverb.processMono(L, numSamples);
       }
     }
+
+    // IR / convolution reverb (impulse-response cab/room sim)
+    irReverb.processBlock(buffer, irEnabled.load(), irMix.load());
   }
 
   float getGainReductionDb() const { return compL.getGainReductionDb(); }

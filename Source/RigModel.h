@@ -17,6 +17,13 @@ struct PluginState {
     int highNote = 127;
     float level = 1.0f;
     bool enabled = true;
+
+    // MIDI OUT target (instead of hosting a plugin). When isMidiOut is true
+    // this chain slot forwards its filtered MIDI to the named hardware/software
+    // output device instead of instantiating a VST. `path`/`state` stay empty.
+    bool isMidiOut = false;
+    juce::String midiOutDevice;  // device identifier (MidiOutput::getAvailableDevices)
+    int midiOutChannel = 1;      // 1..16
 };
 
 struct CCMapping {
@@ -49,6 +56,9 @@ struct ChannelStripSettings {
     bool reverbEnabled = false;
     float reverbSize = 0.5f;
     float reverbMix = 0.0f;
+    bool irEnabled = false;
+    float irMix = 0.3f;
+    juce::String irPath;
 };
 
 struct SamplerSlotSettings {

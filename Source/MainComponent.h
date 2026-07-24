@@ -19,8 +19,8 @@
 #include "OpenRigEngine.h"
 #include "RackSlotComponent.h"
 #include "RigLibrary.h"
-#include "RigSerializer.h"
 #include "RigTransitioner.h"
+#include "AnalogVuMeter.h"
 #include <JuceHeader.h>
 #include <functional>
 
@@ -136,6 +136,7 @@ private:
   void showMasterPluginMenu(bool isFoh, int chainIndex);
   void openMasterPluginEditor(bool isFoh, int chainIndex);
   void updatePreloadStatus();
+  void showSlotMidiOutDialog(int slotIdx, int chainIdx);
 
   // --- Setup Helpers (extracted from constructor) ---
   void setupSlotComponents();
@@ -151,6 +152,11 @@ private:
   // Begin an async (non-freezing) rig load from a file.
   void loadRigAsync(const juce::File &file, int buttonIndexForHighlight = -1, int targetSetlistIndex = -1);
 
+  // Plugin window management
+  void closePluginWindowForInstance(juce::AudioPluginInstance* instance);
+  void closeOrphanedPluginWindows();
+  void closeAllPluginWindows();
+
   // Windows managed by MainComponent to prevent shutdown crashes
   juce::OwnedArray<juce::DocumentWindow> activePluginWindows;
 
@@ -164,13 +170,17 @@ private:
   juce::Label iemLabel{"iemLabel", "IEM"};
   juce::TextButton fohFxBtns[3], fohEditGuiBtns[3];
   juce::TextButton iemFxBtns[3], iemEditGuiBtns[3];
+  AnalogVuMeter masterVuMeterL{"FOH L"};
+  AnalogVuMeter masterVuMeterR{"FOH R"};
   float masterFohL = 0.0f, masterFohR = 0.0f;
   float masterIemL = 0.0f, masterIemR = 0.0f;
 
-  // CPU/RAM monitors
+  // CPU/RAM/latency monitors
   juce::Label cpuLabel{"cpuLabel", "CPU: 0%"};
   juce::Label ramLabel{"ramLabel", "RAM: 0%"};
+  juce::Label latencyLabel{"latencyLabel", "LAT: --"};
   juce::Label setupNameLabel{"setupNameLabel", "No rig loaded"};
+  juce::Label clockLabel{"clockLabel", ""};
   juce::Label preloadStatusLabel{"preloadStatusLabel", ""};
   juce::Rectangle<int> headerBounds;
   juce::Rectangle<int> masterColumnBounds;
@@ -293,7 +303,7 @@ private:
       }
     }
 
-    if (msg.isNoteOn() && msg.getChannel() == 10) {
+    if (msg.isNoteOn() && msg.getVelocity() > 0 && msg.getChannel() == 10) {
       int note = msg.getNoteNumber();
       if (note >= 36 && note < 36 + numSetupButtons) {
         int setupIdx = note - 36;
@@ -327,25 +337,7 @@ private:
       });
     }
 
-    // Update MIDI monitor on message thread
-    if (msg.isNoteOn()) {
-      juce::String noteText = "MIDI: " +
-                              juce::MidiMessage::getMidiNoteName(
-                                  msg.getNoteNumber(), true, true, 4) +
-                              " vel:" + juce::String(msg.getVelocity());
-      juce::MessageManager::callAsync([this, noteText]() {
-        midiMonitorLabel.setText(noteText, juce::dontSendNotification);
-      });
-    } else if (msg.isController()) {
-      juce::String ccText =
-          "MIDI: CC" + juce::String(msg.getControllerNumber()) + "=" +
-          juce::String(msg.getControllerValue());
-      juce::MessageManager::callAsync([this, ccText]() {
-        midiMonitorLabel.setText(ccText, juce::dontSendNotification);
-      });
-    }
-
-    // Feed detailed monitor panel
+    // Feed detailed monitor panel (safely queued & rendered via 30ms timer)
     if (midiMonitorPanel) {
       midiMonitorPanel->addMidiMessage(msg);
     }

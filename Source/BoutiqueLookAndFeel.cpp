@@ -18,16 +18,17 @@ void BoutiqueLookAndFeel::drawToggleSwitch(juce::Graphics &g,
     return;
   }
 
-  // Set bounds and draw
+  // Set bounds first via setTransformToFit
   svg->setTransformToFit(bounds, juce::RectanglePlacement::centred);
 
-  // Rotate based on toggle state (180 degrees for off, 0 for on)
+  // Apply rotation if off (180 degrees)
   float rotation = button.getToggleState() ? 0.0f : 180.0f;
-  svg->setTransform(
-      juce::AffineTransform::rotation(juce::degreesToRadians(rotation),
-                                      bounds.getCentreX(), bounds.getCentreY())
-          .scaled(bounds.getWidth() / svg->getWidth(),
-                  bounds.getHeight() / svg->getHeight()));
+  if (rotation != 0.0f) {
+    auto transform = svg->getTransform().followedBy(
+        juce::AffineTransform::rotation(juce::degreesToRadians(rotation),
+                                        bounds.getCentreX(), bounds.getCentreY()));
+    svg->setTransform(transform);
+  }
 
   svg->draw(g, 1.0f);
 }
@@ -177,13 +178,24 @@ void BoutiqueLookAndFeel::drawButtonBackground(juce::Graphics &g,
   bool isMute = (text == "MUTE" || text == "M");
   bool isActive = button.getToggleState();
 
-  // Assigned setup buttons have a green tint in the legacy system
-  bool isAssignedSetup = (backgroundColour.getGreen() > backgroundColour.getRed() && 
-                          backgroundColour.getGreen() > backgroundColour.getBlue() &&
-                          text != "FOH" && text.toUpperCase() != "ON" && text != "MIDI MON" &&
-                          text != "SAVE" && text != "LOAD" && text != "DYN");
+  bool isPluginSlot = button.getProperties().getWithDefault("isPluginSlot", false);
+  bool hasPluginSlot = button.getProperties().getWithDefault("hasPlugin", false);
 
-  if (isPanic) {
+  // Assigned setup buttons have a green tint or explicit isAssignedSetup property
+  bool isAssignedSetup = button.getProperties().getWithDefault("isAssignedSetup", false) ||
+                          (!isPluginSlot &&
+                           backgroundColour.getGreen() > backgroundColour.getRed() && 
+                           backgroundColour.getGreen() > backgroundColour.getBlue() &&
+                           text != "FOH" && text.toUpperCase() != "ON" && text != "MIDI MON" &&
+                           text != "SAVE" && text != "LOAD" && text != "DYN");
+
+  if (isPluginSlot) {
+    if (hasPluginSlot) {
+      baseCol = backgroundColour; // Solid filled color for loaded VST slot
+    } else {
+      baseCol = ThemeManager::get(Theme::Role::panel); // Dark background for empty slot
+    }
+  } else if (isPanic) {
     baseCol = shouldDrawButtonAsDown ? ThemeManager::get(Theme::Role::panic).darker(0.3f)
                                      : ThemeManager::get(Theme::Role::panic).darker(0.5f);
   } else if (isMute) {
@@ -222,7 +234,9 @@ void BoutiqueLookAndFeel::drawButtonBackground(juce::Graphics &g,
 
   // Borders
   juce::Colour borderCol = ThemeManager::get(Theme::Role::border);
-  if (isPanic && !shouldDrawButtonAsDown) {
+  if (isPluginSlot && hasPluginSlot) {
+    borderCol = baseCol.brighter(0.25f);
+  } else if (isPanic && !shouldDrawButtonAsDown) {
     borderCol = ThemeManager::get(Theme::Role::panic);
   } else if (isActive) {
     borderCol = baseCol.brighter(0.2f);
