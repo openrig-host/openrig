@@ -4,6 +4,7 @@
 #include "Mp3PlayerProcessor.h"
 #include "ThemeManager.h"
 #include "BoutiqueLookAndFeel.h"
+#include "ChannelStripComponent.h"
 
 class Mp3PlayerComponent : public juce::Component,
                            public juce::Timer,
@@ -11,7 +12,8 @@ class Mp3PlayerComponent : public juce::Component,
                            public juce::FileDragAndDropTarget {
 public:
     Mp3PlayerComponent(Mp3PlayerProcessor& proc, std::function<void()> onClose)
-        : processor(proc), closeCallback(onClose)
+        : processor(proc), closeCallback(onClose),
+          levelerMeter(processor.getLevelerReference())
     {
         setOpaque(true);
 
@@ -423,6 +425,8 @@ private:
     juce::TextButton nextBtn;
     juce::TextButton loopBtn;
     juce::TextButton shuffleBtn;
+    juce::TextButton levelerBtn;
+    GainReductionMeter levelerMeter;
     juce::Slider volSlider;
 
     juce::ListBox listBox;
