@@ -28,6 +28,8 @@
       <FILE id="midiRemoteSettingsOverlayH" name="MidiRemoteSettingsOverlay.h" compile="0" resource="0" file="Source/MidiRemoteSettingsOverlay.h" />
       <FILE id="setupMidiTriggersH" name="SetupMidiTriggers.h" compile="0" resource="0" file="Source/SetupMidiTriggers.h" />
       <FILE id="iMidiNoteLearnerH" name="IMidiNoteLearner.h" compile="0" resource="0" file="Source/IMidiNoteLearner.h" />
+      <FILE id="mp3PlayerProcessorH" name="Mp3PlayerProcessor.h" compile="0" resource="0" file="Source/Mp3PlayerProcessor.h" />
+      <FILE id="mp3PlayerComponentH" name="Mp3PlayerComponent.h" compile="0" resource="0" file="Source/Mp3PlayerComponent.h" />
     </GROUP>
   </MAINGROUP>
   <MODULES>
@@ -64,7 +66,7 @@
         <MODULEPATH id="juce_graphics" path="C:/JUCE/modules" />
         <MODULEPATH id="juce_gui_basics" path="C:/JUCE/modules" />
         <MODULEPATH id="juce_gui_extra" path="C:/JUCE/modules" />
-  <MODULEPATH id="juce_dsp" path="C:/JUCE/modules" />
+        <MODULEPATH id="juce_dsp" path="C:/JUCE/modules" />
         <MODULEPATH id="juce_audio_processors_headless" path="C:/JUCE/modules" />
       </MODULEPATHS>
     </VS2026>

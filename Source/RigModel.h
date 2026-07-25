@@ -70,11 +70,26 @@ struct SamplerSlotSettings {
     float volume = 1.0f;
     float startRatio = 0.0f;
     float endRatio = 1.0f;
+    bool isLooping = false;
+    int volumeCC = -1;
 };
 
 struct SamplerSettings {
     bool enabled = false;
     SamplerSlotSettings slots[8];
+};
+
+struct Mp3TrackSettings {
+    juce::String path;
+    juce::String title;
+    double duration = 0.0;
+};
+
+struct Mp3PlayerSettings {
+    std::vector<Mp3TrackSettings> tracks;
+    int loopMode = 0;
+    bool shuffle = false;
+    float gain = 1.0f;
 };
 
 struct SongSlot {
@@ -122,6 +137,7 @@ struct HarmParams {
     ArpParams arpeggiator;
     HarmParams harmonizer;
     SamplerSettings sampler;
+    Mp3PlayerSettings mp3Player;
 
     std::vector<PluginState> chain;
 };

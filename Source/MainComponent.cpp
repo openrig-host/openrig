@@ -377,6 +377,16 @@ void MainComponent::setupSlotComponents() {
       samplerOverlay->centreWithSize(720, 600);
     };
 
+    // MP3 Player Dialog
+    comp->onShowMp3Player = [this, slot] {
+      mp3Overlay.reset(new Mp3PlayerComponent(slot->getMp3Player(), [this] {
+        mp3Overlay.reset();
+        resized();
+      }));
+      addAndMakeVisible(mp3Overlay.get());
+      mp3Overlay->centreWithSize(680, 520);
+    };
+
     // Note Range Dialog (CallOutBox)
     comp->onShowNoteRangeDialog = [this, slot, comp] {
       auto *nrComp = new NoteRangeComponent(*slot);
@@ -592,23 +602,30 @@ void MainComponent::setupHeaderButtons() {
   // Panic button
   addAndMakeVisible(panicBtn);
   panicBtn.setColour(juce::TextButton::buttonColourId, ThemeManager::get(Theme::Role::panic));
-  panicBtn.onClick = [this] { engine.triggerPanic(); };
+  panicBtn.setTooltip("PANIC: Stage emergency button. Instantly silences all stuck MIDI notes & flushes audio buffers.");
+  panicBtn.onClick = [this] {
+    engine.triggerPanic();
+    LOG_INFO("PANIC: All notes killed & audio buffers flushed. Take a breath, you've got this!");
+  };
 
   // Reset Audio button
   addAndMakeVisible(resetAudioBtn);
   resetAudioBtn.setColour(juce::TextButton::buttonColourId,
                           ThemeManager::get(Theme::Role::warn));
+  resetAudioBtn.setTooltip("Reset Audio: Re-initializes audio driver threads & clears sample-rate locks mid-gig.");
   resetAudioBtn.onClick = [this] { resetAudioDevice(); };
 
   // Exit button
   addAndMakeVisible(exitBtn);
   exitBtn.setColour(juce::TextButton::buttonColourId, ThemeManager::get(Theme::Role::panel));
+  exitBtn.setTooltip("Quit OpenRig");
   exitBtn.onClick = [] { juce::JUCEApplication::quit(); };
 
   // Audio Settings button
   addAndMakeVisible(audioSettingsBtn);
   audioSettingsBtn.setColour(juce::TextButton::buttonColourId,
                              ThemeManager::get(Theme::Role::accent));
+  audioSettingsBtn.setTooltip("Audio & MIDI Setup: Low-latency driver configuration, sample rates & MIDI routing.");
   audioSettingsBtn.onClick = [this] {
     auto *selector = new juce::AudioDeviceSelectorComponent(
         deviceManager, 0, OpenRigConstants::kDefaultInputChannels, 0,
@@ -1044,10 +1061,82 @@ void MainComponent::resetAudioDevice() {
 }
 
 void MainComponent::showAboutDialog() {
-  juce::AlertWindow::showMessageBoxAsync(
-      juce::MessageBoxIconType::InfoIcon,
+  auto *w = new juce::AlertWindow(
       "About OpenRig",
-      "OpenRig Live Performance Host\nVersion 1.0.0\n\nOptimized for reliable, low-latency live synth rigs.");
+      "",
+      juce::MessageBoxIconType::InfoIcon);
+
+  class AboutCustomComponent : public juce::Component {
+  public:
+    AboutCustomComponent() {
+      infoLabel.setText(
+          "OpenRig Live Performance Host  |  v1.0.0\n"
+          "The Sovereign Stage Engine for Keyboardists\n\n"
+          "Built for one job: getting you through a live set without a single dropout, stuck note, or fumbled song switch.",
+          juce::dontSendNotification);
+      infoLabel.setFont(juce::FontOptions(13.5f));
+      infoLabel.setJustificationType(juce::Justification::topLeft);
+      addAndMakeVisible(infoLabel);
+
+      statementLabel.setText("Design decisions for this app are strictly guided by ", juce::dontSendNotification);
+      statementLabel.setFont(juce::FontOptions(13.5f));
+      statementLabel.setJustificationType(juce::Justification::topLeft);
+      addAndMakeVisible(statementLabel);
+
+      linkButton.setButtonText("this philosophy.");
+      linkButton.setURL(juce::URL("https://youtu.be/WPc-VEqBPHI?si=H_G9lJGNPGONcPLP&t=108"));
+      linkButton.setColour(juce::HyperlinkButton::textColourId, juce::Colours::dodgerblue);
+      linkButton.setFont(juce::FontOptions(13.5f, juce::Font::underlined), false, juce::Justification::topLeft);
+      addAndMakeVisible(linkButton);
+
+      footerLabel.setText("No virtual patch cords. No node graphs. Just pure stage-tested horsepower.", juce::dontSendNotification);
+      footerLabel.setFont(juce::FontOptions(12.0f, juce::Font::italic));
+      footerLabel.setColour(juce::Label::textColourId, juce::Colours::white.withAlpha(0.6f));
+      footerLabel.setJustificationType(juce::Justification::topLeft);
+      addAndMakeVisible(footerLabel);
+
+      setSize(470, 160);
+    }
+
+    void resized() override {
+      auto bounds = getLocalBounds();
+      infoLabel.setBounds(bounds.removeFromTop(75));
+
+      auto lineBounds = bounds.removeFromTop(25);
+      juce::Font font(juce::FontOptions(13.5f));
+      juce::String text = "Design decisions for this app are strictly guided by ";
+      
+      juce::GlyphArrangement ga1;
+      ga1.addLineOfText(font, text, 0.0f, 0.0f);
+      int prefixW = juce::roundToInt(ga1.getBoundingBox(0, -1, true).getWidth());
+      statementLabel.setBounds(lineBounds.removeFromLeft(prefixW));
+
+      juce::GlyphArrangement ga2;
+      ga2.addLineOfText(font, "this philosophy.", 0.0f, 0.0f);
+      int linkW = juce::roundToInt(ga2.getBoundingBox(0, -1, true).getWidth()) + 10;
+      linkButton.setBounds(lineBounds.removeFromLeft(linkW));
+
+      bounds.removeFromTop(8);
+      footerLabel.setBounds(bounds.removeFromTop(20));
+    }
+
+  private:
+    juce::Label infoLabel;
+    juce::Label statementLabel;
+    juce::HyperlinkButton linkButton;
+    juce::Label footerLabel;
+  };
+
+  w->addCustomComponent(new AboutCustomComponent());
+  w->addButton("OK", 1, juce::KeyPress(juce::KeyPress::returnKey), juce::KeyPress(juce::KeyPress::escapeKey));
+
+  juce::Component::SafePointer<juce::AlertWindow> safeW(w);
+  w->enterModalState(
+      true,
+      juce::ModalCallbackFunction::create([safeW](int) {
+        if (safeW != nullptr)
+          delete safeW.getComponent();
+      }));
 }
 
 void MainComponent::showSlotMidiOutDialog(int slotIdx, int chainIdx) {
@@ -1426,6 +1515,8 @@ void MainComponent::resized() {
     midiEffectsOverlay->centreWithSize(620, 410);
   if (samplerOverlay)
     samplerOverlay->centreWithSize(720, 600);
+  if (mp3Overlay)
+    mp3Overlay->centreWithSize(680, 520);
   if (setupBuilderOverlay)
     setupBuilderOverlay->centreWithSize(400, 480);
 }

@@ -508,14 +508,14 @@ public:
     preallocatedJobs.clear();
 
     for (int i = 0; i < (int)slots.size(); ++i) {
-      slots[i]->prepare(sampleRate);
+      slots[i]->prepare(sampleRate, samplesPerBlockExpected);
       scratchBuffers[i].setSize(32, samplesPerBlockExpected);
       preallocatedJobs.add(new SlotProcessJob(*this, i));
     }
 
     // Scratch buffers for Aux Returns
     for (int i = 0; i < (int)auxReturns.size(); ++i) {
-      auxReturns[i]->prepare(sampleRate);
+      auxReturns[i]->prepare(sampleRate, samplesPerBlockExpected);
       scratchBuffers[slots.size() + i].setSize(32, samplesPerBlockExpected);
     }
 
@@ -699,6 +699,7 @@ public:
                     float *const *outputData, int numOutputs, int numSamples,
                     juce::MidiBuffer &midi) {
     juce::ScopedNoDenormals noDenormals;
+    OpenRigLog::g_audioThreadId.store((uint32_t)::GetCurrentThreadId());
     // Inject stress test MIDI if active
     if (stressTestActive.load()) {
         double sr = currentSampleRate;
@@ -905,7 +906,7 @@ public:
     // the user can recover (panic / restart the offending slot).
     bool timedOut = false;
     {
-      constexpr long long kMaxSpins = 50000000LL;
+      constexpr long long kMaxSpins = 50000LL; // Real-time sub-millisecond spin budget
       long long spinCount = 0;
       for (;;) {
         bool allDone = true;
@@ -997,18 +998,23 @@ public:
     fohBus.applyGain(fohMasterLevel);
     iemBus.applyGain(iemMasterLevel);
 
-    for (auto &plugin : fohPluginChain) {
-      if (plugin) {
-        OpenRigLog::safeExecutePluginCall([&]() {
-          plugin->processBlock(fohBus, emptyMidiBuf);
-        }, "fohBus processBlock (" + plugin->getName() + ")");
-      }
-    }
-    for (auto &plugin : iemPluginChain) {
-      if (plugin) {
-        OpenRigLog::safeExecutePluginCall([&]() {
-          plugin->processBlock(iemBus, emptyMidiBuf);
-        }, "iemBus processBlock (" + plugin->getName() + ")");
+    {
+      juce::SpinLock::ScopedTryLockType mfl(masterFxLock);
+      if (mfl.isLocked()) {
+        for (auto &plugin : fohPluginChain) {
+          if (plugin) {
+            OpenRigLog::safeExecutePluginCall([&]() {
+              plugin->processBlock(fohBus, emptyMidiBuf);
+            }, "fohBus processBlock (" + plugin->getName() + ")");
+          }
+        }
+        for (auto &plugin : iemPluginChain) {
+          if (plugin) {
+            OpenRigLog::safeExecutePluginCall([&]() {
+              plugin->processBlock(iemBus, emptyMidiBuf);
+            }, "iemBus processBlock (" + plugin->getName() + ")");
+          }
+        }
       }
     }
 
@@ -1383,13 +1389,23 @@ public:
           loadPluginFromVarSmart(-1, i, v, true);
       }
       // Clear any extra plugins beyond new chain size
-      while (fohPluginChain.size() > fohArr->size()) {
-        if (fohPluginChain.back())
-          fohPluginChain.back()->releaseResources();
-        fohPluginChain.pop_back();
+      std::vector<std::unique_ptr<juce::AudioPluginInstance>> oldMasterFoh;
+      {
+        juce::SpinLock::ScopedLockType mfl(masterFxLock);
+        while (fohPluginChain.size() > fohArr->size()) {
+          if (fohPluginChain.back())
+            oldMasterFoh.push_back(std::move(fohPluginChain.back()));
+          fohPluginChain.pop_back();
+        }
+      }
+      for (auto &p : oldMasterFoh) {
+        if (p) {
+          p->releaseResources();
+          p.reset();
+        }
       }
     } else {
-      fohPluginChain.clear();
+      clearMasterChains();
     }
 
     if (auto *iemArr = rig.getProperty("iemFx", juce::var()).getArray()) {
@@ -1399,13 +1415,23 @@ public:
           loadPluginFromVarSmart(-1, i, v, false);
       }
       // Clear any extra plugins beyond new chain size
-      while (iemPluginChain.size() > iemArr->size()) {
-        if (iemPluginChain.back())
-          iemPluginChain.back()->releaseResources();
-        iemPluginChain.pop_back();
+      std::vector<std::unique_ptr<juce::AudioPluginInstance>> oldMasterIem;
+      {
+        juce::SpinLock::ScopedLockType mfl(masterFxLock);
+        while (iemPluginChain.size() > iemArr->size()) {
+          if (iemPluginChain.back())
+            oldMasterIem.push_back(std::move(iemPluginChain.back()));
+          iemPluginChain.pop_back();
+        }
+      }
+      for (auto &p : oldMasterIem) {
+        if (p) {
+          p->releaseResources();
+          p.reset();
+        }
       }
     } else {
-      iemPluginChain.clear();
+      clearMasterChains();
     }
 
     // Channels
@@ -1973,6 +1999,21 @@ public:
       songSlot.sampler.slots[idx].volume = cfg.volume;
       songSlot.sampler.slots[idx].startRatio = cfg.startRatio;
       songSlot.sampler.slots[idx].endRatio = cfg.endRatio;
+      songSlot.sampler.slots[idx].isLooping = cfg.isLooping;
+      songSlot.sampler.slots[idx].volumeCC = cfg.volumeCC;
+    }
+
+    auto& mp3Live = s->getMp3Player();
+    songSlot.mp3Player.loopMode = (int)mp3Live.getLoopMode();
+    songSlot.mp3Player.shuffle = mp3Live.isShuffleEnabled();
+    songSlot.mp3Player.gain = mp3Live.getGain();
+    songSlot.mp3Player.tracks.clear();
+    for (const auto& t : mp3Live.getPlaylist()) {
+      OpenRig::Mp3TrackSettings ts;
+      ts.path = t.file.getFullPathName();
+      ts.title = t.title;
+      ts.duration = t.durationSeconds;
+      songSlot.mp3Player.tracks.push_back(ts);
     }
 
     for (const auto& pair : s->getCCMappings()) {
@@ -2094,7 +2135,18 @@ public:
       cfg.volume = songSlot.sampler.slots[idx].volume;
       cfg.startRatio = songSlot.sampler.slots[idx].startRatio;
       cfg.endRatio = songSlot.sampler.slots[idx].endRatio;
+      cfg.isLooping = songSlot.sampler.slots[idx].isLooping;
+      cfg.volumeCC = songSlot.sampler.slots[idx].volumeCC;
       samplerLive.setSlotConfig(idx, cfg);
+    }
+
+    auto& mp3Live = s->getMp3Player();
+    mp3Live.clearPlaylist();
+    mp3Live.setLoopMode((Mp3PlayerProcessor::LoopMode)songSlot.mp3Player.loopMode);
+    mp3Live.setShuffleEnabled(songSlot.mp3Player.shuffle);
+    mp3Live.setGain(songSlot.mp3Player.gain);
+    for (const auto& ts : songSlot.mp3Player.tracks) {
+      mp3Live.addFile(juce::File(ts.path));
     }
 
     s->clearAllCCMappings();
@@ -2403,16 +2455,24 @@ public:
 
   void clearMasterChains() {
     juce::ScopedLock sl(lock);
-    for (auto &p : fohPluginChain) {
-      if (p != nullptr)
-        p->releaseResources();
+    std::vector<std::unique_ptr<juce::AudioPluginInstance>> oldFoh, oldIem;
+    {
+      juce::SpinLock::ScopedLockType mfl(masterFxLock);
+      oldFoh.swap(fohPluginChain);
+      oldIem.swap(iemPluginChain);
     }
-    for (auto &p : iemPluginChain) {
-      if (p != nullptr)
+    for (auto &p : oldFoh) {
+      if (p != nullptr) {
         p->releaseResources();
+        p.reset();
+      }
     }
-    fohPluginChain.clear();
-    iemPluginChain.clear();
+    for (auto &p : oldIem) {
+      if (p != nullptr) {
+        p->releaseResources();
+        p.reset();
+      }
+    }
   }
 
   float getFohPeakL() const { return fohPeakL; }
@@ -2592,6 +2652,7 @@ private:
   std::atomic<int> postLoadFadeTotal{0};
 
   // Master FX chains
+  juce::SpinLock masterFxLock;
   std::vector<std::unique_ptr<juce::AudioPluginInstance>> fohPluginChain;
   std::vector<std::unique_ptr<juce::AudioPluginInstance>> iemPluginChain;
 
@@ -2780,12 +2841,18 @@ public:
       std::function<void(bool, const juce::String &)> callback) {
 
     if (pluginIndex == -1) {
-      juce::ScopedLock sl(lock);
-      auto &chain = isFoh ? fohPluginChain : iemPluginChain;
-      if (chainIndex >= 0 && chainIndex < (int)chain.size()) {
-        if (chain[chainIndex])
-          chain[chainIndex]->releaseResources();
-        chain[chainIndex] = nullptr;
+      std::unique_ptr<juce::AudioPluginInstance> oldPlugin;
+      {
+        juce::ScopedLock sl(lock);
+        juce::SpinLock::ScopedLockType mfl(masterFxLock);
+        auto &chain = isFoh ? fohPluginChain : iemPluginChain;
+        if (chainIndex >= 0 && chainIndex < (int)chain.size()) {
+          oldPlugin = std::move(chain[chainIndex]);
+        }
+      }
+      if (oldPlugin) {
+        oldPlugin->releaseResources();
+        oldPlugin.reset();
       }
       callback(true, "");
       return;
@@ -2826,17 +2893,21 @@ public:
     if (instance) {
       configureStereoLayout(instance.get());
       instance->prepareToPlay(currentSampleRate, currentBlockSize);
+      std::unique_ptr<juce::AudioPluginInstance> oldPlugin;
       {
         juce::ScopedLock sl(lock);
+        juce::SpinLock::ScopedLockType mfl(masterFxLock);
         auto &chain = isFoh ? fohPluginChain : iemPluginChain;
         // Expand chain if needed
         while ((int)chain.size() <= chainIndex)
           chain.push_back(nullptr);
 
-        if (chain[chainIndex])
-          chain[chainIndex]->releaseResources();
-
+        oldPlugin = std::move(chain[chainIndex]);
         chain[chainIndex] = std::move(instance);
+      }
+      if (oldPlugin) {
+        oldPlugin->releaseResources();
+        oldPlugin.reset();
       }
       callback(true, "");
     } else {

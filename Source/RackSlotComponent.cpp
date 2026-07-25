@@ -449,6 +449,15 @@ RackSlotComponent::RackSlotComponent(RackSlot &s, int index, juce::LookAndFeel &
       onShowSampler();
   };
 
+  addAndMakeVisible(mp3Button);
+  mp3Button.setButtonText("MP3");
+  mp3Button.setColour(juce::TextButton::buttonColourId, ThemeManager::get(Theme::Role::accent).darker(0.3f));
+  mp3Button.setTooltip("Open MP3 Playlist Player");
+  mp3Button.onClick = [this] {
+    if (onShowMp3Player)
+      onShowMp3Player();
+  };
+
   addAndMakeVisible(saveStripBtn);
   saveStripBtn.setButtonText("SAVE");
   saveStripBtn.setTooltip("Save this strip to file");
@@ -480,7 +489,7 @@ RackSlotComponent::RackSlotComponent(RackSlot &s, int index, juce::LookAndFeel &
 
   // Register right-click help listeners on control buttons
   for (auto *b : {&ccButton, &noteRangeButton, &customizeButton, &arpButton,
-                  &samplerButton, &bypassButton, &fohRoutingBtn, &iemRoutingBtn,
+                  &samplerButton, &mp3Button, &bypassButton, &fohRoutingBtn, &iemRoutingBtn,
                   &saveStripBtn, &loadStripBtn, &fohLearnBtn, &iemLearnBtn})
     b->addMouseListener(this, false);
 
@@ -898,6 +907,14 @@ void RackSlotComponent::resized() {
 
   arpButton.setBounds(2, centerY - 24, sideWidth, 24);
   samplerButton.setBounds(2, centerY + 4, sideWidth, 24);
+  
+  if (slotIndex == 10 || slot.getName() == "Slot 11") {
+    mp3Button.setVisible(true);
+    mp3Button.setBounds(2, centerY + 32, sideWidth, 24);
+  } else {
+    mp3Button.setVisible(false);
+  }
+
   saveStripBtn.setBounds(rightX, centerY - 24, sideWidth, 24);
   loadStripBtn.setBounds(rightX, centerY + 4, sideWidth, 24);
 
@@ -1006,6 +1023,8 @@ void RackSlotComponent::showButtonHelpPopup(juce::Component *src) {
         match(samplerButton, "Sampler (SMP)",
               "Opens the sample playback engine, allowing you to load and "
               "trigger audio samples across the keyboard.") ||
+        match(mp3Button, "MP3 Playlist",
+              "Opens the MP3 playlist engine for between-set music playback.") ||
         match(bypassButton, "Mute Channel",
               "Instantly cuts all audio output for this track. Click again "
               "to restore.") ||

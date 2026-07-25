@@ -38,7 +38,9 @@ public:
     timeBeginPeriod(1);
 #endif
 
-    // Set global crash handler
+#ifdef _WIN32
+    OpenRigLog::setupCrashHandlers();
+#endif
     juce::SystemStats::setApplicationCrashHandler(OpenRigLog::crashHandler);
 
     mainWindow.reset(new MainWindow(getApplicationName()));

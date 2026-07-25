@@ -38,6 +38,8 @@ public:
     std::atomic<int> rootNote{60};
     std::atomic<float> startRatio{0.0f};
     std::atomic<float> endRatio{1.0f};
+    std::atomic<bool> isLooping{false};
+    std::atomic<int> volumeCC{-1};
     
     double sourceSampleRate = 0.0;
     int length = 0;
@@ -101,8 +103,14 @@ public:
             auto pos = (int)sourceSamplePosition;
             int endSample = (int)(sound->endRatio.load() * sound->length);
             if (pos >= endSample || pos >= sound->length) {
-                clearCurrentNote();
-                break;
+                if (sound->isLooping.load() && !isReleasing) {
+                    double startSamplePos = sound->startRatio.load() * sound->length;
+                    sourceSamplePosition = startSamplePos;
+                    pos = (int)sourceSamplePosition;
+                } else {
+                    clearCurrentNote();
+                    break;
+                }
             }
             
             auto alpha = (float)(sourceSamplePosition - pos);
@@ -186,6 +194,25 @@ public:
             return;
         }
         wasEnabled.store(true);
+
+        juce::SpinLock::ScopedTryLockType lock(configLock);
+        if (!lock.isLocked())
+            return;
+
+        for (const auto meta : midiMessages) {
+            auto msg = meta.getMessage();
+            if (msg.isController()) {
+                int ccNum = msg.getControllerNumber();
+                int ccVal = msg.getControllerValue();
+                for (int i = 0; i < 8; ++i) {
+                    if (configs[i].volumeCC >= 0 && ccNum == configs[i].volumeCC) {
+                        float newVol = (ccVal / 127.0f) * 1.5f;
+                        configs[i].volume = newVol;
+                        if (sounds[i]) sounds[i]->volume.store(newVol);
+                    }
+                }
+            }
+        }
             
         synth.renderNextBlock(buffer, midiMessages, 0, buffer.getNumSamples());
     }
@@ -199,12 +226,14 @@ public:
         float volume = 1.0f;
         float startRatio = 0.0f;
         float endRatio = 1.0f;
+        bool isLooping = false;
+        int volumeCC = -1;
     };
     
     void setSlotConfig(int slotIdx, const SlotConfig& config) {
         if (slotIdx < 0 || slotIdx >= 8) return;
         
-        juce::ScopedLock sl(configLock);
+        juce::SpinLock::ScopedLockType sl(configLock);
         
         bool pathChanged = (configs[slotIdx].wavPath != config.wavPath);
         configs[slotIdx] = config;
@@ -219,6 +248,8 @@ public:
                 sound->rootNote.store(config.rootNote);
                 sound->startRatio.store(config.startRatio);
                 sound->endRatio.store(config.endRatio);
+                sound->isLooping.store(config.isLooping);
+                sound->volumeCC.store(config.volumeCC);
                 
                 // Update key range
                 juce::BigInteger keys;
@@ -232,7 +263,7 @@ public:
     
     SlotConfig getSlotConfig(int slotIdx) const {
         if (slotIdx < 0 || slotIdx >= 8) return {};
-        juce::ScopedLock sl(configLock);
+        juce::SpinLock::ScopedLockType sl(configLock);
         return configs[slotIdx];
     }
     
@@ -273,6 +304,8 @@ private:
                     newSound->rootNote.store(configs[slotIdx].rootNote);
                     newSound->startRatio.store(configs[slotIdx].startRatio);
                     newSound->endRatio.store(configs[slotIdx].endRatio);
+                    newSound->isLooping.store(configs[slotIdx].isLooping);
+                    newSound->volumeCC.store(configs[slotIdx].volumeCC);
                     
                     sounds[slotIdx] = newSound;
                     synth.addSound(newSound);
@@ -286,7 +319,7 @@ private:
     juce::AudioFormatManager formatManager;
     double currentSampleRate = 44100.0;
     
-    mutable juce::CriticalSection configLock;
+    mutable juce::SpinLock configLock;
     SlotConfig configs[8];
     juce::ReferenceCountedObjectPtr<CustomSamplerSound> sounds[8];
 };

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include "Logger.h"
 #include "OpenRigEngine.h"
 #include "RigBuilder.h"
 #include "RigSerializer.h"

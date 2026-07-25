@@ -43,6 +43,20 @@ public:
         volSlider.onValueChange = [this] { updateConfig(); };
         addAndMakeVisible(volSlider);
 
+        volCcBtn.setButtonText("CC: --");
+        volCcBtn.setTooltip("Set MIDI CC mapping for pad volume");
+        volCcBtn.setColour(juce::TextButton::buttonColourId, ThemeManager::get(Theme::Role::panel));
+        volCcBtn.onClick = [this] { showCcMenu(); };
+        addAndMakeVisible(volCcBtn);
+
+        loopBtn.setButtonText("LOOP");
+        loopBtn.setClickingTogglesState(true);
+        loopBtn.setTooltip("Enable sample looping");
+        loopBtn.setColour(juce::TextButton::buttonColourId, ThemeManager::get(Theme::Role::panel));
+        loopBtn.setColour(juce::TextButton::buttonOnColourId, juce::Colours::orange.darker(0.3f));
+        loopBtn.onClick = [this] { updateConfig(); };
+        addAndMakeVisible(loopBtn);
+
         pitchSlider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
         pitchSlider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 45, 15);
         pitchSlider.setRange(-24, 24, 1);
@@ -124,10 +138,12 @@ public:
         clearBtn.setBounds(bounds.removeFromRight(25).reduced(2));
         
         int w = bounds.getWidth();
-        dropButton.setBounds(bounds.removeFromLeft((int)(w * 0.35f)).reduced(2));
-        volSlider.setBounds(bounds.removeFromLeft((int)(w * 0.12f)).reduced(2));
-        pitchSlider.setBounds(bounds.removeFromLeft((int)(w * 0.12f)).reduced(2));
-        rootSlider.setBounds(bounds.removeFromLeft((int)(w * 0.12f)).reduced(2));
+        dropButton.setBounds(bounds.removeFromLeft((int)(w * 0.28f)).reduced(2));
+        volSlider.setBounds(bounds.removeFromLeft((int)(w * 0.10f)).reduced(2));
+        volCcBtn.setBounds(bounds.removeFromLeft(48).reduced(2));
+        loopBtn.setBounds(bounds.removeFromLeft(44).reduced(2));
+        pitchSlider.setBounds(bounds.removeFromLeft((int)(w * 0.10f)).reduced(2));
+        rootSlider.setBounds(bounds.removeFromLeft((int)(w * 0.10f)).reduced(2));
         rangeLoEditor.setBounds(bounds.removeFromLeft(42).reduced(2));
         rangeHiEditor.setBounds(bounds.removeFromLeft(42).reduced(2));
         rangeSlider.setBounds(bounds.reduced(2));
@@ -186,6 +202,15 @@ public:
         rangeSlider.setMinAndMaxValues(cfg.keyLow, cfg.keyHigh, juce::dontSendNotification);
         rangeLoEditor.setText(noteToText(cfg.keyLow), juce::dontSendNotification);
         rangeHiEditor.setText(noteToText(cfg.keyHigh), juce::dontSendNotification);
+
+        loopBtn.setToggleState(cfg.isLooping, juce::dontSendNotification);
+        if (cfg.volumeCC >= 0) {
+            volCcBtn.setButtonText("CC: " + juce::String(cfg.volumeCC));
+            volCcBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::cyan.darker(0.6f));
+        } else {
+            volCcBtn.setButtonText("CC: --");
+            volCcBtn.setColour(juce::TextButton::buttonColourId, ThemeManager::get(Theme::Role::panel));
+        }
     }
 
     std::function<void()> onRowSelected;
@@ -223,6 +248,7 @@ private:
         cfg.rootNote = (int)rootSlider.getValue();
         cfg.keyLow = (int)rangeSlider.getMinValue();
         cfg.keyHigh = (int)rangeSlider.getMaxValue();
+        cfg.isLooping = loopBtn.getToggleState();
         slotRef.getSampler().setSlotConfig(idx, cfg);
     }
 
@@ -318,12 +344,41 @@ private:
     juce::TextButton learnBtn;
     juce::TextButton dropButton;
     juce::Slider volSlider;
+    juce::TextButton volCcBtn;
+    juce::TextButton loopBtn;
     juce::Slider pitchSlider;
     juce::Slider rootSlider;
     juce::Slider rangeSlider;
     juce::TextEditor rangeLoEditor;
     juce::TextEditor rangeHiEditor;
     juce::TextButton clearBtn;
+
+    void showCcMenu() {
+        juce::PopupMenu m;
+        m.addSectionHeader("Volume MIDI CC");
+        m.addItem(1, "Off (-1)", true, slotRef.getSampler().getSlotConfig(idx).volumeCC == -1);
+        m.addSeparator();
+        m.addItem(2, "CC 7 (Volume)", true, slotRef.getSampler().getSlotConfig(idx).volumeCC == 7);
+        m.addItem(3, "CC 11 (Expression)", true, slotRef.getSampler().getSlotConfig(idx).volumeCC == 11);
+        m.addItem(4, "CC 16 (General 1)", true, slotRef.getSampler().getSlotConfig(idx).volumeCC == 16);
+        m.addItem(5, "CC 17 (General 2)", true, slotRef.getSampler().getSlotConfig(idx).volumeCC == 17);
+        m.addItem(6, "CC 18 (General 3)", true, slotRef.getSampler().getSlotConfig(idx).volumeCC == 18);
+        m.addItem(7, "CC 19 (General 4)", true, slotRef.getSampler().getSlotConfig(idx).volumeCC == 19);
+
+        m.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&volCcBtn), [this](int result) {
+            if (result == 0) return;
+            auto cfg = slotRef.getSampler().getSlotConfig(idx);
+            if (result == 1) cfg.volumeCC = -1;
+            else if (result == 2) cfg.volumeCC = 7;
+            else if (result == 3) cfg.volumeCC = 11;
+            else if (result == 4) cfg.volumeCC = 16;
+            else if (result == 5) cfg.volumeCC = 17;
+            else if (result == 6) cfg.volumeCC = 18;
+            else if (result == 7) cfg.volumeCC = 19;
+            slotRef.getSampler().setSlotConfig(idx, cfg);
+            updateUI();
+        });
+    }
 
     bool isSelected = false;
     bool isLearning = false;

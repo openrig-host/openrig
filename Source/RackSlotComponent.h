@@ -36,6 +36,7 @@ public:
   std::function<void()> onShowChannelStrip;
   std::function<void()> onShowArpeggiator;
   std::function<void()> onShowSampler;
+  std::function<void()> onShowMp3Player;
   std::function<void()> onSaveStrip;
   std::function<void()> onLoadStrip;
   std::function<void(const juce::File&)> onLoadStripFile;
@@ -81,6 +82,7 @@ private:
   juce::TextButton customizeButton;
   juce::TextButton arpButton;
   juce::TextButton samplerButton;
+  juce::TextButton mp3Button;
   juce::TextButton saveStripBtn;
   juce::TextButton loadStripBtn;
 

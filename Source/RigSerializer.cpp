@@ -335,10 +335,27 @@ juce::var RigSerializer::songToVar(const Song& song) {
             slo->setProperty("volume", (double)s.sampler.slots[idx].volume);
             slo->setProperty("startRatio", (double)s.sampler.slots[idx].startRatio);
             slo->setProperty("endRatio", (double)s.sampler.slots[idx].endRatio);
+            slo->setProperty("isLooping", s.sampler.slots[idx].isLooping);
+            slo->setProperty("volumeCC", s.sampler.slots[idx].volumeCC);
             samplerSlots.add(juce::var(slo));
         }
         samplerObj->setProperty("slots", samplerSlots);
         st->setProperty("sampler", samplerObj);
+
+        auto* mp3Obj = new juce::DynamicObject();
+        mp3Obj->setProperty("loopMode", s.mp3Player.loopMode);
+        mp3Obj->setProperty("shuffle", s.mp3Player.shuffle);
+        mp3Obj->setProperty("gain", (double)s.mp3Player.gain);
+        juce::Array<juce::var> mp3Tracks;
+        for (const auto& t : s.mp3Player.tracks) {
+            auto* to = new juce::DynamicObject();
+            to->setProperty("path", t.path);
+            to->setProperty("title", t.title);
+            to->setProperty("duration", t.duration);
+            mp3Tracks.add(juce::var(to));
+        }
+        mp3Obj->setProperty("tracks", mp3Tracks);
+        st->setProperty("mp3Player", mp3Obj);
 
         juce::Array<juce::var> ccMappingNodes;
         for (const auto& m : s.ccMappings) {
@@ -489,10 +506,27 @@ juce::String RigSerializer::serializeStrip(const SongSlot& slot) {
             slo->setProperty("volume", (double)slot.sampler.slots[idx].volume);
             slo->setProperty("startRatio", (double)slot.sampler.slots[idx].startRatio);
             slo->setProperty("endRatio", (double)slot.sampler.slots[idx].endRatio);
+            slo->setProperty("isLooping", slot.sampler.slots[idx].isLooping);
+            slo->setProperty("volumeCC", slot.sampler.slots[idx].volumeCC);
             samplerSlots.add(juce::var(slo));
         }
         samplerObj->setProperty("slots", samplerSlots);
         st->setProperty("sampler", samplerObj);
+
+        auto* mp3Obj = new juce::DynamicObject();
+        mp3Obj->setProperty("loopMode", slot.mp3Player.loopMode);
+        mp3Obj->setProperty("shuffle", slot.mp3Player.shuffle);
+        mp3Obj->setProperty("gain", (double)slot.mp3Player.gain);
+        juce::Array<juce::var> mp3Tracks;
+        for (const auto& t : slot.mp3Player.tracks) {
+            auto* to = new juce::DynamicObject();
+            to->setProperty("path", t.path);
+            to->setProperty("title", t.title);
+            to->setProperty("duration", t.duration);
+            mp3Tracks.add(juce::var(to));
+        }
+        mp3Obj->setProperty("tracks", mp3Tracks);
+        st->setProperty("mp3Player", mp3Obj);
 
     juce::Array<juce::var> ccMappingNodes;
     for (const auto& m : slot.ccMappings) {
@@ -618,6 +652,26 @@ bool RigSerializer::readStripFromFile(const juce::File& file, SongSlot& outSlot)
                     outSlot.sampler.slots[sIdx].volume = (float)slo.getProperty("volume", 1.0);
                     outSlot.sampler.slots[sIdx].startRatio = (float)slo.getProperty("startRatio", 0.0);
                     outSlot.sampler.slots[sIdx].endRatio = (float)slo.getProperty("endRatio", 1.0);
+                    outSlot.sampler.slots[sIdx].isLooping = slo.getProperty("isLooping", false);
+                    outSlot.sampler.slots[sIdx].volumeCC = slo.getProperty("volumeCC", -1);
+                }
+            }
+        }
+    }
+
+    if (auto* mp3Obj = cv.getProperty("mp3Player", juce::var()).getDynamicObject()) {
+        outSlot.mp3Player.loopMode = mp3Obj->hasProperty("loopMode") ? (int)mp3Obj->getProperty("loopMode") : 0;
+        outSlot.mp3Player.shuffle = mp3Obj->hasProperty("shuffle") ? (bool)mp3Obj->getProperty("shuffle") : false;
+        outSlot.mp3Player.gain = mp3Obj->hasProperty("gain") ? (float)mp3Obj->getProperty("gain") : 1.0f;
+        outSlot.mp3Player.tracks.clear();
+        if (auto* arr = mp3Obj->getProperty("tracks").getArray()) {
+            for (const auto& tv : *arr) {
+                if (auto* to = tv.getDynamicObject()) {
+                    OpenRig::Mp3TrackSettings ts;
+                    ts.path = to->hasProperty("path") ? to->getProperty("path").toString() : "";
+                    ts.title = to->hasProperty("title") ? to->getProperty("title").toString() : "";
+                    ts.duration = to->hasProperty("duration") ? (double)to->getProperty("duration") : 0.0;
+                    outSlot.mp3Player.tracks.push_back(ts);
                 }
             }
         }

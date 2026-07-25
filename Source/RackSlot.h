@@ -14,6 +14,7 @@
 #include "SimpleArpeggiator.h"
 #include "OctaveHarmonizer.h"
 #include "SamplerProcessor.h"
+#include "Mp3PlayerProcessor.h"
 #include <atomic>
 #include <map>
 #include <memory>
@@ -29,21 +30,25 @@ public:
   RackSlot(const juce::String &name) : slotName(name) { setDefaultCCs(); }
   ~RackSlot() = default;
 
-  void prepare(double sampleRate) {
+  void prepare(double sampleRate, int maxBlockSize = 8192) {
     lastSampleRate = sampleRate;
     strip.prepare(sampleRate);
     arpeggiator.prepare(sampleRate);
     harmonizer.prepare(sampleRate);
     sampler.prepare(sampleRate);
+    mp3Player.prepare(sampleRate, maxBlockSize);
 
     // Pre-allocate scratch buffer for summed instrument rendering (audio-thread safe)
-    scratchBuffer.setSize(2, 4096);
+    int allocSize = juce::jmax(maxBlockSize, 8192);
+    scratchBuffer.setSize(2, allocSize);
+    scratchBuffer.clear();
   }
 
   // --- Audio Logic ---
   SimpleArpeggiator& getArpeggiator() { return arpeggiator; }
   OctaveHarmonizer& getHarmonizer() { return harmonizer; }
   SamplerProcessor& getSampler() { return sampler; }
+  Mp3PlayerProcessor& getMp3Player() { return mp3Player; }
 
   // Per-plugin-chain-slot settings for instrument stacking (note range, level, enable)
   struct ChainSlotSettings {
@@ -163,6 +168,9 @@ public:
     // Sampler (before plugin chain)
     sampler.processBlock(slotBuffer, midiMessages);
 
+    // MP3 Player audio streaming
+    mp3Player.processBlock(slotBuffer);
+
     // Harmonizer with redirection support: generated harmony notes go to harmonyBuffer
     juce::MidiBuffer harmonyBuffer;
     harmonizer.processBlock(midiMessages, slotBuffer.getNumSamples(),
@@ -178,101 +186,106 @@ public:
     for (int i = 0; i < 3; ++i)
       midiOutChain[i].clear();
 
-    int chainLen = juce::jmax((int)pluginChain.size(), 3);
-    for (int i = 0; i < chainLen; ++i) {
-      if (i < 3 && chainMidiOut[i].isMidiOut.load()) {
-        if (chainSettings[i].enabled.load()) {
-          int low = chainSettings[i].lowNote.load();
-          int high = chainSettings[i].highNote.load();
-          int outCh = chainMidiOut[i].channel.load();
+    {
+      juce::SpinLock::ScopedTryLockType pcl(pluginLock);
+      if (pcl.isLocked()) {
+        int chainLen = juce::jmax((int)pluginChain.size(), 3);
+        for (int i = 0; i < chainLen; ++i) {
+          if (i < 3 && chainMidiOut[i].isMidiOut.load()) {
+            if (chainSettings[i].enabled.load()) {
+              int low = chainSettings[i].lowNote.load();
+              int high = chainSettings[i].highNote.load();
+              int outCh = chainMidiOut[i].channel.load();
 
-          for (const auto metadata : midiMessages) {
-            auto msg = metadata.getMessage();
-            if (msg.isNoteOnOrOff()) {
-              int note = msg.getNoteNumber();
-              if (note >= low && note <= high) {
-                midiOutChain[i].addEvent(
-                    msg.isNoteOn()
-                        ? juce::MidiMessage::noteOn(outCh, note, msg.getVelocity())
-                        : juce::MidiMessage::noteOff(outCh, note, msg.getVelocity()),
-                    metadata.samplePosition);
+              for (const auto metadata : midiMessages) {
+                auto msg = metadata.getMessage();
+                if (msg.isNoteOnOrOff()) {
+                  int note = msg.getNoteNumber();
+                  if (note >= low && note <= high) {
+                    midiOutChain[i].addEvent(
+                        msg.isNoteOn()
+                            ? juce::MidiMessage::noteOn(outCh, note, msg.getVelocity())
+                            : juce::MidiMessage::noteOff(outCh, note, msg.getVelocity()),
+                        metadata.samplePosition);
+                  }
+                } else if (msg.isController()) {
+                  int ccNum = msg.getControllerNumber();
+                  if (isCCAllowed(ccNum)) {
+                    midiOutChain[i].addEvent(
+                        juce::MidiMessage::controllerEvent(outCh, ccNum, msg.getControllerValue()),
+                        metadata.samplePosition);
+                  }
+                } else if (msg.isPitchWheel()) {
+                  midiOutChain[i].addEvent(
+                      juce::MidiMessage::pitchWheel(outCh, msg.getPitchWheelValue()),
+                      metadata.samplePosition);
+                } else if (msg.isAftertouch()) {
+                  midiOutChain[i].addEvent(
+                      juce::MidiMessage::aftertouchChange(outCh, msg.getNoteNumber(),
+                                                          msg.getAfterTouchValue()),
+                      metadata.samplePosition);
+                } else if (msg.isChannelPressure()) {
+                  midiOutChain[i].addEvent(
+                      juce::MidiMessage::channelPressureChange(outCh, msg.getChannelPressureValue()),
+                      metadata.samplePosition);
+                }
               }
-            } else if (msg.isController()) {
-              int ccNum = msg.getControllerNumber();
-              if (isCCAllowed(ccNum)) {
-                midiOutChain[i].addEvent(
-                    juce::MidiMessage::controllerEvent(outCh, ccNum, msg.getControllerValue()),
-                    metadata.samplePosition);
-              }
-            } else if (msg.isPitchWheel()) {
-              midiOutChain[i].addEvent(
-                  juce::MidiMessage::pitchWheel(outCh, msg.getPitchWheelValue()),
-                  metadata.samplePosition);
-            } else if (msg.isAftertouch()) {
-              midiOutChain[i].addEvent(
-                  juce::MidiMessage::aftertouchChange(outCh, msg.getNoteNumber(),
-                                                      msg.getAfterTouchValue()),
-                  metadata.samplePosition);
-            } else if (msg.isChannelPressure()) {
-              midiOutChain[i].addEvent(
-                  juce::MidiMessage::channelPressureChange(outCh, msg.getChannelPressureValue()),
-                  metadata.samplePosition);
             }
+            continue; // not a plugin slot
           }
-        }
-        continue; // not a plugin slot
-      }
 
-      if (i >= (int)pluginChain.size())
-        continue;
+          if (i >= (int)pluginChain.size())
+            continue;
 
-      auto &plugin = pluginChain[i];
-      if (plugin && (i >= 3 || chainSettings[i].enabled.load())) {
-        try {
-          bool isInstrument = plugin->getPluginDescription().isInstrument;
-          if (isInstrument) {
-            scratchBuffer.setSize(slotBuffer.getNumChannels(), slotBuffer.getNumSamples(), false, false, true);
-            scratchBuffer.clear();
+          auto &plugin = pluginChain[i];
+          if (plugin && (i >= 3 || chainSettings[i].enabled.load())) {
+            try {
+              bool isInstrument = (i < 3) ? chainIsInstrument[i].load() : plugin->getPluginDescription().isInstrument;
+              if (isInstrument) {
+                scratchBuffer.setSize(slotBuffer.getNumChannels(), slotBuffer.getNumSamples(), false, false, true);
+                scratchBuffer.clear();
 
-            juce::MidiBuffer filteredMidi;
-            int low = (i < 3) ? chainSettings[i].lowNote.load() : 0;
-            int high = (i < 3) ? chainSettings[i].highNote.load() : 127;
-            float instGain = (i < 3) ? chainSettings[i].level.load() : 1.0f;
+                filteredMidiScratch.clear();
+                int low = (i < 3) ? chainSettings[i].lowNote.load() : 0;
+                int high = (i < 3) ? chainSettings[i].highNote.load() : 127;
+                float instGain = (i < 3) ? chainSettings[i].level.load() : 1.0f;
 
-            for (const auto metadata : midiMessages) {
-              auto msg = metadata.getMessage();
-              if (msg.isNoteOnOrOff()) {
-                int note = msg.getNoteNumber();
-                if (note >= low && note <= high)
-                  filteredMidi.addEvent(msg, metadata.samplePosition);
+                for (const auto metadata : midiMessages) {
+                  auto msg = metadata.getMessage();
+                  if (msg.isNoteOnOrOff()) {
+                    int note = msg.getNoteNumber();
+                    if (note >= low && note <= high)
+                      filteredMidiScratch.addEvent(msg, metadata.samplePosition);
+                  } else {
+                    filteredMidiScratch.addEvent(msg, metadata.samplePosition);
+                  }
+                }
+
+                OpenRigLog::safeExecutePluginCall([&]() {
+                  plugin->processBlock(scratchBuffer, filteredMidiScratch);
+                }, "processBlock (" + plugin->getName() + ")");
+
+                scratchBuffer.applyGain(instGain);
+
+                for (int ch = 0; ch < slotBuffer.getNumChannels(); ++ch) {
+                  if (ch < scratchBuffer.getNumChannels())
+                    slotBuffer.addFrom(ch, 0, scratchBuffer, ch, 0, slotBuffer.getNumSamples());
+                }
               } else {
-                filteredMidi.addEvent(msg, metadata.samplePosition);
+                OpenRigLog::safeExecutePluginCall([&]() {
+                  plugin->processBlock(slotBuffer, midiMessages);
+                }, "processBlock (" + plugin->getName() + ")");
+              }
+              consecutivePluginErrors.store(0);
+            } catch (...) {
+              int errs = consecutivePluginErrors.fetch_add(1) + 1;
+              if (errs >= OpenRigConstants::kMaxPluginExceptionsBeforeBypass) {
+                bypassed.store(true);
+                logToFile("ERROR: Slot '" + slotName + "' plugin '" + plugin->getName() +
+                          "' threw " + juce::String(errs) +
+                          " consecutive exceptions in processBlock — AUTO-BYPASSED for stability.");
               }
             }
-
-            OpenRigLog::safeExecutePluginCall([&]() {
-              plugin->processBlock(scratchBuffer, filteredMidi);
-            }, "processBlock (" + plugin->getName() + ")");
-
-            scratchBuffer.applyGain(instGain);
-
-            for (int ch = 0; ch < slotBuffer.getNumChannels(); ++ch) {
-              if (ch < scratchBuffer.getNumChannels())
-                slotBuffer.addFrom(ch, 0, scratchBuffer, ch, 0, slotBuffer.getNumSamples());
-            }
-          } else {
-            OpenRigLog::safeExecutePluginCall([&]() {
-              plugin->processBlock(slotBuffer, midiMessages);
-            }, "processBlock (" + plugin->getName() + ")");
-          }
-          consecutivePluginErrors.store(0);
-        } catch (...) {
-          int errs = consecutivePluginErrors.fetch_add(1) + 1;
-          if (errs >= OpenRigConstants::kMaxPluginExceptionsBeforeBypass) {
-            bypassed.store(true);
-            logToFile("ERROR: Slot '" + slotName + "' plugin '" + plugin->getName() +
-                      "' threw " + juce::String(errs) +
-                      " consecutive exceptions in processBlock — AUTO-BYPASSED for stability.");
           }
         }
       }
@@ -478,40 +491,87 @@ public:
   void setChannelColor(const juce::Colour &color) { channelColor = color; }
   juce::Colour getChannelColor() const { return channelColor; }
 
+  void invalidateCachedCCParams(int chainIndex) {
+    juce::SpinLock::ScopedLockType lock(ccMappingLock);
+    for (auto &pair : ccParameterMappings) {
+      if (pair.second.chainIndex == chainIndex) {
+        pair.second.cachedParam = nullptr;
+      }
+    }
+  }
+
+  void invalidateAllCachedCCParams() {
+    juce::SpinLock::ScopedLockType lock(ccMappingLock);
+    for (auto &pair : ccParameterMappings) {
+      pair.second.cachedParam = nullptr;
+    }
+  }
+
   // --- Plugin Management ---
   void setPluginInChain(int chainIndex,
                         std::unique_ptr<juce::AudioPluginInstance> newPlugin) {
     if (chainIndex < 0 || chainIndex >= 3)
       return;
 
-    if (chainIndex < (int)pluginChain.size()) {
-      if (pluginChain[chainIndex])
-        pluginChain[chainIndex]->releaseResources();
-      pluginChain[chainIndex] = std::move(newPlugin);
-    } else {
-      while ((int)pluginChain.size() < chainIndex)
-        pluginChain.push_back(nullptr);
-      pluginChain.push_back(std::move(newPlugin));
+    invalidateCachedCCParams(chainIndex);
+
+    bool isInst = newPlugin ? newPlugin->getPluginDescription().isInstrument : false;
+    chainIsInstrument[chainIndex].store(isInst);
+
+    std::unique_ptr<juce::AudioPluginInstance> oldPlugin;
+    {
+      juce::SpinLock::ScopedLockType sl(pluginLock);
+      if (chainIndex < (int)pluginChain.size()) {
+        oldPlugin = std::move(pluginChain[chainIndex]);
+        pluginChain[chainIndex] = std::move(newPlugin);
+      } else {
+        while ((int)pluginChain.size() < chainIndex)
+          pluginChain.push_back(nullptr);
+        pluginChain.push_back(std::move(newPlugin));
+      }
+    }
+
+    if (oldPlugin) {
+      oldPlugin->releaseResources();
+      oldPlugin.reset();
     }
   }
 
   void clearChain() {
-    for (auto &p : pluginChain) {
-      if (p)
-        p->releaseResources();
+    invalidateAllCachedCCParams();
+    std::vector<std::unique_ptr<juce::AudioPluginInstance>> oldPlugins;
+    {
+      juce::SpinLock::ScopedLockType sl(pluginLock);
+      oldPlugins.swap(pluginChain);
     }
-    pluginChain.clear();
+    for (auto &p : oldPlugins) {
+      if (p) {
+        p->releaseResources();
+        p.reset();
+      }
+    }
     for (int i = 0; i < 3; ++i)
       clearChainSlotMidiOut(i);
   }
 
   void clearChainPreserve(const std::set<int> &chainIndicesToPreserve) {
-    for (int i = 0; i < (int)pluginChain.size(); ++i) {
-      if (pluginChain[i]) {
-        if (chainIndicesToPreserve.find(i) == chainIndicesToPreserve.end()) {
-          pluginChain[i]->releaseResources();
-          pluginChain[i] = nullptr;
+    invalidateAllCachedCCParams();
+    std::vector<std::unique_ptr<juce::AudioPluginInstance>> oldPlugins;
+    {
+      juce::SpinLock::ScopedLockType sl(pluginLock);
+      for (int i = 0; i < (int)pluginChain.size(); ++i) {
+        if (pluginChain[i]) {
+          if (chainIndicesToPreserve.find(i) == chainIndicesToPreserve.end()) {
+            oldPlugins.push_back(std::move(pluginChain[i]));
+            pluginChain[i] = nullptr;
+          }
         }
+      }
+    }
+    for (auto &p : oldPlugins) {
+      if (p) {
+        p->releaseResources();
+        p.reset();
       }
     }
   }
@@ -634,12 +694,30 @@ public:
     float minValue = 0.0f; // Parameter range minimum (0-1)
     float maxValue = 1.0f; // Parameter range maximum (0-1)
     bool invert = false;   // Flip CC direction (drawbar behaviour)
+    juce::AudioProcessorParameter* cachedParam = nullptr;
   };
 
   void mapCCToParameter(int ccNum, int chainIndex, const juce::String& paramId, int paramIndex,
                         float minVal = 0.0f, float maxVal = 1.0f, bool inv = false) {
     juce::SpinLock::ScopedLockType lock(ccMappingLock);
-    ccParameterMappings[ccNum] = {chainIndex, paramIndex, paramId, minVal, maxVal, inv};
+    juce::AudioProcessorParameter* paramPtr = nullptr;
+    if (auto *plugin = getPluginInstance(chainIndex)) {
+      auto &params = plugin->getParameters();
+      if (paramId.isNotEmpty()) {
+        for (auto* param : params) {
+          if (auto* withId = dynamic_cast<juce::AudioProcessorParameterWithID*>(param)) {
+            if (withId->paramID == paramId) {
+              paramPtr = param;
+              break;
+            }
+          }
+        }
+      }
+      if (paramPtr == nullptr && paramIndex >= 0 && paramIndex < (int)params.size()) {
+        paramPtr = params[paramIndex];
+      }
+    }
+    ccParameterMappings[ccNum] = {chainIndex, paramIndex, paramId, minVal, maxVal, inv, paramPtr};
     if (ccNum >= 0 && ccNum < 128) {
       allowedCCs[ccNum].store(true);
     }
@@ -726,10 +804,6 @@ public:
         int ccNum = msg.getControllerNumber();
         int ccVal = msg.getControllerValue();
 
-        // CC routing is working - verbose logging disabled
-        // DBG("[" + slotName + "] CC" + juce::String(ccNum) + "=" +
-        //     juce::String(ccVal));
-
         // FOH Level Control
         if (fohCC.load() >= 0 && ccNum == fohCC.load()) {
           fohLevel.store(ccVal / 127.0f);
@@ -744,35 +818,15 @@ public:
         auto it = ccParameterMappings.find(ccNum);
         if (it != ccParameterMappings.end()) {
           auto &map = it->second;
-          if (auto *plugin = getPluginInstance(map.chainIndex)) {
-            auto &params = plugin->getParameters();
-            juce::AudioProcessorParameter* targetParam = nullptr;
+          juce::AudioProcessorParameter* targetParam = map.cachedParam;
 
-            // 1. Resolve by paramId if not empty
-            if (map.paramId.isNotEmpty()) {
-              for (auto* param : params) {
-                if (auto* withId = dynamic_cast<juce::AudioProcessorParameterWithID*>(param)) {
-                  if (withId->paramID == map.paramId) {
-                    targetParam = param;
-                    break;
-                  }
-                }
-              }
+          if (targetParam != nullptr) {
+            float normalized = ccVal / 127.0f;
+            if (map.invert) {
+              normalized = 1.0f - normalized;
             }
-
-            // 2. Fallback to index
-            if (targetParam == nullptr && map.parameterIndex >= 0 && map.parameterIndex < (int)params.size()) {
-              targetParam = params[map.parameterIndex];
-            }
-
-            if (targetParam != nullptr) {
-              float normalized = ccVal / 127.0f;
-              if (map.invert) {
-                normalized = 1.0f - normalized;
-              }
-              float scaled = map.minValue + normalized * (map.maxValue - map.minValue);
-              targetParam->setValue(scaled);
-            }
+            float scaled = map.minValue + normalized * (map.maxValue - map.minValue);
+            targetParam->setValue(scaled);
           }
         }
       }
@@ -849,12 +903,16 @@ private:
   SimpleArpeggiator arpeggiator;
   OctaveHarmonizer harmonizer;
   SamplerProcessor sampler;
+  Mp3PlayerProcessor mp3Player;
 
   OpenRigDSP::ChannelStripProcessor strip;
 
+  juce::SpinLock pluginLock;
   juce::SpinLock injectedMidiLock;
   juce::MidiBuffer injectedMidi;
   std::function<void(int, const juce::MidiBuffer &)> midiRouteCallback;
+  std::atomic<bool> chainIsInstrument[3]{false, false, false};
+  juce::MidiBuffer filteredMidiScratch;
   std::atomic<float> cpuUsage{0.0f};
   double lastSampleRate = 44100.0;
 

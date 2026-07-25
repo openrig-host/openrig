@@ -47,14 +47,14 @@ public:
     g.setColour(juce::Colours::white);
     g.setFont(mainFont);
     auto textArea = box.reduced(20);
-    g.drawText(title.isEmpty() ? "LOADING..." : title, textArea.removeFromTop(50),
+    g.drawText(title.isEmpty() ? "ARMING STAGE RIG..." : title, textArea.removeFromTop(50),
                juce::Justification::centred, false);
 
     // Subtitle
     auto subFont = juce::Font(juce::FontOptions(14.0f));
     g.setColour(juce::Colours::white.withAlpha(alpha));
     g.setFont(subFont);
-    g.drawText(message.isEmpty() ? "Preparing your rig..." : message, textArea,
+    g.drawText(message.isEmpty() ? "Warming up VSTs & stage patches..." : message, textArea,
                juce::Justification::centred, false);
   }
 

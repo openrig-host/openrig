@@ -6,6 +6,7 @@
 #include "ConfigModalOverlay.h"
 #include "MidiEffectsComponent.h"
 #include "SamplerComponent.h"
+#include "Mp3PlayerComponent.h"
 #include "SetupMidiTriggers.h"
 #include "LoadingOverlay.h"
 #include "SetupBuilderOverlay.h"
@@ -91,6 +92,7 @@ private:
   std::unique_ptr<ChannelStripComponent> channelStripOverlay;
   std::unique_ptr<MidiEffectsComponent> midiEffectsOverlay;
   std::unique_ptr<SamplerComponent> samplerOverlay;
+  std::unique_ptr<Mp3PlayerComponent> mp3Overlay;
   std::unique_ptr<LoadingOverlay> loadingOverlay;
   std::unique_ptr<ConfigModalOverlay> configOverlay;
   std::unique_ptr<LibraryPanel> libraryPanel;

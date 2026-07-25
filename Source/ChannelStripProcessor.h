@@ -360,7 +360,7 @@ public:
     if (n <= 0) return;
     for (int c = 0; c < 2; ++c)
       wetBuffer.copyFrom(c, 0, buffer, juce::jmin(c, chans - 1), 0, n);
-    juce::dsp::AudioBlock<float> wetBlock(wetBuffer);
+    juce::dsp::AudioBlock<float> wetBlock = juce::dsp::AudioBlock<float>(wetBuffer).getSubBlock(0, (size_t)n);
     juce::dsp::ProcessContextReplacing<float> ctx(wetBlock);
     convolution.process(ctx);
     const float w = mix, d = 1.0f - mix;

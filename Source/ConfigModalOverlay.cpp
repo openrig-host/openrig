@@ -31,19 +31,29 @@ ConfigModalOverlay::ConfigModalOverlay(Actions a) : actions(std::move(a)) {
   addAndMakeVisible(themeCombo);
 
   addSettingButton(audioSettingsBtn, "AUDIO SETTINGS");
+  audioSettingsBtn.setTooltip("Low-latency audio driver configuration, buffer size & sample rates.");
   audioSettingsBtn.onClick = [this] { clicked(actions.onAudioSettings); };
+
   addSettingButton(scanPluginsBtn, "SCAN FOR PLUGINS");
+  scanPluginsBtn.setTooltip("Scans system VST3 directories to register installed instruments & effects.");
   scanPluginsBtn.onClick = [this] { clicked(actions.onScanPlugins); };
+
   addSettingButton(busRoutingBtn, "BUS ROUTING");
+  busRoutingBtn.setTooltip("Configure FOH (Front of House) and IEM (In-Ear Monitor) output channel offsets.");
   busRoutingBtn.onClick = [this] { clicked(actions.onBusRouting); };
+
   addSettingButton(resetAudioBtn, "RESET AUDIO");
+  resetAudioBtn.setTooltip("Re-initializes audio driver threads and clears sample-rate locks mid-gig.");
   resetAudioBtn.onClick = [this] { clicked(actions.onResetAudio); };
+
   addSettingButton(stressTestBtn, "RUN STRESS TEST");
+  stressTestBtn.setTooltip("Simulates rapid scene switching and max CPU load to guarantee your rig won't crash mid-solo.");
   stressTestBtn.onClick = [this] {
     clicked(actions.onStressTestToggle);
     updateStressTestButtonState();
   };
   addSettingButton(aboutBtn, "ABOUT OPENRIG");
+  aboutBtn.setTooltip("OpenRig Sovereign Engine philosophy, version & stage credits.");
   aboutBtn.onClick = [this] { clicked(actions.onAbout); };
 
   closeBtn.setButtonText("X");
