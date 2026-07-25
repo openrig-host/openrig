@@ -23,10 +23,10 @@ public:
     float targetGr = comp.getGainReductionDb();
     float previousGr = lastGr;
 
-    if (targetGr < lastGr) {
+    if (targetGr > lastGr) {
       lastGr = targetGr;
     } else {
-      lastGr += (targetGr - lastGr) * 0.15f;
+      lastGr += (targetGr - lastGr) * 0.20f;
       if (std::abs(lastGr - targetGr) < 0.05f)
         lastGr = targetGr;
     }
@@ -37,15 +37,37 @@ public:
 
   void paint(juce::Graphics &g) override {
     auto bounds = getLocalBounds().toFloat();
-    g.setColour(juce::Colours::black);
+    
+    // Background meter well
+    g.setColour(juce::Colour(0xff121820));
     g.fillRoundedRectangle(bounds, 4.0f);
+    g.setColour(juce::Colour(0xff2a3440));
+    g.drawRoundedRectangle(bounds, 4.0f, 1.0f);
 
     float height = bounds.getHeight();
-    float normalizedGr = juce::jlimit(0.0f, 1.0f, -lastGr / 20.0f);
-    float barHeight = normalizedGr * height;
+    // Scale up to 24 dB of gain reduction
+    float normalizedGr = juce::jlimit(0.0f, 1.0f, lastGr / 24.0f);
+    float barHeight = normalizedGr * (height - 4.0f);
 
-    g.setColour(juce::Colours::red.withAlpha(0.8f));
-    g.fillRect(bounds.removeFromTop(barHeight));
+    if (barHeight > 1.0f) {
+      auto barBounds = bounds.reduced(2.0f);
+      auto grRect = barBounds.removeFromTop(barHeight);
+
+      juce::ColourGradient grad(
+          ThemeManager::get(Theme::Role::ok), grRect.getX(), grRect.getY(),
+          ThemeManager::get(Theme::Role::accent), grRect.getX(), grRect.getBottom(), false);
+      g.setGradientFill(grad);
+      g.fillRoundedRectangle(grRect, 2.0f);
+    }
+
+    // Scale tick marks (-6dB, -12dB, -18dB)
+    g.setColour(juce::Colours::white.withAlpha(0.35f));
+    float y6 = bounds.getY() + (6.0f / 24.0f) * height;
+    float y12 = bounds.getY() + (12.0f / 24.0f) * height;
+    float y18 = bounds.getY() + (18.0f / 24.0f) * height;
+    g.fillRect(bounds.getX() + 2.0f, y6, 4.0f, 1.0f);
+    g.fillRect(bounds.getX() + 2.0f, y12, 4.0f, 1.0f);
+    g.fillRect(bounds.getX() + 2.0f, y18, 4.0f, 1.0f);
   }
 
 private:
@@ -92,9 +114,9 @@ public:
       slot.getStrip().gateThreshold = (float)gateThreshKnob.getValue();
     };
 
-    // --- EQ ---
+    // --- 10-BAND GRAPHIC EQ ---
     addAndMakeVisible(eqGroup);
-    eqGroup.setText("EQ SECTION");
+    eqGroup.setText("10-BAND GRAPHIC EQ");
     eqGroup.setColour(juce::GroupComponent::outlineColourId, juce::Colours::cyan);
 
     addAndMakeVisible(eqToggle);
@@ -108,36 +130,74 @@ public:
       slot.getStrip().eqEnabled = eqToggle.getToggleState();
     };
 
-    addAndMakeVisible(hpfKnob);
-    hpfKnob.setRange(20.0, 400.0, 1.0);
-    hpfKnob.setValue(slot.getStrip().hpfFreq, juce::dontSendNotification);
-    hpfKnob.onValueChange = [this] {
-      slot.getStrip().hpfFreq = (float)hpfKnob.getValue();
+    addAndMakeVisible(flatBtn);
+    flatBtn.setButtonText("FLAT");
+    flatBtn.setTooltip("Reset all 10 EQ bands to 0 dB");
+    flatBtn.setColour(juce::TextButton::buttonColourId, ThemeManager::get(Theme::Role::raised));
+    flatBtn.onClick = [this] {
+      for (int i = 0; i < 10; ++i) {
+        slot.getStrip().eqBands[i].store(0.0f);
+        if (eqSliders[i]) eqSliders[i]->setValue(0.0, juce::dontSendNotification);
+      }
     };
 
-    addAndMakeVisible(eqLowLabel);
-    eqLowLabel.setText("LOW", juce::dontSendNotification);
-    eqLowLabel.setJustificationType(juce::Justification::centred);
-    addAndMakeVisible(lowKnob);
-    lowKnob.setRange(-12.0, 12.0, 0.1);
-    lowKnob.setValue(slot.getStrip().lowShelfGain, juce::dontSendNotification);
-    lowKnob.onValueChange = [this] {
-      slot.getStrip().lowShelfGain = (float)lowKnob.getValue();
+    // Vol Slider (Input Trim)
+    addAndMakeVisible(eqVolSlider);
+    eqVolSlider.setSliderStyle(juce::Slider::LinearVertical);
+    eqVolSlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+    eqVolSlider.setRange(-12.0, 12.0, 0.1);
+    eqVolSlider.setValue(slot.getStrip().eqVolGain.load(), juce::dontSendNotification);
+    eqVolSlider.setDoubleClickReturnValue(true, 0.0);
+    eqVolSlider.setTooltip("Input Trim Gain (-12 dB to +12 dB)");
+    eqVolSlider.onValueChange = [this] {
+      slot.getStrip().eqVolGain.store((float)eqVolSlider.getValue());
     };
 
-    addAndMakeVisible(eqMedLabel);
-    eqMedLabel.setText("HPF", juce::dontSendNotification);
-    eqMedLabel.setJustificationType(juce::Justification::centred);
+    addAndMakeVisible(eqVolLabel);
+    eqVolLabel.setText("VOL", juce::dontSendNotification);
+    eqVolLabel.setFont(juce::FontOptions(11.0f, juce::Font::bold));
+    eqVolLabel.setJustificationType(juce::Justification::centred);
 
-    addAndMakeVisible(eqHiLabel);
-    eqHiLabel.setText("HI", juce::dontSendNotification);
-    eqHiLabel.setJustificationType(juce::Justification::centred);
-    addAndMakeVisible(highKnob);
-    highKnob.setRange(-12.0, 12.0, 0.1);
-    highKnob.setValue(slot.getStrip().highShelfGain, juce::dontSendNotification);
-    highKnob.onValueChange = [this] {
-      slot.getStrip().highShelfGain = (float)highKnob.getValue();
+    // 10 Frequency Band Sliders
+    const char* bandNames[10] = { "31.25", "62.5", "125", "250", "500", "1K", "2K", "4K", "8K", "16K" };
+    for (int i = 0; i < 10; ++i) {
+      eqSliders[i] = std::make_unique<juce::Slider>();
+      addAndMakeVisible(*eqSliders[i]);
+      eqSliders[i]->setSliderStyle(juce::Slider::LinearVertical);
+      eqSliders[i]->setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+      eqSliders[i]->setRange(-12.0, 12.0, 0.1);
+      eqSliders[i]->setValue(slot.getStrip().eqBands[i].load(), juce::dontSendNotification);
+      eqSliders[i]->setDoubleClickReturnValue(true, 0.0);
+      eqSliders[i]->setTooltip(juce::String(bandNames[i]) + " Hz Band (-12 dB to +12 dB)");
+      int bandIdx = i;
+      eqSliders[i]->onValueChange = [this, bandIdx] {
+        slot.getStrip().eqBands[bandIdx].store((float)eqSliders[bandIdx]->getValue());
+      };
+
+      eqLabels[i] = std::make_unique<juce::Label>();
+      addAndMakeVisible(*eqLabels[i]);
+      eqLabels[i]->setText(bandNames[i], juce::dontSendNotification);
+      eqLabels[i]->setFont(juce::FontOptions(10.0f, juce::Font::bold));
+      eqLabels[i]->setJustificationType(juce::Justification::centred);
+      eqLabels[i]->setColour(juce::Label::textColourId, ThemeManager::get(Theme::Role::textDim));
+    }
+
+    // Gain Slider (Master Trim)
+    addAndMakeVisible(eqGainSlider);
+    eqGainSlider.setSliderStyle(juce::Slider::LinearVertical);
+    eqGainSlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+    eqGainSlider.setRange(-12.0, 12.0, 0.1);
+    eqGainSlider.setValue(slot.getStrip().eqMasterGain.load(), juce::dontSendNotification);
+    eqGainSlider.setDoubleClickReturnValue(true, 0.0);
+    eqGainSlider.setTooltip("Master EQ Output Gain (-12 dB to +12 dB)");
+    eqGainSlider.onValueChange = [this] {
+      slot.getStrip().eqMasterGain.store((float)eqGainSlider.getValue());
     };
+
+    addAndMakeVisible(eqGainLabel);
+    eqGainLabel.setText("GAIN", juce::dontSendNotification);
+    eqGainLabel.setFont(juce::FontOptions(11.0f, juce::Font::bold));
+    eqGainLabel.setJustificationType(juce::Justification::centred);
 
     // --- COMP ---
     addAndMakeVisible(compGroup);
@@ -155,11 +215,32 @@ public:
       slot.getStrip().compEnabled = compToggle.getToggleState();
     };
 
+    addAndMakeVisible(compPresetCombo);
+    compPresetCombo.addItem("Preset: Manual", 1);
+    compPresetCombo.addItem("Preset: MP3 / Track Leveler", 2);
+    compPresetCombo.addItem("Preset: Vocal / Lead Focus", 3);
+    compPresetCombo.addItem("Preset: Punchy Drums", 4);
+    compPresetCombo.addItem("Preset: Brickwall Limiter", 5);
+    compPresetCombo.setSelectedId(slot.getStrip().compPreset.load() + 1, juce::dontSendNotification);
+    compPresetCombo.onChange = [this] {
+      int id = compPresetCombo.getSelectedId() - 1;
+      slot.getStrip().compPreset.store(id);
+    };
+
     addAndMakeVisible(compAmtKnob);
     compAmtKnob.setRange(0.0, 1.0, 0.01);
     compAmtKnob.setValue(slot.getStrip().compAmount, juce::dontSendNotification);
+    compAmtKnob.setTooltip("Amount / Threshold");
     compAmtKnob.onValueChange = [this] {
       slot.getStrip().compAmount = (float)compAmtKnob.getValue();
+    };
+
+    addAndMakeVisible(compMakeupKnob);
+    compMakeupKnob.setRange(-12.0, 18.0, 0.5);
+    compMakeupKnob.setValue(slot.getStrip().compMakeupDb.load(), juce::dontSendNotification);
+    compMakeupKnob.setTooltip("Makeup Gain (dB)");
+    compMakeupKnob.onValueChange = [this] {
+      slot.getStrip().compMakeupDb.store((float)compMakeupKnob.getValue());
     };
 
     addAndMakeVisible(grMeter);
@@ -311,7 +392,7 @@ public:
       slot.setAux2Send((float)aux2Knob.getValue());
     };
 
-    setSize(800, 480);
+    setSize(920, 520);
   }
 
   void showColorPicker() {
@@ -362,37 +443,65 @@ public:
     closeBtn.setBounds(getWidth() - 40, 10, 30, 30);
     int sectionY = 60;
     int sectionH = 200;
-    int colW = getWidth() / 4;
 
-    gateGroup.setBounds(10, sectionY, colW - 20, sectionH);
-    gateToggle.setBounds(20, sectionY + 20, colW - 40, 30);
-    gateThreshKnob.setBounds(20, sectionY + 60, colW - 40, 100);
+    int gateW = 150;
+    int eqW = 430;
+    int compW = 160;
+    int revW = 160;
 
-    eqGroup.setBounds(colW + 10, sectionY, colW - 20, sectionH);
-    eqToggle.setBounds(colW + 20, sectionY + 20, colW - 40, 30);
-    int eqKnobW = (colW - 40) / 3;
-    eqMedLabel.setBounds(colW + 20, sectionY + 50, eqKnobW, 20);
-    hpfKnob.setBounds(colW + 20, sectionY + 60, eqKnobW, 80);
-    eqLowLabel.setBounds(colW + 20 + eqKnobW, sectionY + 50, eqKnobW, 20);
-    lowKnob.setBounds(colW + 20 + eqKnobW, sectionY + 60, eqKnobW, 80);
-    eqHiLabel.setBounds(colW + 20 + (eqKnobW * 2), sectionY + 50, eqKnobW, 20);
-    highKnob.setBounds(colW + 20 + (eqKnobW * 2), sectionY + 60, eqKnobW, 80);
+    int gateX = 10;
+    int eqX = gateX + gateW + 10;
+    int compX = eqX + eqW + 10;
+    int revX = compX + compW + 10;
 
-    compGroup.setBounds((colW * 2) + 10, sectionY, colW - 20, sectionH);
-    compToggle.setBounds((colW * 2) + 20, sectionY + 20, colW - 40, 30);
-    compAmtKnob.setBounds((colW * 2) + 20, sectionY + 60, colW - 80, 100);
-    grMeter.setBounds((colW * 3) - 50, sectionY + 60, 20, 100);
+    // Noise Gate
+    gateGroup.setBounds(gateX, sectionY, gateW, sectionH);
+    gateToggle.setBounds(gateX + 10, sectionY + 20, gateW - 20, 26);
+    gateThreshKnob.setBounds(gateX + 10, sectionY + 60, gateW - 20, 110);
 
-    // Reverb / Chorus column
-    int col4X = colW * 3;
-    revChoGroup.setBounds(col4X + 10, sectionY, colW - 20, sectionH);
-    reverbToggle.setBounds(col4X + 20, sectionY + 20, colW - 40, 24);
-    reverbSizeKnob.setBounds(col4X + 20, sectionY + 46, (colW - 50) / 2, 55);
-    reverbMixKnob.setBounds(col4X + 20 + (colW - 50) / 2, sectionY + 46, (colW - 50) / 2, 55);
+    // 10-Band Graphic EQ
+    eqGroup.setBounds(eqX, sectionY, eqW, sectionH);
+    eqToggle.setBounds(eqX + 10, sectionY + 20, 75, 24);
+    flatBtn.setBounds(eqX + 90, sectionY + 20, 55, 24);
 
-    chorusToggle.setBounds(col4X + 20, sectionY + 106, colW - 40, 24);
-    chorusRateKnob.setBounds(col4X + 20, sectionY + 132, (colW - 50) / 2, 55);
-    chorusMixKnob.setBounds(col4X + 20 + (colW - 50) / 2, sectionY + 132, (colW - 50) / 2, 55);
+    int numSliders = 12;
+    int sliderW = (eqW - 20) / numSliders;
+    int sliderY = sectionY + 70;
+    int sliderH = 115;
+    int labelY = sectionY + 48;
+
+    eqVolLabel.setBounds(eqX + 10, labelY, sliderW, 20);
+    eqVolSlider.setBounds(eqX + 10, sliderY, sliderW, sliderH);
+
+    for (int i = 0; i < 10; ++i) {
+      int sx = eqX + 10 + (i + 1) * sliderW;
+      if (eqLabels[i]) eqLabels[i]->setBounds(sx, labelY, sliderW, 20);
+      if (eqSliders[i]) eqSliders[i]->setBounds(sx, sliderY, sliderW, sliderH);
+    }
+
+    int masterX = eqX + 10 + 11 * sliderW;
+    eqGainLabel.setBounds(masterX, labelY, sliderW, 20);
+    eqGainSlider.setBounds(masterX, sliderY, sliderW, sliderH);
+
+    // Compressor
+    compGroup.setBounds(compX, sectionY, compW, sectionH);
+    compToggle.setBounds(compX + 10, sectionY + 20, compW - 20, 24);
+    compPresetCombo.setBounds(compX + 10, sectionY + 48, compW - 20, 22);
+
+    int singleKnobW = (compW - 55) / 2;
+    compAmtKnob.setBounds(compX + 10, sectionY + 75, singleKnobW, 110);
+    compMakeupKnob.setBounds(compX + 10 + singleKnobW, sectionY + 75, singleKnobW, 110);
+    grMeter.setBounds(compX + compW - 30, sectionY + 48, 20, 137);
+
+    // Reverb / Chorus
+    revChoGroup.setBounds(revX, sectionY, revW, sectionH);
+    reverbToggle.setBounds(revX + 10, sectionY + 20, revW - 20, 24);
+    reverbSizeKnob.setBounds(revX + 10, sectionY + 46, (revW - 30) / 2, 55);
+    reverbMixKnob.setBounds(revX + 10 + (revW - 30) / 2, sectionY + 46, (revW - 30) / 2, 55);
+
+    chorusToggle.setBounds(revX + 10, sectionY + 106, revW - 20, 24);
+    chorusRateKnob.setBounds(revX + 10, sectionY + 132, (revW - 30) / 2, 55);
+    chorusMixKnob.setBounds(revX + 10 + (revW - 30) / 2, sectionY + 132, (revW - 30) / 2, 55);
 
     // IR / convolution reverb row (bottom of panel)
     int irY = 385;
@@ -433,13 +542,19 @@ private:
   BigKnob gateThreshKnob{" dB"};
   juce::GroupComponent eqGroup;
   juce::TextButton eqToggle;
-  juce::Label eqLowLabel, eqMedLabel, eqHiLabel;
-  BigKnob hpfKnob{" Hz"};
-  BigKnob lowKnob{" dB"};
-  BigKnob highKnob{" dB"};
+  juce::TextButton flatBtn;
+  juce::Slider eqVolSlider;
+  juce::Label eqVolLabel;
+  std::unique_ptr<juce::Slider> eqSliders[10];
+  std::unique_ptr<juce::Label> eqLabels[10];
+  juce::Slider eqGainSlider;
+  juce::Label eqGainLabel;
+
   juce::GroupComponent compGroup;
   juce::TextButton compToggle;
+  juce::ComboBox compPresetCombo;
   BigKnob compAmtKnob{" %"};
+  BigKnob compMakeupKnob{" dB"};
   GainReductionMeter grMeter;
 
   // Space / Mod

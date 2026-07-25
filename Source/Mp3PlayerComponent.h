@@ -106,6 +106,18 @@ public:
         };
         addAndMakeVisible(shuffleBtn);
 
+        levelerBtn.setButtonText(processor.isLevelerEnabled() ? "AUTO LEVEL: ON" : "AUTO LEVEL: OFF");
+        levelerBtn.setTooltip("Auto-normalize track volumes across your playlist using smart compression");
+        levelerBtn.setColour(juce::TextButton::buttonColourId, processor.isLevelerEnabled() ? ThemeManager::get(Theme::Role::ok) : ThemeManager::get(Theme::Role::panel));
+        levelerBtn.onClick = [this] {
+            bool lev = !processor.isLevelerEnabled();
+            processor.setLevelerEnabled(lev);
+            levelerBtn.setButtonText(lev ? "AUTO LEVEL: ON" : "AUTO LEVEL: OFF");
+            levelerBtn.setColour(juce::TextButton::buttonColourId, lev ? ThemeManager::get(Theme::Role::ok) : ThemeManager::get(Theme::Role::panel));
+        };
+        addAndMakeVisible(levelerBtn);
+        addAndMakeVisible(levelerMeter);
+
         volSlider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
         volSlider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 45, 15);
         volSlider.setRange(0.0, 1.5, 0.01);
@@ -323,7 +335,7 @@ private:
     void chooseFiles() {
         fileChooser = std::make_unique<juce::FileChooser>(
             "Select Audio Files...",
-            juce::File::getSpecialLocation(juce::File::userHomeDirectory),
+            processor.getLastFolder(),
             "*.mp3;*.wav;*.flac;*.ogg;*.aiff;*.m4a"
         );
         fileChooser->launchAsync(
@@ -341,7 +353,7 @@ private:
     void chooseFolder() {
         fileChooser = std::make_unique<juce::FileChooser>(
             "Select Audio Folder...",
-            juce::File::getSpecialLocation(juce::File::userHomeDirectory)
+            processor.getLastFolder()
         );
         fileChooser->launchAsync(
             juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories,
@@ -358,7 +370,7 @@ private:
     void savePlaylist() {
         fileChooser = std::make_unique<juce::FileChooser>(
             "Save Playlist As...",
-            juce::File::getSpecialLocation(juce::File::userHomeDirectory),
+            processor.getLastFolder(),
             "*.rigplaylist;*.m3u"
         );
         fileChooser->launchAsync(
@@ -370,6 +382,7 @@ private:
                         file = file.withFileExtension(".rigplaylist");
                     }
                     processor.savePlaylist(file);
+                    processor.setLastFolder(file);
                 }
             }
         );
@@ -378,7 +391,7 @@ private:
     void loadPlaylist() {
         fileChooser = std::make_unique<juce::FileChooser>(
             "Load Playlist...",
-            juce::File::getSpecialLocation(juce::File::userHomeDirectory),
+            processor.getLastFolder(),
             "*.rigplaylist;*.m3u"
         );
         fileChooser->launchAsync(
@@ -387,6 +400,7 @@ private:
                 auto file = fc.getResult();
                 if (file.existsAsFile()) {
                     processor.loadPlaylist(file);
+                    processor.setLastFolder(file);
                     listBox.updateContent();
                     updateTrackUI();
                 }

@@ -100,113 +100,159 @@ private:
 
 class SimpleEQ {
 public:
+  static constexpr float kBandFreqs[10] = {
+    31.25f, 62.5f, 125.0f, 250.0f, 500.0f, 1000.0f, 2000.0f, 4000.0f, 8000.0f, 16000.0f
+  };
+
   void prepare(double sampleRate) {
-    sr = sampleRate;
-    updateCoefficients();
+    sr = sampleRate > 0.0 ? sampleRate : 44100.0;
+    for (int i = 0; i < 10; ++i) {
+      bands[i].reset();
+      updateBand(i, bandGains[i]);
+    }
   }
 
   void setEnabled(bool enabled) { isActive = enabled; }
-  void setHighPass(float freq) {
-    if (std::abs(hpfFreq - freq) > 0.001f) {
-      hpfFreq = freq;
-      updateCoefficients();
+
+  void setBandGain(int index, float gainDb) {
+    if (index >= 0 && index < 10) {
+      if (std::abs(bandGains[index] - gainDb) > 0.01f) {
+        bandGains[index] = gainDb;
+        updateBand(index, gainDb);
+      }
     }
   }
-  void setLowShelf(float db) {
-    if (std::abs(lowShelfGain - db) > 0.001f) {
-      lowShelfGain = db;
-      updateCoefficients();
-    }
+
+  void setVolGain(float db) {
+    volGainLinear = std::pow(10.0f, db / 20.0f);
   }
-  void setHighShelf(float db) {
-    if (std::abs(highShelfGain - db) > 0.001f) {
-      highShelfGain = db;
-      updateCoefficients();
-    }
+
+  void setMasterGain(float db) {
+    masterGainLinear = std::pow(10.0f, db / 20.0f);
   }
+
+  // Legacy compatibility helpers
+  void setHighPass(float freq) { juce::ignoreUnused(freq); }
+  void setLowShelf(float db) { setBandGain(1, db); }
+  void setHighShelf(float db) { setBandGain(8, db); }
 
   float process(float input) {
     if (!isActive)
       return input;
-    float out = hpf.process(input);
-    out = lowShelf.process(out);
-    out = highShelf.process(out);
-    return out;
+
+    float out = input * volGainLinear;
+    for (int i = 0; i < 10; ++i) {
+      out = bands[i].process(out);
+    }
+    return out * masterGainLinear;
   }
 
 private:
   double sr = 44100.0;
   bool isActive = false;
-  float hpfFreq = 20.0f;
-  float lowShelfGain = 0.0f;
-  float highShelfGain = 0.0f;
+  float bandGains[10]{0.0f};
+  float volGainLinear = 1.0f;
+  float masterGainLinear = 1.0f;
+  Biquad bands[10];
 
-  Biquad hpf, lowShelf, highShelf;
+  void updateBand(int idx, float gainDb) {
+    float f0 = kBandFreqs[idx];
+    if (std::abs(gainDb) < 0.05f) {
+      bands[idx].setCoefficients(1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f);
+      return;
+    }
+    float w0 = 2.0f * PI * f0 / (float)sr;
+    float cs = std::cos(w0);
+    float sn = std::sin(w0);
+    float A = std::pow(10.0f, gainDb / 40.0f);
+    float alpha = sn / (2.0f * 1.414f);
 
-  void updateCoefficients() {
-    float w0, sn, cs, alpha, A;
+    float b0 = 1.0f + alpha * A;
+    float b1 = -2.0f * cs;
+    float b2 = 1.0f - alpha * A;
+    float a0 = 1.0f + alpha / A;
+    float a1 = -2.0f * cs;
+    float a2 = 1.0f - alpha / A;
 
-    // HPF (Butterworth Q=0.707)
-    w0 = 2.0f * PI * hpfFreq / (float)sr;
-    cs = std::cos(w0);
-    alpha = std::sin(w0) / (2.0f * 0.707f);
-    float fa0 = 1.0f + alpha;
-    hpf.setCoefficients(fa0, -2.0f * cs, 1.0f - alpha, (1.0f + cs) / 2.0f,
-                        -(1.0f + cs), (1.0f + cs) / 2.0f);
-
-    // Low Shelf (200Hz)
-    w0 = 2.0f * PI * 200.0f / (float)sr;
-    cs = std::cos(w0);
-    sn = std::sin(w0);
-    A = std::pow(10.0f, lowShelfGain / 40.0f);
-    alpha =
-        sn / 2.0f * std::sqrt((A + 1.0f / A) * (1.0f / 0.707f - 1.0f) + 2.0f);
-    float ls_b0 =
-        A * ((A + 1.0f) - (A - 1.0f) * cs + 2.0f * std::sqrt(A) * alpha);
-    float ls_b1 = 2.0f * A * ((A - 1.0f) - (A + 1.0f) * cs);
-    float ls_b2 =
-        A * ((A + 1.0f) - (A - 1.0f) * cs - 2.0f * std::sqrt(A) * alpha);
-    float ls_a0 = (A + 1.0f) + (A - 1.0f) * cs + 2.0f * std::sqrt(A) * alpha;
-    float ls_a1 = -2.0f * ((A - 1.0f) + (A + 1.0f) * cs);
-    float ls_a2 = (A + 1.0f) + (A - 1.0f) * cs - 2.0f * std::sqrt(A) * alpha;
-    lowShelf.setCoefficients(ls_a0, ls_a1, ls_a2, ls_b0, ls_b1, ls_b2);
-
-    // High Shelf (5000Hz)
-    w0 = 2.0f * PI * 5000.0f / (float)sr;
-    cs = std::cos(w0);
-    sn = std::sin(w0);
-    A = std::pow(10.0f, highShelfGain / 40.0f);
-    alpha =
-        sn / 2.0f * std::sqrt((A + 1.0f / A) * (1.0f / 0.707f - 1.0f) + 2.0f);
-    float hs_b0 =
-        A * ((A + 1.0f) + (A - 1.0f) * cs + 2.0f * std::sqrt(A) * alpha);
-    float hs_b1 = -2.0f * A * ((A - 1.0f) + (A + 1.0f) * cs);
-    float hs_b2 =
-        A * ((A + 1.0f) + (A - 1.0f) * cs - 2.0f * std::sqrt(A) * alpha);
-    float hs_a0 = (A + 1.0f) - (A - 1.0f) * cs + 2.0f * std::sqrt(A) * alpha;
-    float hs_a1 = 2.0f * ((A - 1.0f) - (A + 1.0f) * cs);
-    float hs_a2 = (A + 1.0f) - (A - 1.0f) * cs - 2.0f * std::sqrt(A) * alpha;
-    highShelf.setCoefficients(hs_a0, hs_a1, hs_a2, hs_b0, hs_b1, hs_b2);
+    bands[idx].setCoefficients(a0, a1, a2, b0, b1, b2);
   }
 };
 
 // ==============================================================================
-// SIMPLE COMPRESSOR
+// UPGRADED COMPRESSOR WITH PRESETS & MAKEUP GAIN
 // ==============================================================================
+enum class CompPreset {
+  Manual = 0,
+  MP3Leveler,    // Smooth MP3 / Playlist Leveler
+  VocalFocus,    // Vocal / Lead Focus
+  DrumsPunch,    // Punchy Drums / Beats
+  HardLimiter    // Brickwall Peak Control
+};
+
 class SimpleComp {
 public:
   void prepare(double sampleRate) {
-    sr = sampleRate;
-    attackCoeff = 1.0f - std::exp(-1.0f / (0.01f * (float)sr));   // 10ms
-    releaseCoeff = 1.0f - std::exp(-1.0f / (0.2f * (float)sr));    // 200ms
+    sr = sampleRate > 0.0 ? sampleRate : 44100.0;
+    updateCoefficients(0.010f, 0.200f);
   }
 
   void setEnabled(bool enabled) { isActive = enabled; }
-  void setAmount(float amt) { // 0.0 to 1.0
+
+  void updateCoefficients(float attackSec, float releaseSec) {
+    float att = juce::jmax(0.0005f, attackSec);
+    float rel = juce::jmax(0.005f, releaseSec);
+    attackCoeff = 1.0f - std::exp(-1.0f / (att * (float)sr));
+    releaseCoeff = 1.0f - std::exp(-1.0f / (rel * (float)sr));
+  }
+
+  void setPreset(int pIdx, float userMakeupDb = 0.0f) {
+    presetIndex = pIdx;
+    userMakeupGainDb = userMakeupDb;
+
+    switch (pIdx) {
+    case 1: // MP3 / Track Leveler
+      thresholdDb = -26.0f;
+      ratio = 3.5f;
+      presetMakeupDb = 6.0f;
+      updateCoefficients(0.015f, 0.280f);
+      break;
+    case 2: // Vocal / Lead Focus
+      thresholdDb = -20.0f;
+      ratio = 4.0f;
+      presetMakeupDb = 4.0f;
+      updateCoefficients(0.005f, 0.180f);
+      break;
+    case 3: // Punchy Drums / Beats
+      thresholdDb = -16.0f;
+      ratio = 4.0f;
+      presetMakeupDb = 3.0f;
+      updateCoefficients(0.030f, 0.100f);
+      break;
+    case 4: // Brickwall Peak Control / Limiter
+      thresholdDb = -4.0f;
+      ratio = 12.0f;
+      presetMakeupDb = 0.0f;
+      updateCoefficients(0.001f, 0.050f);
+      break;
+    case 0: // Manual (driven by amount knob)
+    default:
+      thresholdDb = -10.0f - (30.0f * amount);
+      ratio = 2.0f + (6.0f * amount);
+      presetMakeupDb = 6.0f * amount;
+      updateCoefficients(0.010f, 0.200f);
+      break;
+    }
+  }
+
+  void setAmount(float amt) {
     amount = amt;
-    thresholdDb = -10.0f - (30.0f * amount);
-    ratio = 2.0f + (6.0f * amount);
-    makeupGainDb = 10.0f * amount;
+    if (presetIndex == 0) {
+      setPreset(0, userMakeupGainDb);
+    }
+  }
+
+  void setMakeupGain(float db) {
+    userMakeupGainDb = db;
   }
 
   float getGainReductionDb() const { return currentGrDb.load(); }
@@ -218,8 +264,7 @@ public:
     }
 
     float inputAbs = std::abs(input);
-    float inputDb =
-        (inputAbs > 0.000001f) ? 20.0f * std::log10(inputAbs) : -100.0f;
+    float inputDb = (inputAbs > 0.000001f) ? 20.0f * std::log10(inputAbs) : -100.0f;
 
     float overDb = inputDb - thresholdDb;
     if (overDb < 0.0f)
@@ -229,9 +274,9 @@ public:
     float coeff = (grDb > envelopeDb) ? attackCoeff : releaseCoeff;
     envelopeDb += (grDb - envelopeDb) * coeff;
 
-    currentGrDb.store(envelopeDb); // Store for UI
+    currentGrDb.store(envelopeDb);
 
-    float totalGainDb = makeupGainDb - envelopeDb;
+    float totalGainDb = presetMakeupDb + userMakeupGainDb - envelopeDb;
     float totalGain = std::pow(10.0f, totalGainDb / 20.0f);
 
     return input * totalGain;
@@ -240,15 +285,16 @@ public:
 private:
   double sr = 44100.0;
   bool isActive = false;
+  int presetIndex = 0;
   float amount = 0.0f;
   float thresholdDb = -10.0f;
   float ratio = 2.0f;
-  float makeupGainDb = 0.0f;
+  float presetMakeupDb = 0.0f;
+  float userMakeupGainDb = 0.0f;
 
   float envelopeDb = 0.0f;
   std::atomic<float> currentGrDb{0.0f};
 
-  // 10ms Attack, 200ms Release
   float attackCoeff = 0.01f;
   float releaseCoeff = 0.001f;
 };
@@ -408,9 +454,14 @@ public:
   std::atomic<float> hpfFreq{20.0f};
   std::atomic<float> lowShelfGain{0.0f};
   std::atomic<float> highShelfGain{0.0f};
+  std::atomic<float> eqVolGain{0.0f};
+  std::atomic<float> eqMasterGain{0.0f};
+  std::atomic<float> eqBands[10]{};
 
   std::atomic<bool> compEnabled{false};
   std::atomic<float> compAmount{0.0f};
+  std::atomic<float> compMakeupDb{0.0f};
+  std::atomic<int> compPreset{0};
 
   std::atomic<bool> chorusEnabled{false};
   std::atomic<float> chorusRate{1.0f};
@@ -445,11 +496,12 @@ public:
     bool gEnabled = gateEnabled.load();
     float gThresh = gateThreshold.load();
     bool eEnabled = eqEnabled.load();
-    float hpfF = hpfFreq.load();
-    float lsG = lowShelfGain.load();
-    float hsG = highShelfGain.load();
+    float vGain = eqVolGain.load();
+    float mGain = eqMasterGain.load();
     bool cEnabled = compEnabled.load();
     float cAmt = compAmount.load();
+    float cMakeup = compMakeupDb.load();
+    int cPreset = compPreset.load();
     
     bool choEnabled = chorusEnabled.load();
     float choRate = chorusRate.load();
@@ -461,17 +513,23 @@ public:
     gateR.setThreshold(gThresh);
 
     eqL.setEnabled(eEnabled);
-    eqL.setHighPass(hpfF);
-    eqL.setLowShelf(lsG);
-    eqL.setHighShelf(hsG);
+    eqL.setVolGain(vGain);
+    eqL.setMasterGain(mGain);
     eqR.setEnabled(eEnabled);
-    eqR.setHighPass(hpfF);
-    eqR.setLowShelf(lsG);
-    eqR.setHighShelf(hsG);
+    eqR.setVolGain(vGain);
+    eqR.setMasterGain(mGain);
+
+    for (int b = 0; b < 10; ++b) {
+      float bg = eqBands[b].load();
+      eqL.setBandGain(b, bg);
+      eqR.setBandGain(b, bg);
+    }
 
     compL.setEnabled(cEnabled);
+    compL.setPreset(cPreset, cMakeup);
     compL.setAmount(cAmt);
     compR.setEnabled(cEnabled);
+    compR.setPreset(cPreset, cMakeup);
     compR.setAmount(cAmt);
 
     chorusL.setEnabled(choEnabled);

@@ -2,6 +2,7 @@
 
 #include <JuceHeader.h>
 #include "Logger.h"
+#include "ChannelStripProcessor.h"
 #include <vector>
 #include <random>
 #include <atomic>
@@ -18,6 +19,7 @@ public:
 
     Mp3PlayerProcessor() {
         formatManager.registerBasicFormats();
+        loadLastFolderFromSettings();
     }
 
     ~Mp3PlayerProcessor() {
@@ -27,11 +29,54 @@ public:
         readerSource.reset();
     }
 
+    juce::String lastFolderPath;
+
+    juce::File getLastFolder() const {
+        if (lastFolderPath.isNotEmpty()) {
+            juce::File f(lastFolderPath);
+            if (f.exists()) return f.isDirectory() ? f : f.getParentDirectory();
+        }
+        return juce::File::getSpecialLocation(juce::File::userMusicDirectory);
+    }
+
+    void setLastFolder(const juce::File& f) {
+        if (f.exists()) {
+            juce::File dir = f.isDirectory() ? f : f.getParentDirectory();
+            lastFolderPath = dir.getFullPathName();
+            saveLastFolderToSettings();
+        }
+    }
+
+    void saveLastFolderToSettings() {
+        auto appData = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory).getChildFile("OpenRig");
+        if (!appData.exists()) appData.createDirectory();
+        auto settingsFile = appData.getChildFile("mp3_last_folder.txt");
+        settingsFile.replaceWithText(lastFolderPath);
+    }
+
+    void loadLastFolderFromSettings() {
+        auto settingsFile = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory).getChildFile("OpenRig").getChildFile("mp3_last_folder.txt");
+        if (settingsFile.existsAsFile()) {
+            lastFolderPath = settingsFile.loadFileAsString().trim();
+        }
+    }
+
+    OpenRigDSP::SimpleComp levelerL, levelerR;
+    std::atomic<bool> levelerEnabled{true};
+
     void prepare(double sampleRate, int maxBlockSize = 8192) {
         currentSampleRate = sampleRate > 0.0 ? sampleRate : 44100.0;
         int allocSize = juce::jmax(maxBlockSize, 8192);
         tempBuffer.setSize(2, allocSize);
         tempBuffer.clear();
+
+        levelerL.prepare(currentSampleRate);
+        levelerR.prepare(currentSampleRate);
+        levelerL.setPreset(1); // MP3 / Track Leveler Preset
+        levelerR.setPreset(1);
+        levelerL.setEnabled(true);
+        levelerR.setEnabled(true);
+
         juce::SpinLock::ScopedLockType al(audioLock);
         if (readerSource != nullptr) {
             readerSource->prepareToPlay(allocSize, currentSampleRate);
@@ -39,6 +84,12 @@ public:
             currentReadPos.store(readerSource->getNextReadPosition());
         }
     }
+
+    void setLevelerEnabled(bool enabled) {
+        levelerEnabled.store(enabled);
+    }
+    bool isLevelerEnabled() const { return levelerEnabled.load(); }
+    OpenRigDSP::SimpleComp& getLevelerReference() { return levelerL; }
 
     void processBlock(juce::AudioBuffer<float>& buffer) {
         if (!playing.load()) return;
@@ -58,6 +109,17 @@ public:
 
         float currentGain = gain.load();
         tempBuffer.applyGain(currentGain);
+
+        if (levelerEnabled.load()) {
+            levelerL.setEnabled(true);
+            levelerR.setEnabled(true);
+            float* L = tempBuffer.getWritePointer(0);
+            float* R = tempBuffer.getNumChannels() > 1 ? tempBuffer.getWritePointer(1) : nullptr;
+            for (int i = 0; i < numSamples; ++i) {
+                L[i] = levelerL.process(L[i]);
+                if (R) R[i] = levelerR.process(R[i]);
+            }
+        }
 
         for (int ch = 0; ch < numChannels; ++ch) {
             buffer.addFrom(ch, 0, tempBuffer, ch, 0, numSamples);
@@ -79,6 +141,7 @@ public:
     // Playlist Control
     void addFile(const juce::File& file) {
         if (!file.existsAsFile()) return;
+        setLastFolder(file);
         juce::String ext = file.getFileExtension().toLowerCase();
         if (ext == ".mp3" || ext == ".wav" || ext == ".flac" || ext == ".ogg" || ext == ".aiff" || ext == ".m4a") {
             TrackInfo info;
@@ -97,6 +160,7 @@ public:
 
     void addFolder(const juce::File& folder) {
         if (!folder.isDirectory()) return;
+        setLastFolder(folder);
         auto files = folder.findChildFiles(juce::File::findFiles, false);
         for (const auto& f : files) {
             addFile(f);
