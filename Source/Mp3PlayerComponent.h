@@ -281,7 +281,7 @@ public:
             juce::File file(f);
             if (file.isDirectory()) return true;
             juce::String ext = file.getFileExtension().toLowerCase();
-            if (ext == ".mp3" || ext == ".wav" || ext == ".flac" || ext == ".ogg" || ext == ".m4a")
+            if (ext == ".mp3" || ext == ".wav" || ext == ".flac" || ext == ".ogg" || ext == ".m4a" || ext == ".aac" || ext == ".aiff")
                 return true;
         }
         return false;
@@ -338,7 +338,7 @@ private:
         fileChooser = std::make_unique<juce::FileChooser>(
             "Select Audio Files...",
             processor.getLastFolder(),
-            "*.mp3;*.wav;*.flac;*.ogg;*.aiff;*.m4a"
+            "*.mp3;*.wav;*.flac;*.ogg;*.aiff;*.m4a;*.aac"
         );
         fileChooser->launchAsync(
             juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles | juce::FileBrowserComponent::canSelectMultipleItems,

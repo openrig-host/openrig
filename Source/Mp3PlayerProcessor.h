@@ -19,6 +19,8 @@ public:
 
     Mp3PlayerProcessor() {
         formatManager.registerBasicFormats();
+        formatManager.registerFormat(new juce::FlacAudioFormat(), true);
+        formatManager.registerFormat(new juce::OggVorbisAudioFormat(), true);
         loadLastFolderFromSettings();
     }
 
@@ -143,7 +145,7 @@ public:
         if (!file.existsAsFile()) return;
         setLastFolder(file);
         juce::String ext = file.getFileExtension().toLowerCase();
-        if (ext == ".mp3" || ext == ".wav" || ext == ".flac" || ext == ".ogg" || ext == ".aiff" || ext == ".m4a") {
+        if (ext == ".mp3" || ext == ".wav" || ext == ".flac" || ext == ".ogg" || ext == ".aiff" || ext == ".m4a" || ext == ".aac") {
             TrackInfo info;
             info.file = file;
             info.title = file.getFileNameWithoutExtension();
