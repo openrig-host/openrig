@@ -2094,7 +2094,8 @@ void MainComponent::closePluginWindowForInstance(juce::AudioPluginInstance* inst
   for (int i = activePluginWindows.size() - 1; i >= 0; --i) {
     if (auto *pw = dynamic_cast<PluginWindow*>(activePluginWindows[i])) {
       if (pw->pluginInstance == instance) {
-        activePluginWindows.remove(i);
+        auto* w = activePluginWindows.removeAndReturn(i);
+        juce::MessageManager::callAsync([w]() { delete w; });
       }
     }
   }
@@ -2121,13 +2122,20 @@ void MainComponent::closeOrphanedPluginWindows() {
     if (auto *pw = dynamic_cast<PluginWindow*>(activePluginWindows[i])) {
       bool found = (std::find(activeInstances.begin(), activeInstances.end(), pw->pluginInstance) != activeInstances.end());
       if (!found) {
-        activePluginWindows.remove(i);
+        auto* w = activePluginWindows.removeAndReturn(i);
+        juce::MessageManager::callAsync([w]() { delete w; });
       }
     }
   }
 }
 
 void MainComponent::closeAllPluginWindows() {
-  activePluginWindows.clear();
+  auto* tempArray = new juce::OwnedArray<juce::DocumentWindow>();
+  for (int i = activePluginWindows.size() - 1; i >= 0; --i) {
+    tempArray->add(activePluginWindows.removeAndReturn(i));
+  }
+  juce::MessageManager::callAsync([tempArray]() {
+    delete tempArray;
+  });
 }
 

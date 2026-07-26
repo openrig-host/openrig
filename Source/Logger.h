@@ -415,6 +415,9 @@ inline void crashHandler(void *exceptionInfo) {
 #endif
 
   OpenRigLog::flushLog();
+#ifdef _WIN32
+  TerminateProcess(GetCurrentProcess(), 1);
+#endif
 }
 
 #ifdef _WIN32
