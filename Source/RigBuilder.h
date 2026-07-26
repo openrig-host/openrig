@@ -1,6 +1,7 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include <thread>
 #include "Logger.h"
 #include "OpenRigEngine.h"
 
@@ -186,7 +187,42 @@ private:
 
         if (!requiresMessageThread) {
             logToFile("TRACE: buildOne " + label + " building off-thread...");
-            ok = engine.buildPluginFromVar(pv, inst, err) && (bool)inst;
+            struct BuildThreadContext {
+                OpenRigEngine* engine;
+                juce::var pluginVar;
+                std::unique_ptr<juce::AudioPluginInstance> inst;
+                juce::String err;
+                bool ok = false;
+                std::atomic<bool> done{false};
+            };
+            auto bctx = std::make_shared<BuildThreadContext>();
+            bctx->engine = &engine;
+            bctx->pluginVar = pv;
+
+            std::thread t([bctx]() {
+                bctx->ok = bctx->engine->buildPluginFromVar(bctx->pluginVar, bctx->inst, bctx->err) && (bool)bctx->inst;
+                bctx->done.store(true);
+            });
+
+            // Wait up to 25 seconds for the background VST build to complete
+            int waitCount = 0;
+            while (!bctx->done.load() && waitCount < 250) {
+                juce::Thread::sleep(100);
+                waitCount++;
+            }
+
+            if (!bctx->done.load()) {
+                logToFile("TRACE: buildOne " + label + " timed out (25s) on background build. Detaching thread...");
+                t.detach(); // Allow the thread to remain stuck in background without hanging OpenRig
+                ok = false;
+                err = "build timed out (25s)";
+            } else {
+                t.join();
+                inst = std::move(bctx->inst);
+                err = bctx->err;
+                ok = bctx->ok;
+            }
+
             if (!ok) {
                 logToFile("TRACE: buildOne off-thread build failed for " + label + ", retrying on message thread. Error: " + err);
             }
@@ -273,7 +309,42 @@ private:
 
         if (!requiresMessageThread) {
             logToFile("TRACE: buildMaster " + label + " building off-thread...");
-            ok = engine.buildPluginFromVar(pv, inst, err) && (bool)inst;
+            struct BuildThreadContext {
+                OpenRigEngine* engine;
+                juce::var pluginVar;
+                std::unique_ptr<juce::AudioPluginInstance> inst;
+                juce::String err;
+                bool ok = false;
+                std::atomic<bool> done{false};
+            };
+            auto bctx = std::make_shared<BuildThreadContext>();
+            bctx->engine = &engine;
+            bctx->pluginVar = pv;
+
+            std::thread t([bctx]() {
+                bctx->ok = bctx->engine->buildPluginFromVar(bctx->pluginVar, bctx->inst, bctx->err) && (bool)bctx->inst;
+                bctx->done.store(true);
+            });
+
+            // Wait up to 25 seconds for the background VST build to complete
+            int waitCount = 0;
+            while (!bctx->done.load() && waitCount < 250) {
+                juce::Thread::sleep(100);
+                waitCount++;
+            }
+
+            if (!bctx->done.load()) {
+                logToFile("TRACE: buildMaster " + label + " timed out (25s) on background build. Detaching thread...");
+                t.detach(); // Allow thread to remain stuck in background
+                ok = false;
+                err = "build timed out (25s)";
+            } else {
+                t.join();
+                inst = std::move(bctx->inst);
+                err = bctx->err;
+                ok = bctx->ok;
+            }
+
             if (!ok) {
                 logToFile("TRACE: buildMaster off-thread build failed for " + label + ", retrying on message thread. Error: " + err);
             }
