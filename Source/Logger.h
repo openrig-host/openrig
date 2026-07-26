@@ -9,19 +9,40 @@
 #define NOMINMAX
 #include <Windows.h>
 #include <DbgHelp.h>
+#include <psapi.h>
 #pragma comment(lib, "dbghelp.lib")
+#pragma comment(lib, "psapi.lib")
 #endif
 
-// ==============================================================================
-// OpenRig Logger
-// Centralized logging with severity levels.
-//
-// Thread safety: log() pushes to a mutex-protected queue or writes synchronously
-// depending on level. logToFile() writes synchronously. All file writes are
-// serialized under a single lock (logQueueLock), maintaining chronological order.
-// ==============================================================================
-
 namespace OpenRigLog {
+
+struct ProcessMemoryStats {
+  size_t workingSetBytes = 0;
+  size_t privateCommitBytes = 0;
+  size_t totalSystemRamBytes = 0;
+  size_t freeSystemRamBytes = 0;
+  int systemRamLoadPercent = 0;
+};
+
+inline ProcessMemoryStats getMemoryStats() {
+  ProcessMemoryStats stats;
+#ifdef _WIN32
+  PROCESS_MEMORY_COUNTERS_EX pmc;
+  if (GetProcessMemoryInfo(GetCurrentProcess(), (PROCESS_MEMORY_COUNTERS*)&pmc, sizeof(pmc))) {
+    stats.workingSetBytes = pmc.WorkingSetSize;
+    stats.privateCommitBytes = pmc.PrivateUsage;
+  }
+
+  MEMORYSTATUSEX memInfo;
+  memInfo.dwLength = sizeof(MEMORYSTATUSEX);
+  if (GlobalMemoryStatusEx(&memInfo)) {
+    stats.totalSystemRamBytes = (size_t)memInfo.ullTotalPhys;
+    stats.freeSystemRamBytes = (size_t)memInfo.ullAvailPhys;
+    stats.systemRamLoadPercent = (int)memInfo.dwMemoryLoad;
+  }
+#endif
+  return stats;
+}
 
 enum class Level { Debug, Info, Warning, Error };
 

@@ -810,9 +810,14 @@ void MainComponent::setupHeaderButtons() {
   addAndMakeVisible(cpuLabel);
   cpuLabel.setFont(juce::FontOptions(12.0f));
   cpuLabel.setColour(juce::Label::textColourId, ThemeManager::get(Theme::Role::warn));
+  cpuLabel.setTooltip("Click to view Per-VST Memory & Resource Inspector");
+  cpuLabel.addMouseListener(this, false);
+
   addAndMakeVisible(ramLabel);
   ramLabel.setFont(juce::FontOptions(12.0f));
   ramLabel.setColour(juce::Label::textColourId, ThemeManager::get(Theme::Role::meterMid));
+  ramLabel.setTooltip("Click to view Per-VST Memory & Resource Inspector");
+  ramLabel.addMouseListener(this, false);
 
   addAndMakeVisible(setupNameLabel);
   setupNameLabel.setFont(juce::FontOptions(22.0f, juce::Font::bold));
@@ -1519,6 +1524,20 @@ void MainComponent::resized() {
     mp3Overlay->centreWithSize(680, 520);
   if (setupBuilderOverlay)
     setupBuilderOverlay->centreWithSize(400, 480);
+  if (resourceInspectorOverlay)
+    resourceInspectorOverlay->centreWithSize(680, 480);
+}
+
+void MainComponent::showResourceInspectorModal() {
+  if (!resourceInspectorOverlay) {
+    resourceInspectorOverlay = std::make_unique<ResourceInspectorModal>(engine, [this] {
+      resourceInspectorOverlay.reset();
+      resized();
+    });
+    addAndMakeVisible(resourceInspectorOverlay.get());
+  }
+  resourceInspectorOverlay->centreWithSize(680, 480);
+  resourceInspectorOverlay->toFront(true);
 }
 
 void MainComponent::hideLoadingOverlay() { loadingOverlay.reset(); }
@@ -1643,17 +1662,9 @@ void MainComponent::timerCallback() {
   cpuLabel.setText("CPU: " + juce::String(cpu, 1) + "%",
                    juce::dontSendNotification);
 
-#if JUCE_WINDOWS
-  MEMORYSTATUSEX memInfo;
-  memInfo.dwLength = sizeof(MEMORYSTATUSEX);
-  if (GlobalMemoryStatusEx(&memInfo)) {
-      ramLabel.setText("RAM: " + juce::String(memInfo.dwMemoryLoad) + "%", juce::dontSendNotification);
-  } else {
-      ramLabel.setText("RAM: --", juce::dontSendNotification);
-  }
-#else
-  ramLabel.setText("RAM: --", juce::dontSendNotification);
-#endif
+  auto memStats = OpenRigLog::getMemoryStats();
+  juce::String appRamStr = ResourceInspectorModal::formatBytes(memStats.workingSetBytes);
+  ramLabel.setText("RAM: " + appRamStr + " (" + juce::String(memStats.systemRamLoadPercent) + "%)", juce::dontSendNotification);
 
   // Round-trip latency readout (input + output buffer latency)
   if (auto* dev = deviceManager.getCurrentAudioDevice()) {
@@ -1923,6 +1934,11 @@ void MainComponent::setLoadingMessage(const juce::String &message) {
 }
 
 void MainComponent::mouseDown(const juce::MouseEvent &e) {
+  if (e.originalComponent == &ramLabel || e.originalComponent == &cpuLabel) {
+    showResourceInspectorModal();
+    return;
+  }
+
   for (int i = 0; i < sceneButtons.size(); ++i) {
     if (e.originalComponent == sceneButtons[i]) {
       if (e.mods.isRightButtonDown()) {

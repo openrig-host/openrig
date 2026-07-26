@@ -6,7 +6,7 @@
 #include "ConfigModalOverlay.h"
 #include "MidiEffectsComponent.h"
 #include "SamplerComponent.h"
-#include "Mp3PlayerComponent.h"
+#include "ResourceInspectorModal.h"
 #include "SetupMidiTriggers.h"
 #include "LoadingOverlay.h"
 #include "SetupBuilderOverlay.h"
@@ -97,6 +97,9 @@ private:
   std::unique_ptr<ConfigModalOverlay> configOverlay;
   std::unique_ptr<LibraryPanel> libraryPanel;
   std::unique_ptr<SetupBuilderOverlay> setupBuilderOverlay;
+  std::unique_ptr<ResourceInspectorModal> resourceInspectorOverlay;
+
+  void showResourceInspectorModal();
   
   int currentSetupIndex = 0;
 

@@ -919,6 +919,13 @@ private:
   std::atomic<float> aux1SendLevel{0.0f};
   std::atomic<float> aux2SendLevel{0.0f};
   std::atomic<float> iemOffset{1.0f}; // 1.0 = same as FOH, >1.0 = louder in IEM
+  std::atomic<size_t> estimatedRamBytes{0};
+
+public:
+  size_t getEstimatedRamBytes() const { return estimatedRamBytes.load(); }
+  void setEstimatedRamBytes(size_t bytes) { estimatedRamBytes.store(bytes); }
+
+private:
 
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(RackSlot)
 };

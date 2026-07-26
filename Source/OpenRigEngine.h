@@ -2811,6 +2811,7 @@ public:
     // Create instance synchronously
     juce::String errorMessage;
     pinDllInMemory(pluginPath);
+    size_t ramBefore = OpenRigLog::getMemoryStats().workingSetBytes;
     auto instance = formatManager.createPluginInstance(
         desc, currentSampleRate, currentBlockSize, errorMessage);
 
@@ -2818,6 +2819,10 @@ public:
       logToFile("Plugin loaded successfully!");
       configureStereoLayout(instance.get());
       instance->prepareToPlay(currentSampleRate, currentBlockSize);
+      size_t ramAfter = OpenRigLog::getMemoryStats().workingSetBytes;
+      if (ramAfter > ramBefore) {
+        slotVec[realIdx]->setEstimatedRamBytes(ramAfter - ramBefore);
+      }
 
       // CRITICAL: Lock while swapping the actual instance in the rack
       {
