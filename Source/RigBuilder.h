@@ -10,12 +10,7 @@ namespace OpenRig {
 // the async callback can NEVER dangle if the transitioner thread is torn down
 // (e.g. stopTransition) before the message thread runs it. The captured
 // shared_ptr keeps this state alive for the lifetime of the callback.
-struct AsyncPluginBuildState {
-  std::unique_ptr<juce::AudioPluginInstance> inst;
-  juce::String err;
-  bool ok = false;
-  juce::WaitableEvent done;
-};
+
 
 /**
     RigBuilder
@@ -184,35 +179,39 @@ private:
         }
 
         // Build on the MESSAGE THREAD (Qt-based plugins like Super 8 require it).
-        // State is refcounted (shared_ptr) so the async lambda is safe even if
-        // this transitioner thread is destroyed before the callback runs.
-        auto state = std::make_shared<AsyncPluginBuildState>();
-        juce::MessageManager::getInstance()->callAsync(
-            [state, &engine, pv]() {
-                state->ok = engine.buildPluginFromVar(pv, state->inst, state->err) &&
-                            (bool) state->inst;
-                state->done.signal();
-            });
-        if (!state->done.wait(120000)) { // 120s safety bound (heavy plugins); shared_ptr keeps the late lambda safe
-            logToFile("TRACE: buildOne timed out on message-thread build: " + label);
-            r.ok = false;
-            r.error = label + ": build timed out";
-            r.failedEntries.push_back({key, pv});
-            return false;
-        }
+        // callFunctionOnMessageThread guarantees immediate execution — unlike
+        // callAsync which queues behind UI repaints and can timeout.
+        struct BuildContext {
+            OpenRigEngine* engine;
+            juce::var pluginVar;
+            std::unique_ptr<juce::AudioPluginInstance> inst;
+            juce::String err;
+            bool ok = false;
+        };
+        auto ctx = std::make_unique<BuildContext>();
+        ctx->engine = &engine;
+        ctx->pluginVar = pv;
 
-        if (!state->ok) {
-            logToFile("TRACE: buildOne failed for " + label + ": " + state->err);
+        juce::MessageManager::getInstance()->callFunctionOnMessageThread(
+            [](void* data) -> void* {
+                auto* c = static_cast<BuildContext*>(data);
+                c->ok = c->engine->buildPluginFromVar(c->pluginVar, c->inst, c->err) &&
+                        (bool)c->inst;
+                return nullptr;
+            }, ctx.get());
+
+        if (!ctx->ok) {
+            logToFile("TRACE: buildOne failed for " + label + ": " + ctx->err);
             r.ok = false;
-            r.error = label + ": " + state->err;
+            r.error = label + ": " + ctx->err;
             r.failedEntries.push_back({key, pv});
             return false;
         }
         logToFile("TRACE: buildOne staging " + label);
         if (isPreload)
-            engine.pushPreloadedPlugin(key, std::move(state->inst));
+            engine.pushPreloadedPlugin(key, std::move(ctx->inst));
         else
-            engine.pushStagedPlugin(key, std::move(state->inst));
+            engine.pushStagedPlugin(key, std::move(ctx->inst));
         ++r.builtCount;
         return true;
     }
@@ -241,35 +240,39 @@ private:
             return true;
         }
 
-        // Build on the MESSAGE THREAD (see buildOne comment). Refcounted state
-        // keeps the async lambda safe across transitioner teardown.
-        auto state = std::make_shared<AsyncPluginBuildState>();
-        juce::MessageManager::getInstance()->callAsync(
-            [state, &engine, pv]() {
-                state->ok = engine.buildPluginFromVar(pv, state->inst, state->err) &&
-                            (bool) state->inst;
-                state->done.signal();
-            });
-        if (!state->done.wait(120000)) { // 120s safety bound; shared_ptr keeps the late lambda safe
-            logToFile("TRACE: buildMaster timed out on message-thread build: " + label);
-            r.ok = false;
-            r.error = label + ": build timed out";
-            r.failedEntries.push_back({key, pv});
-            return false;
-        }
+        // Build on the MESSAGE THREAD (see buildOne comment).
+        // callFunctionOnMessageThread guarantees immediate execution.
+        struct BuildContext {
+            OpenRigEngine* engine;
+            juce::var pluginVar;
+            std::unique_ptr<juce::AudioPluginInstance> inst;
+            juce::String err;
+            bool ok = false;
+        };
+        auto ctx = std::make_unique<BuildContext>();
+        ctx->engine = &engine;
+        ctx->pluginVar = pv;
 
-        if (!state->ok) {
-            logToFile("TRACE: buildMaster failed for " + label + ": " + state->err);
+        juce::MessageManager::getInstance()->callFunctionOnMessageThread(
+            [](void* data) -> void* {
+                auto* c = static_cast<BuildContext*>(data);
+                c->ok = c->engine->buildPluginFromVar(c->pluginVar, c->inst, c->err) &&
+                        (bool)c->inst;
+                return nullptr;
+            }, ctx.get());
+
+        if (!ctx->ok) {
+            logToFile("TRACE: buildMaster failed for " + label + ": " + ctx->err);
             r.ok = false;
-            r.error = label + ": " + state->err;
+            r.error = label + ": " + ctx->err;
             r.failedEntries.push_back({key, pv});
             return false;
         }
         logToFile("TRACE: buildMaster staging " + label);
         if (isPreload)
-            engine.pushPreloadedPlugin(key, std::move(state->inst));
+            engine.pushPreloadedPlugin(key, std::move(ctx->inst));
         else
-            engine.pushStagedPlugin(key, std::move(state->inst));
+            engine.pushStagedPlugin(key, std::move(ctx->inst));
         ++r.builtCount;
         return true;
     }
