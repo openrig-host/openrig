@@ -1716,9 +1716,13 @@ void MainComponent::timerCallback() {
   cpuLabel.setText("CPU: " + juce::String(cpu, 1) + "%",
                    juce::dontSendNotification);
 
-  auto memStats = OpenRigLog::getMemoryStats();
-  juce::String appRamStr = ResourceInspectorModal::formatBytes(memStats.workingSetBytes);
-  ramLabel.setText("RAM: " + appRamStr + " (" + juce::String(memStats.systemRamLoadPercent) + "%)", juce::dontSendNotification);
+  static int memUpdateTicks = 19;
+  if (++memUpdateTicks >= 20) {
+    memUpdateTicks = 0;
+    auto memStats = OpenRigLog::getMemoryStats();
+    juce::String appRamStr = ResourceInspectorModal::formatBytes(memStats.workingSetBytes);
+    ramLabel.setText("RAM: " + appRamStr + " (" + juce::String(memStats.systemRamLoadPercent) + "%)", juce::dontSendNotification);
+  }
 
   // Round-trip latency readout (input + output buffer latency)
   if (auto* dev = deviceManager.getCurrentAudioDevice()) {
