@@ -50,7 +50,8 @@ inline Level currentMinLevel = Level::Info;
 
 inline juce::File getLogFile() {
   static const juce::File f =
-      juce::File::getSpecialLocation(juce::File::userDesktopDirectory)
+      juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+          .getChildFile("OpenRig")
           .getChildFile("OpenRig_log.txt");
   return f;
 }
@@ -316,12 +317,6 @@ inline void crashHandler(void *exceptionInfo) {
   // STEP 2: WRITE MINIDUMP FIRST (Zero Heap Dependency)
   writeCrashDumpHeapFree(exceptionInfo, dmpPath);
 
-  // Copy duplicate to Desktop for quick convenience
-  wchar_t desktop[MAX_PATH] = {0};
-  GetEnvironmentVariableW(L"USERPROFILE", desktop, MAX_PATH);
-  wchar_t desktopDmp[MAX_PATH] = {0};
-  wsprintfW(desktopDmp, L"%s\\Desktop\\OpenRig_CrashDump_Latest.dmp", desktop);
-  CopyFileW(dmpPath, desktopDmp, FALSE);
 
   // STEP 3: HEAP-FREE TEXT REPORT WRITER (Raw Win32 WriteFile to stack buffer)
   static char reportBuf[65536];
@@ -417,9 +412,6 @@ inline void crashHandler(void *exceptionInfo) {
     CloseHandle(reportFile);
   }
 
-  wchar_t desktopTxt[MAX_PATH] = {0};
-  wsprintfW(desktopTxt, L"%s\\Desktop\\DAVE_CORE_CRASH_REPORT.txt", desktop);
-  CopyFileW(txtPath, desktopTxt, FALSE);
 #endif
 
   OpenRigLog::flushLog();
