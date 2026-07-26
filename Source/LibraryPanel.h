@@ -58,15 +58,13 @@ private:
 #include "SetlistPanel.h"
 
 class LibraryPanel : public juce::Component,
-                     public juce::DragAndDropContainer,
-                     private juce::Timer {
+                     public juce::DragAndDropContainer {
 public:
   LibraryPanel();
   ~LibraryPanel() override;
 
   void refreshAll();
   void visibilityChanged() override;
-  void timerCallback() override;
 
   juce::File getSelectedPresetFile() const;
   void resized() override;

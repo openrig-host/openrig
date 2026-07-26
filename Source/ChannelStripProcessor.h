@@ -479,6 +479,10 @@ public:
   ConvolutionReverb &getIRReverb() { return irReverb; }
   const ConvolutionReverb &getIRReverb() const { return irReverb; }
 
+  std::atomic<bool> paramsDirty{true};
+
+  void setParamDirty() { paramsDirty.store(true); }
+
   void prepare(double sampleRate) {
     gateL.prepare(sampleRate);
     gateR.prepare(sampleRate);
@@ -490,55 +494,58 @@ public:
     chorusR.prepare(sampleRate);
     reverb.setSampleRate(sampleRate);
     irReverb.prepare(sampleRate, 4096);
+    paramsDirty.store(true);
   }
 
   void processBlock(juce::AudioBuffer<float> &buffer) {
-    // Read atomics once for loop consistency
-    bool gEnabled = gateEnabled.load();
-    float gThresh = gateThreshold.load();
     bool eEnabled = eqEnabled.load();
-    float vGain = eqVolGain.load();
-    float mGain = eqMasterGain.load();
     bool cEnabled = compEnabled.load();
-    float cAmt = compAmount.load();
-    float cMakeup = compMakeupDb.load();
-    int cPreset = compPreset.load();
-    
-    bool choEnabled = chorusEnabled.load();
-    float choRate = chorusRate.load();
-    float choMix = chorusMix.load();
 
-    gateL.setEnabled(gEnabled);
-    gateL.setThreshold(gThresh);
-    gateR.setEnabled(gEnabled);
-    gateR.setThreshold(gThresh);
+    if (paramsDirty.exchange(false)) {
+      bool gEnabled = gateEnabled.load();
+      float gThresh = gateThreshold.load();
+      float vGain = eqVolGain.load();
+      float mGain = eqMasterGain.load();
+      float cAmt = compAmount.load();
+      float cMakeup = compMakeupDb.load();
+      int cPreset = compPreset.load();
+      
+      bool choEnabled = chorusEnabled.load();
+      float choRate = chorusRate.load();
+      float choMix = chorusMix.load();
 
-    eqL.setEnabled(eEnabled);
-    eqL.setVolGain(vGain);
-    eqL.setMasterGain(mGain);
-    eqR.setEnabled(eEnabled);
-    eqR.setVolGain(vGain);
-    eqR.setMasterGain(mGain);
+      gateL.setEnabled(gEnabled);
+      gateL.setThreshold(gThresh);
+      gateR.setEnabled(gEnabled);
+      gateR.setThreshold(gThresh);
 
-    for (int b = 0; b < 10; ++b) {
-      float bg = eqBands[b].load();
-      eqL.setBandGain(b, bg);
-      eqR.setBandGain(b, bg);
+      eqL.setEnabled(eEnabled);
+      eqL.setVolGain(vGain);
+      eqL.setMasterGain(mGain);
+      eqR.setEnabled(eEnabled);
+      eqR.setVolGain(vGain);
+      eqR.setMasterGain(mGain);
+
+      for (int b = 0; b < 10; ++b) {
+        float bg = eqBands[b].load();
+        eqL.setBandGain(b, bg);
+        eqR.setBandGain(b, bg);
+      }
+
+      compL.setEnabled(cEnabled);
+      compL.setPreset(cPreset, cMakeup);
+      compL.setAmount(cAmt);
+      compR.setEnabled(cEnabled);
+      compR.setPreset(cPreset, cMakeup);
+      compR.setAmount(cAmt);
+
+      chorusL.setEnabled(choEnabled);
+      chorusL.setRate(choRate);
+      chorusL.setMix(choMix);
+      chorusR.setEnabled(choEnabled);
+      chorusR.setRate(choRate);
+      chorusR.setMix(choMix);
     }
-
-    compL.setEnabled(cEnabled);
-    compL.setPreset(cPreset, cMakeup);
-    compL.setAmount(cAmt);
-    compR.setEnabled(cEnabled);
-    compR.setPreset(cPreset, cMakeup);
-    compR.setAmount(cAmt);
-
-    chorusL.setEnabled(choEnabled);
-    chorusL.setRate(choRate);
-    chorusL.setMix(choMix);
-    chorusR.setEnabled(choEnabled);
-    chorusR.setRate(choRate);
-    chorusR.setMix(choMix);
 
     int numSamples = buffer.getNumSamples();
     auto *L = buffer.getWritePointer(0);

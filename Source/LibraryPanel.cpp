@@ -358,10 +358,9 @@ LibraryPanel::LibraryPanel() {
 
   addAndMakeVisible(tabs.get());
   setSize(240, 400);
-  startTimer(3000);
 }
 
-LibraryPanel::~LibraryPanel() { stopTimer(); }
+LibraryPanel::~LibraryPanel() {}
 
 void LibraryPanel::refreshAll() {
   if (setsList)
@@ -376,8 +375,6 @@ void LibraryPanel::visibilityChanged() {
   juce::Component::visibilityChanged();
   refreshAll();
 }
-
-void LibraryPanel::timerCallback() { refreshAll(); }
 
 juce::File LibraryPanel::getSelectedPresetFile() const {
   if (tabs->getCurrentTabIndex() == 2 && stripsList != nullptr)
