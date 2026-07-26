@@ -52,6 +52,8 @@ public:
 #ifdef _WIN32
     // Restore default Windows timer resolution
     timeEndPeriod(1);
+    // Force terminate process to prevent zombie VST threads from locking ASIO/MIDI drivers
+    TerminateProcess(GetCurrentProcess(), 0);
 #endif
   }
 
