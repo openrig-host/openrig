@@ -179,26 +179,40 @@ private:
         }
 
         // Build on the MESSAGE THREAD (Qt-based plugins like Super 8 require it).
-        // callFunctionOnMessageThread guarantees immediate execution — unlike
-        // callAsync which queues behind UI repaints and can timeout.
+        // callFunctionOnMessageThread guarantees immediate execution — no queue
+        // starvation. The build runs synchronously on the message thread.
         struct BuildContext {
             OpenRigEngine* engine;
             juce::var pluginVar;
             std::unique_ptr<juce::AudioPluginInstance> inst;
             juce::String err;
             bool ok = false;
+            std::atomic<bool> finished{false};
         };
-        auto ctx = std::make_unique<BuildContext>();
+        auto ctx = std::make_shared<BuildContext>();
         ctx->engine = &engine;
         ctx->pluginVar = pv;
 
-        juce::MessageManager::getInstance()->callFunctionOnMessageThread(
-            [](void* data) -> void* {
-                auto* c = static_cast<BuildContext*>(data);
-                c->ok = c->engine->buildPluginFromVar(c->pluginVar, c->inst, c->err) &&
-                        (bool)c->inst;
-                return nullptr;
-            }, ctx.get());
+        // Launch builder on message thread via callAsync + WaitableEvent.
+        // callFunctionOnMessageThread can block the UI for minutes if a plugin
+        // (e.g. ZENOLOGY) takes a long time, so we use callAsync with a
+        // generous 180s timeout and progress pumping instead.
+        juce::WaitableEvent buildDone;
+        juce::MessageManager::getInstance()->callAsync(
+            [ctx, &buildDone]() {
+                ctx->ok = ctx->engine->buildPluginFromVar(ctx->pluginVar, ctx->inst, ctx->err) &&
+                          (bool)ctx->inst;
+                ctx->finished.store(true);
+                buildDone.signal();
+            });
+
+        if (!buildDone.wait(180000)) {
+            logToFile("TRACE: buildOne timed out (180s) on plugin build: " + label);
+            r.ok = false;
+            r.error = label + ": build timed out (180s)";
+            r.failedEntries.push_back({key, pv});
+            return false;
+        }
 
         if (!ctx->ok) {
             logToFile("TRACE: buildOne failed for " + label + ": " + ctx->err);
@@ -241,25 +255,34 @@ private:
         }
 
         // Build on the MESSAGE THREAD (see buildOne comment).
-        // callFunctionOnMessageThread guarantees immediate execution.
         struct BuildContext {
             OpenRigEngine* engine;
             juce::var pluginVar;
             std::unique_ptr<juce::AudioPluginInstance> inst;
             juce::String err;
             bool ok = false;
+            std::atomic<bool> finished{false};
         };
-        auto ctx = std::make_unique<BuildContext>();
+        auto ctx = std::make_shared<BuildContext>();
         ctx->engine = &engine;
         ctx->pluginVar = pv;
 
-        juce::MessageManager::getInstance()->callFunctionOnMessageThread(
-            [](void* data) -> void* {
-                auto* c = static_cast<BuildContext*>(data);
-                c->ok = c->engine->buildPluginFromVar(c->pluginVar, c->inst, c->err) &&
-                        (bool)c->inst;
-                return nullptr;
-            }, ctx.get());
+        juce::WaitableEvent buildDone;
+        juce::MessageManager::getInstance()->callAsync(
+            [ctx, &buildDone]() {
+                ctx->ok = ctx->engine->buildPluginFromVar(ctx->pluginVar, ctx->inst, ctx->err) &&
+                          (bool)ctx->inst;
+                ctx->finished.store(true);
+                buildDone.signal();
+            });
+
+        if (!buildDone.wait(180000)) {
+            logToFile("TRACE: buildMaster timed out (180s) on plugin build: " + label);
+            r.ok = false;
+            r.error = label + ": build timed out (180s)";
+            r.failedEntries.push_back({key, pv});
+            return false;
+        }
 
         if (!ctx->ok) {
             logToFile("TRACE: buildMaster failed for " + label + ": " + ctx->err);

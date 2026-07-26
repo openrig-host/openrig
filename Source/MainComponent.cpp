@@ -1082,21 +1082,6 @@ void MainComponent::audioDeviceIOCallbackWithContext(
   midiCollector.removeNextBlockOfMessages(incomingMidi, numSamples);
   engine.processAudio(inputChannelData, numInputChannels, outputChannelData,
                       numOutputChannels, numSamples, incomingMidi);
-
-  // Check output for NaN / Inf / Extreme Digital Spikes (> +12 dB)
-  for (int ch = 0; ch < numOutputChannels; ++ch) {
-    if (outputChannelData && outputChannelData[ch]) {
-      float* samples = outputChannelData[ch];
-      for (int s = 0; s < numSamples; ++s) {
-        float val = samples[s];
-        if (std::isnan(val) || std::isinf(val) || std::abs(val) > 4.0f) {
-          audioUnderrunCount++;
-          logAudioNanSpike(ch, s, val);
-          samples[s] = 0.0f; // Clamp bad sample safely
-        }
-      }
-    }
-  }
 }
 
 void MainComponent::saveAudioSettings() {
