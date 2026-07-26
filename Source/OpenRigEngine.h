@@ -869,7 +869,7 @@ public:
       }
     }
 
-    if (slotsWithPlugins <= 1) {
+    if (slotsWithPlugins <= 3) {
       // Process sequentially inline on the audio thread (highly stable)
       for (int i = 0; i < numActiveSlots; ++i) {
         preallocatedJobs[i]->setup(inputData, numInputs, slotsFinishedCount);

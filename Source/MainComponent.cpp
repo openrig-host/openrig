@@ -1058,7 +1058,7 @@ void MainComponent::audioDeviceIOCallbackWithContext(
   if (prevTicks > 0) {
     double elapsedMs = juce::Time::highResolutionTicksToSeconds(nowTicks - prevTicks) * 1000.0;
     double expectedMs = (double)numSamples / (engine.getCurrentSampleRate() > 0.0 ? engine.getCurrentSampleRate() : 44100.0) * 1000.0;
-    if (expectedMs > 0.0 && elapsedMs > expectedMs * 1.5) {
+    if (expectedMs > 0.0 && elapsedMs > expectedMs * 2.2) {
       audioUnderrunCount++;
       lastGlitchStallMs.store(elapsedMs);
       pendingGlitchActualMs.store(elapsedMs);
