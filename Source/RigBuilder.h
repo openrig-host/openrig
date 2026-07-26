@@ -2,6 +2,11 @@
 
 #include <JuceHeader.h>
 #include <thread>
+#ifdef _WIN32
+#define NOMINMAX
+#include <Windows.h>
+#include <objbase.h>
+#endif
 #include "Logger.h"
 #include "OpenRigEngine.h"
 
