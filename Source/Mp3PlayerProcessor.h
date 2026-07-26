@@ -145,6 +145,17 @@ public:
     }
 
     // Playlist Control
+    void addTrack(const juce::File& file, const juce::String& title, double durationSeconds) {
+        if (!file.existsAsFile()) return;
+        TrackInfo info;
+        info.file = file;
+        info.title = title.isNotEmpty() ? title : file.getFileNameWithoutExtension();
+        info.durationSeconds = durationSeconds;
+
+        juce::ScopedLock sl(playlistLock);
+        playlist.push_back(info);
+    }
+
     void addFile(const juce::File& file) {
         if (!file.existsAsFile()) return;
         setLastFolder(file);

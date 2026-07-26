@@ -200,7 +200,13 @@ private:
             bctx->pluginVar = pv;
 
             std::thread t([bctx]() {
+#ifdef _WIN32
+                ::CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+#endif
                 bctx->ok = bctx->engine->buildPluginFromVar(bctx->pluginVar, bctx->inst, bctx->err) && (bool)bctx->inst;
+#ifdef _WIN32
+                ::CoUninitialize();
+#endif
                 bctx->done.store(true);
             });
 
@@ -322,7 +328,13 @@ private:
             bctx->pluginVar = pv;
 
             std::thread t([bctx]() {
+#ifdef _WIN32
+                ::CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+#endif
                 bctx->ok = bctx->engine->buildPluginFromVar(bctx->pluginVar, bctx->inst, bctx->err) && (bool)bctx->inst;
+#ifdef _WIN32
+                ::CoUninitialize();
+#endif
                 bctx->done.store(true);
             });
 

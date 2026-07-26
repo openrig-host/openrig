@@ -2151,7 +2151,7 @@ public:
     mp3Live.setShuffleEnabled(songSlot.mp3Player.shuffle);
     mp3Live.setGain(songSlot.mp3Player.gain);
     for (const auto& ts : songSlot.mp3Player.tracks) {
-      mp3Live.addFile(juce::File(ts.path));
+      mp3Live.addTrack(juce::File(ts.path), ts.title, ts.duration);
     }
 
     s->clearAllCCMappings();
