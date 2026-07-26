@@ -577,6 +577,13 @@ public:
   }
 
   bool hasPlugins() const { return !pluginChain.empty(); }
+  bool hasActivePlugins() const {
+    for (const auto &p : pluginChain) {
+      if (p != nullptr)
+        return true;
+    }
+    return false;
+  }
 
   juce::String getPluginName(int chainIndex) const {
     if (chainIndex >= 0 && chainIndex < (int)pluginChain.size()) {

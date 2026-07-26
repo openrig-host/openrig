@@ -858,92 +858,97 @@ public:
       }
     }
 
-    // PARALLEL PROCESSING: Process all slots simultaneously
+    // PARALLEL PROCESSING DECISION: If we have <= 1 active slot with VSTs loaded,
+    // process sequentially inline directly on the audio thread to eliminate thread-pool
+    // scheduling overhead and context-switch jitter (crucial for tight buffers like 128 samples).
     int numActiveSlots = (int)slots.size();
-
-    // Pre-allocated in prepareToPlay(); never allocate jobs on the audio thread.
-    if (preallocatedJobs.size() < numActiveSlots) {
-      audioUnderrunFlag.store(true);
-      return;
+    int slotsWithPlugins = 0;
+    for (int i = 0; i < numActiveSlots; ++i) {
+      if (slots[i]->hasActivePlugins() && !slots[i]->isBypassed()) {
+        slotsWithPlugins++;
+      }
     }
 
-    if (engineWedged.load()) {
-      bool allFinished = true;
+    if (slotsWithPlugins <= 1) {
+      // Process sequentially inline on the audio thread (highly stable)
       for (int i = 0; i < numActiveSlots; ++i) {
-        if (preallocatedJobs[i]->completedToken.load(std::memory_order_acquire) !=
-            preallocatedJobs[i]->setupToken.load(std::memory_order_acquire)) {
-          allFinished = false;
-          break;
-        }
+        preallocatedJobs[i]->setup(inputData, numInputs, slotsFinishedCount);
+        preallocatedJobs[i]->runJob();
       }
-      if (!allFinished) {
-        audioUnderrunFlag.store(true);
-        aux1Bus.clear();
-        aux2Bus.clear();
-        return;
-      }
-      engineWedged.store(false);
-    }
 
-    // setup() bumps each job's completion token; we then wait for
-    // completedToken == setupToken. Because a late/stale worker carries an OLD
-    // token, it can never falsely satisfy a later block's wait, so reused jobs
-    // can't cause a corrupted sumToBuses (the fork-join reuse hazard).
-    for (int i = 0; i < numActiveSlots; ++i)
-      preallocatedJobs[i]->setup(inputData, numInputs, slotsFinishedCount);
-    slotsFinishedCount.store(0); // diagnostic only; the wait uses completion tokens
-
-    for (int i = 0; i < numActiveSlots; ++i)
-      threadPool.addJob(preallocatedJobs[i], false);
-
-    // Spin-wait barrier (BOUNDED). _mm_pause() keeps the core active without
-    // yielding to the OS. The ~50M-pause bound is far longer than any valid
-    // block can take, so it only ever trips on a wedged worker (e.g. a plugin
-    // stuck in an infinite loop). On timeout we MUST NOT sum the scratch
-    // buffers — a still-running worker could be writing to them, which would be
-    // an unsynchronized concurrent read/write (corruption). Instead emit
-    // silence for this block, flag the underrun, and keep the app responsive so
-    // the user can recover (panic / restart the offending slot).
-    bool timedOut = false;
-    {
-      constexpr long long kMaxSpins = 50000LL; // Real-time sub-millisecond spin budget
-      long long spinCount = 0;
-      for (;;) {
-        bool allDone = true;
-        for (int i = 0; i < numActiveSlots; ++i) {
-          const uint32_t expected =
-              preallocatedJobs[i]->setupToken.load(std::memory_order_acquire);
-          if (preallocatedJobs[i]->completedToken.load(std::memory_order_acquire) != expected) {
-            allDone = false;
-            break;
-          }
-        }
-        if (allDone) break;
-        if (++spinCount >= kMaxSpins) {
-          timedOut = true;
-          break;
-        }
-#if defined(_MSC_VER) || defined(__INTEL_COMPILER)
-        _mm_pause(); // Intel/AMD: hint to reduce power and avoid pipeline stalls
-#elif defined(__arm__) || defined(__aarch64__)
-        __yield(); // ARM equivalent
-#endif
-      }
-    }
-
-    if (timedOut) {
-      engineWedged.store(true);
-      audioUnderrunFlag.store(true);
-      aux1Bus.clear();
-      aux2Bus.clear();
-      // fohBus/iemBus already cleared above; do NOT sum contended buffers.
-    } else {
       // Sum all processed buffers to buses
       aux1Bus.clear();
       aux2Bus.clear();
-
       for (int i = 0; i < (int)slots.size(); ++i) {
         slots[i]->sumToBuses(scratchBuffers[i], fohBus, iemBus, aux1Bus, aux2Bus);
+      }
+    } else {
+      // Parallel Processing: Process simultaneously via thread pool (for complex multi-VST rigs)
+      if (engineWedged.load()) {
+        bool allFinished = true;
+        for (int i = 0; i < numActiveSlots; ++i) {
+          if (preallocatedJobs[i]->completedToken.load(std::memory_order_acquire) !=
+              preallocatedJobs[i]->setupToken.load(std::memory_order_acquire)) {
+            allFinished = false;
+            break;
+          }
+        }
+        if (!allFinished) {
+          audioUnderrunFlag.store(true);
+          aux1Bus.clear();
+          aux2Bus.clear();
+          return;
+        }
+        engineWedged.store(false);
+      }
+
+      for (int i = 0; i < numActiveSlots; ++i)
+        preallocatedJobs[i]->setup(inputData, numInputs, slotsFinishedCount);
+      slotsFinishedCount.store(0); // diagnostic only; the wait uses completion tokens
+
+      for (int i = 0; i < numActiveSlots; ++i)
+        threadPool.addJob(preallocatedJobs[i], false);
+
+      // Spin-wait barrier (BOUNDED). Generous 300k spin budget for safety.
+      bool timedOut = false;
+      {
+        constexpr long long kMaxSpins = 300000LL; 
+        long long spinCount = 0;
+        for (;;) {
+          bool allDone = true;
+          for (int i = 0; i < numActiveSlots; ++i) {
+            const uint32_t expected =
+                preallocatedJobs[i]->setupToken.load(std::memory_order_acquire);
+            if (preallocatedJobs[i]->completedToken.load(std::memory_order_acquire) != expected) {
+              allDone = false;
+              break;
+            }
+          }
+          if (allDone) break;
+          if (++spinCount >= kMaxSpins) {
+            timedOut = true;
+            break;
+          }
+#if defined(_MSC_VER) || defined(__INTEL_COMPILER)
+          _mm_pause(); // Intel/AMD: hint to reduce power and avoid pipeline stalls
+#elif defined(__arm__) || defined(__aarch64__)
+          __yield(); // ARM equivalent
+#endif
+        }
+      }
+
+      if (timedOut) {
+        engineWedged.store(true);
+        audioUnderrunFlag.store(true);
+        aux1Bus.clear();
+        aux2Bus.clear();
+      } else {
+        // Sum all processed buffers to buses
+        aux1Bus.clear();
+        aux2Bus.clear();
+        for (int i = 0; i < (int)slots.size(); ++i) {
+          slots[i]->sumToBuses(scratchBuffers[i], fohBus, iemBus, aux1Bus, aux2Bus);
+        }
       }
     }
 
