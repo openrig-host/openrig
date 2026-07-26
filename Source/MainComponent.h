@@ -181,10 +181,17 @@ private:
   float masterFohL = 0.0f, masterFohR = 0.0f;
   float masterIemL = 0.0f, masterIemR = 0.0f;
 
-  // CPU/RAM/latency monitors
+  // CPU/RAM/latency/underrun monitors
   juce::Label cpuLabel{"cpuLabel", "CPU: 0%"};
   juce::Label ramLabel{"ramLabel", "RAM: 0%"};
   juce::Label latencyLabel{"latencyLabel", "LAT: --"};
+  juce::Label xrunsLabel{"xrunsLabel", "XRUNS: 0"};
+  std::atomic<int> audioUnderrunCount{0};
+  std::atomic<juce::int64> lastAudioCallbackTicks{0};
+  std::atomic<double> lastGlitchStallMs{0.0};
+  void logAudioGlitch(double actualMs, double expectedMs);
+  void logAudioNanSpike(int channel, int sampleIndex, float badVal);
+
   juce::Label setupNameLabel{"setupNameLabel", "No rig loaded"};
   juce::Label clockLabel{"clockLabel", ""};
   juce::Label preloadStatusLabel{"preloadStatusLabel", ""};

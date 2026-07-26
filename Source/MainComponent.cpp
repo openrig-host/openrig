@@ -819,6 +819,12 @@ void MainComponent::setupHeaderButtons() {
   ramLabel.setTooltip("Click to view Per-VST Memory & Resource Inspector");
   ramLabel.addMouseListener(this, false);
 
+  addAndMakeVisible(xrunsLabel);
+  xrunsLabel.setFont(juce::FontOptions(12.0f, juce::Font::bold));
+  xrunsLabel.setColour(juce::Label::textColourId, ThemeManager::get(Theme::Role::ok));
+  xrunsLabel.setTooltip("Audio Glitch / Underrun Counter (Click to view log)");
+  xrunsLabel.addMouseListener(this, false);
+
   addAndMakeVisible(setupNameLabel);
   setupNameLabel.setFont(juce::FontOptions(22.0f, juce::Font::bold));
   setupNameLabel.setColour(juce::Label::textColourId, ThemeManager::get(Theme::Role::accent));
@@ -1011,10 +1017,54 @@ void MainComponent::setupMasterSection() {
   }
 }
 
+void MainComponent::logAudioGlitch(double actualMs, double expectedMs) {
+  auto appData = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory).getChildFile("OpenRig");
+  if (!appData.exists()) appData.createDirectory();
+  auto logFile = appData.getChildFile("audio_underrun_log.txt");
+
+  juce::String timeStr = juce::Time::getCurrentTime().formatted("%H:%M:%S.");
+  timeStr += juce::String(juce::Time::getCurrentTime().getMilliseconds()).paddedLeft('0', 3);
+
+  juce::String entry = "[" + timeStr + "] [AUDIO UNDERRUN GLITCH] Buffer stall: " +
+                       juce::String(actualMs, 2) + "ms (expected " +
+                       juce::String(expectedMs, 2) + "ms) | CPU: " +
+                       cpuLabel.getText() + " | RAM: " + ramLabel.getText() + "\n";
+
+  logFile.appendText(entry);
+}
+
+void MainComponent::logAudioNanSpike(int channel, int sampleIndex, float badVal) {
+  auto appData = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory).getChildFile("OpenRig");
+  if (!appData.exists()) appData.createDirectory();
+  auto logFile = appData.getChildFile("audio_underrun_log.txt");
+
+  juce::String timeStr = juce::Time::getCurrentTime().formatted("%H:%M:%S.");
+  timeStr += juce::String(juce::Time::getCurrentTime().getMilliseconds()).paddedLeft('0', 3);
+
+  juce::String entry = "[" + timeStr + "] [SAMPLE CORRUPTION / NAN SPIKE] Ch " +
+                       juce::String(channel) + " Sample " + juce::String(sampleIndex) +
+                       " Value: " + juce::String(badVal) + "\n";
+
+  logFile.appendText(entry);
+}
+
 void MainComponent::audioDeviceIOCallbackWithContext(
     const float *const *inputChannelData, int numInputChannels,
     float *const *outputChannelData, int numOutputChannels, int numSamples,
     const juce::AudioIODeviceCallbackContext & /*context*/) {
+  // Callback interval timing
+  juce::int64 nowTicks = juce::Time::getHighResolutionTicks();
+  juce::int64 prevTicks = lastAudioCallbackTicks.exchange(nowTicks);
+  if (prevTicks > 0) {
+    double elapsedMs = juce::Time::highResolutionTicksToSeconds(nowTicks - prevTicks) * 1000.0;
+    double expectedMs = (double)numSamples / (engine.getCurrentSampleRate() > 0.0 ? engine.getCurrentSampleRate() : 44100.0) * 1000.0;
+    if (expectedMs > 0.0 && elapsedMs > expectedMs * 1.5) {
+      audioUnderrunCount++;
+      lastGlitchStallMs.store(elapsedMs);
+      logAudioGlitch(elapsedMs, expectedMs);
+    }
+  }
+
   // Boost audio thread to Pro Audio priority on first callback (Windows only)
 #ifdef _WIN32
   if (!mmcssRegistered) {
@@ -1032,6 +1082,21 @@ void MainComponent::audioDeviceIOCallbackWithContext(
   midiCollector.removeNextBlockOfMessages(incomingMidi, numSamples);
   engine.processAudio(inputChannelData, numInputChannels, outputChannelData,
                       numOutputChannels, numSamples, incomingMidi);
+
+  // Check output for NaN / Inf / Extreme Digital Spikes (> +12 dB)
+  for (int ch = 0; ch < numOutputChannels; ++ch) {
+    if (outputChannelData && outputChannelData[ch]) {
+      float* samples = outputChannelData[ch];
+      for (int s = 0; s < numSamples; ++s) {
+        float val = samples[s];
+        if (std::isnan(val) || std::isinf(val) || std::abs(val) > 4.0f) {
+          audioUnderrunCount++;
+          logAudioNanSpike(ch, s, val);
+          samples[s] = 0.0f; // Clamp bad sample safely
+        }
+      }
+    }
+  }
 }
 
 void MainComponent::saveAudioSettings() {
@@ -1402,13 +1467,15 @@ void MainComponent::resized() {
   auto centerBar = controlBar.reduced(4, 2);
   int telemetryWidth = 68;
   int clockWidth = 90;
-  int totalCenter = telemetryWidth * 3 + clockWidth;
+  int xrunsWidth = 85;
+  int totalCenter = telemetryWidth * 3 + xrunsWidth + clockWidth;
   int startX = centerBar.getCentreX() - totalCenter / 2;
   cpuLabel.setBounds(startX, centerBar.getY(), telemetryWidth, centerBar.getHeight());
   ramLabel.setBounds(startX + telemetryWidth, centerBar.getY(), telemetryWidth, centerBar.getHeight());
   latencyLabel.setColour(juce::Label::textColourId, ThemeManager::get(Theme::Role::warn));
   latencyLabel.setBounds(startX + telemetryWidth * 2, centerBar.getY(), telemetryWidth, centerBar.getHeight());
-  clockLabel.setBounds(startX + telemetryWidth * 3, centerBar.getY(), clockWidth, centerBar.getHeight());
+  xrunsLabel.setBounds(startX + telemetryWidth * 3, centerBar.getY(), xrunsWidth, centerBar.getHeight());
+  clockLabel.setBounds(startX + telemetryWidth * 3 + xrunsWidth, centerBar.getY(), clockWidth, centerBar.getHeight());
 
   // Header area - Row 2: setup buttons (smaller)
   auto presetRow = r.removeFromTop(30);
@@ -1684,8 +1751,16 @@ void MainComponent::timerCallback() {
     latencyLabel.setText("LAT: --", juce::dontSendNotification);
   }
 
-  // Surface any audio underruns (a block bailed to silence: wedged worker or an
-  // unprepared rack). consumeAudioUnderrun() atomically clears the flag.
+  // Surface any audio underruns
+  int xruns = audioUnderrunCount.load();
+  if (xruns > 0) {
+    xrunsLabel.setText("XRUNS: " + juce::String(xruns) + " [" + juce::String(lastGlitchStallMs.load(), 1) + "ms]", juce::dontSendNotification);
+    xrunsLabel.setColour(juce::Label::textColourId, ThemeManager::get(Theme::Role::warn));
+  } else {
+    xrunsLabel.setText("XRUNS: 0", juce::dontSendNotification);
+    xrunsLabel.setColour(juce::Label::textColourId, ThemeManager::get(Theme::Role::ok));
+  }
+
   if (engine.consumeAudioUnderrun())
     OpenRigLog::log(OpenRigLog::Level::Warning,
                     "Audio underrun: a block emitted silence "
@@ -1936,6 +2011,13 @@ void MainComponent::setLoadingMessage(const juce::String &message) {
 void MainComponent::mouseDown(const juce::MouseEvent &e) {
   if (e.originalComponent == &ramLabel || e.originalComponent == &cpuLabel) {
     showResourceInspectorModal();
+    return;
+  }
+  if (e.originalComponent == &xrunsLabel) {
+    auto appData = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory).getChildFile("OpenRig");
+    auto logFile = appData.getChildFile("audio_underrun_log.txt");
+    if (!logFile.existsAsFile()) logFile.replaceWithText("No audio underruns detected yet.\n");
+    logFile.startAsProcess();
     return;
   }
 
