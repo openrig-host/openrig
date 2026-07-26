@@ -392,7 +392,7 @@ public:
       slot.setAux2Send((float)aux2Knob.getValue());
     };
 
-    setSize(920, 520);
+    setSize(980, 520);
   }
 
   void showColorPicker() {
@@ -444,10 +444,10 @@ public:
     int sectionY = 60;
     int sectionH = 200;
 
-    int gateW = 150;
-    int eqW = 430;
-    int compW = 160;
-    int revW = 160;
+    int gateW = 140;
+    int eqW = 440;
+    int compW = 170;
+    int revW = 170;
 
     int gateX = 10;
     int eqX = gateX + gateW + 10;

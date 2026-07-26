@@ -349,7 +349,7 @@ void MainComponent::setupSlotComponents() {
         resized(); // Re-layout to remove gap
       }));
       addAndMakeVisible(channelStripOverlay.get());
-      channelStripOverlay->centreWithSize(800, 480);
+      channelStripOverlay->centreWithSize(980, 520);
     };
 
     // Arpeggiator Dialog
@@ -1510,7 +1510,7 @@ void MainComponent::resized() {
   }
 
   if (channelStripOverlay)
-    channelStripOverlay->centreWithSize(800, 480);
+    channelStripOverlay->centreWithSize(980, 520);
   if (midiEffectsOverlay)
     midiEffectsOverlay->centreWithSize(620, 410);
   if (samplerOverlay)
