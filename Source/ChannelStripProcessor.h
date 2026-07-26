@@ -87,8 +87,8 @@ public:
     z2 = z1;
     z1 = x;
     y2 = y1;
-    y1 = out;
-    return out;
+    y1 = (std::abs(out) < 1.0e-15f) ? 0.0f : out;
+    return y1;
   }
 
 private:
@@ -273,11 +273,12 @@ public:
     float grDb = overDb * (1.0f - 1.0f / ratio);
     float coeff = (grDb > envelopeDb) ? attackCoeff : releaseCoeff;
     envelopeDb += (grDb - envelopeDb) * coeff;
+    if (std::abs(envelopeDb) < 1.0e-9f) envelopeDb = 0.0f;
 
     currentGrDb.store(envelopeDb);
 
     float totalGainDb = presetMakeupDb + userMakeupGainDb - envelopeDb;
-    float totalGain = std::pow(10.0f, totalGainDb / 20.0f);
+    float totalGain = juce::Decibels::decibelsToGain(totalGainDb);
 
     return input * totalGain;
   }

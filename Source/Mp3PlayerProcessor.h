@@ -21,14 +21,18 @@ public:
         formatManager.registerBasicFormats();
         formatManager.registerFormat(new juce::FlacAudioFormat(), true);
         formatManager.registerFormat(new juce::OggVorbisAudioFormat(), true);
+        bufferingThread.startThread(juce::Thread::Priority::high);
         loadLastFolderFromSettings();
     }
 
     ~Mp3PlayerProcessor() {
         isShuttingDown.store(true);
         playing.store(false);
-        juce::SpinLock::ScopedLockType al(audioLock);
-        readerSource.reset();
+        {
+            juce::SpinLock::ScopedLockType al(audioLock);
+            readerSource.reset();
+        }
+        bufferingThread.stopThread(2000);
     }
 
     juce::String lastFolderPath;
@@ -221,13 +225,14 @@ public:
 
         std::unique_ptr<juce::AudioFormatReader> reader(formatManager.createReaderFor(file));
         if (reader != nullptr) {
-            auto newSource = std::make_unique<juce::AudioFormatReaderSource>(reader.release(), true);
-            newSource->prepareToPlay(512, currentSampleRate);
-            newSource->setNextReadPosition(0);
+            auto rawSource = std::make_unique<juce::AudioFormatReaderSource>(reader.release(), true);
+            auto bufferedSource = std::make_unique<juce::BufferingAudioSource>(rawSource.release(), bufferingThread, true, 65536);
+            bufferedSource->prepareToPlay(512, currentSampleRate);
+            bufferedSource->setNextReadPosition(0);
 
             {
                 juce::SpinLock::ScopedLockType al(audioLock);
-                readerSource = std::move(newSource);
+                readerSource = std::move(bufferedSource);
                 currentReadPos.store(0);
                 totalReadLength.store(readerSource->getTotalLength());
             }
@@ -432,7 +437,8 @@ private:
     }
 
     juce::AudioFormatManager formatManager;
-    std::unique_ptr<juce::AudioFormatReaderSource> readerSource;
+    std::unique_ptr<juce::PositionableAudioSource> readerSource;
+    juce::TimeSliceThread bufferingThread{"Mp3BufferingThread"};
     juce::AudioBuffer<float> tempBuffer;
     juce::SpinLock audioLock;
 
