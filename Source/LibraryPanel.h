@@ -2,14 +2,25 @@
 
 #include <JuceHeader.h>
 #include "RigLibrary.h"
+#include <set>
 
 class LibraryList : public juce::ListBox,
                     public juce::ListBoxModel {
 public:
   enum class Kind { Sets, Setups, Strips };
 
+  struct Item {
+    juce::File file;
+    juce::String displayName;
+    juce::String category;
+    bool isFolderHeader = false;
+    bool isFavorite = false;
+    juce::Colour badgeColour;
+  };
+
   explicit LibraryList(Kind k);
   void setDirectory(const juce::File &dir, const juce::String &wildcard);
+  void setFilterQuery(const juce::String &query);
   void refresh();
 
   int getNumRows() override;
@@ -32,8 +43,16 @@ public:
 private:
   juce::File directory;
   juce::String wc;
-  std::vector<juce::File> files;
+  juce::String filterQuery;
+  std::vector<juce::File> allFiles;
+  std::vector<Item> items;
+  std::set<juce::String> favorites;
   int selectedRow = -1;
+
+  void loadFavorites();
+  void saveFavorites();
+  void toggleFavorite(const juce::File &f);
+  juce::Colour detectBadgeColour(const juce::String &name, Kind k);
 };
 
 #include "SetlistPanel.h"
@@ -62,6 +81,7 @@ public:
   OpenRig::SetlistPanel* getSetlistPanel() { return setlistPanel.get(); }
 
 private:
+  juce::TextEditor searchEditor;
   std::unique_ptr<juce::TabbedComponent> tabs;
   std::unique_ptr<LibraryList> setsList, setupsList, stripsList;
   std::unique_ptr<OpenRig::SetlistPanel> setlistPanel;
