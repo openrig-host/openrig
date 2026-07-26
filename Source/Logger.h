@@ -365,29 +365,29 @@ inline void crashHandler(void *exceptionInfo) {
         wsprintfA(line, "Faulting Module: %s (+0x%IX)\n", asciiMod, modOffset);
         appendRaw(line);
       }
-
-      void* stack[32];
-      WORD frames = CaptureStackBackTrace(0, 32, stack, nullptr);
-      wsprintfA(line, "\nCall Stack (%d frames):\n", (int)frames);
-      appendRaw(line);
-      for (WORD i = 0; i < frames; ++i) {
-        HMODULE frameMod = nullptr;
-        if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                               (LPCWSTR)stack[i], &frameMod) && frameMod != nullptr) {
-          wchar_t fPath[MAX_PATH] = {0};
-          GetModuleFileNameW(frameMod, fPath, MAX_PATH);
-          char asciiFPath[MAX_PATH] = {0};
-          WideCharToMultiByte(CP_UTF8, 0, fPath, -1, asciiFPath, MAX_PATH, nullptr, nullptr);
-          const char* baseName = strrchr(asciiFPath, '\\');
-          baseName = baseName ? baseName + 1 : asciiFPath;
-          intptr_t fOffset = (intptr_t)stack[i] - (intptr_t)frameMod;
-          wsprintfA(line, "  [%d] %s + 0x%IX\n", (int)i, baseName, fOffset);
-        } else {
-          wsprintfA(line, "  [%d] 0x%p\n", (int)i, stack[i]);
-        }
-        appendRaw(line);
-      }
     }
+  }
+
+  void* stack[32];
+  WORD frames = CaptureStackBackTrace(0, 32, stack, nullptr);
+  wsprintfA(line, "\nCall Stack (%d frames):\n", (int)frames);
+  appendRaw(line);
+  for (WORD i = 0; i < frames; ++i) {
+    HMODULE frameMod = nullptr;
+    if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                           (LPCWSTR)stack[i], &frameMod) && frameMod != nullptr) {
+      wchar_t fPath[MAX_PATH] = {0};
+      GetModuleFileNameW(frameMod, fPath, MAX_PATH);
+      char asciiFPath[MAX_PATH] = {0};
+      WideCharToMultiByte(CP_UTF8, 0, fPath, -1, asciiFPath, MAX_PATH, nullptr, nullptr);
+      const char* baseName = strrchr(asciiFPath, '\\');
+      baseName = baseName ? baseName + 1 : asciiFPath;
+      intptr_t fOffset = (intptr_t)stack[i] - (intptr_t)frameMod;
+      wsprintfA(line, "  [%d] %s + 0x%IX\n", (int)i, baseName, fOffset);
+    } else {
+      wsprintfA(line, "  [%d] 0x%p\n", (int)i, stack[i]);
+    }
+    appendRaw(line);
   }
 
   appendRaw("\n------------------------------------------------------------------\n");
