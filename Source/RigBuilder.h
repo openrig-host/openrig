@@ -178,54 +178,65 @@ private:
             return true;
         }
 
-        // Build on the MESSAGE THREAD (Qt-based plugins like Super 8 require it).
-        // callFunctionOnMessageThread guarantees immediate execution — no queue
-        // starvation. The build runs synchronously on the message thread.
-        struct BuildContext {
-            OpenRigEngine* engine;
-            juce::var pluginVar;
-            std::unique_ptr<juce::AudioPluginInstance> inst;
-            juce::String err;
-            bool ok = false;
-            std::atomic<bool> finished{false};
-        };
-        auto ctx = std::make_shared<BuildContext>();
-        ctx->engine = &engine;
-        ctx->pluginVar = pv;
+        bool requiresMessageThread = newPath.containsIgnoreCase("Super 8");
 
-        // Launch builder on message thread via callAsync + WaitableEvent.
-        // callFunctionOnMessageThread can block the UI for minutes if a plugin
-        // (e.g. ZENOLOGY) takes a long time, so we use callAsync with a
-        // generous 180s timeout and progress pumping instead.
-        juce::WaitableEvent buildDone;
-        juce::MessageManager::getInstance()->callAsync(
-            [ctx, &buildDone]() {
-                ctx->ok = ctx->engine->buildPluginFromVar(ctx->pluginVar, ctx->inst, ctx->err) &&
-                          (bool)ctx->inst;
-                ctx->finished.store(true);
-                buildDone.signal();
-            });
+        std::unique_ptr<juce::AudioPluginInstance> inst;
+        juce::String err;
+        bool ok = false;
 
-        if (!buildDone.wait(180000)) {
-            logToFile("TRACE: buildOne timed out (180s) on plugin build: " + label);
-            r.ok = false;
-            r.error = label + ": build timed out (180s)";
-            r.failedEntries.push_back({key, pv});
-            return false;
+        if (!requiresMessageThread) {
+            logToFile("TRACE: buildOne " + label + " building off-thread...");
+            ok = engine.buildPluginFromVar(pv, inst, err) && (bool)inst;
+            if (!ok) {
+                logToFile("TRACE: buildOne off-thread build failed for " + label + ", retrying on message thread. Error: " + err);
+            }
         }
 
-        if (!ctx->ok) {
-            logToFile("TRACE: buildOne failed for " + label + ": " + ctx->err);
-            r.ok = false;
-            r.error = label + ": " + ctx->err;
-            r.failedEntries.push_back({key, pv});
-            return false;
+        if (!ok) {
+            logToFile("TRACE: buildOne " + label + " building/retrying on message thread...");
+            struct BuildContext {
+                OpenRigEngine* engine;
+                juce::var pluginVar;
+                std::unique_ptr<juce::AudioPluginInstance> inst;
+                juce::String err;
+                bool ok = false;
+            };
+            auto ctx = std::make_shared<BuildContext>();
+            ctx->engine = &engine;
+            ctx->pluginVar = pv;
+
+            juce::WaitableEvent buildDone;
+            juce::MessageManager::getInstance()->callAsync(
+                [ctx, &buildDone]() {
+                    ctx->ok = ctx->engine->buildPluginFromVar(ctx->pluginVar, ctx->inst, ctx->err) &&
+                              (bool)ctx->inst;
+                    buildDone.signal();
+                });
+
+            if (!buildDone.wait(180000)) {
+                logToFile("TRACE: buildOne timed out (180s) on message-thread build/retry: " + label);
+                r.ok = false;
+                r.error = label + ": build timed out (180s)";
+                r.failedEntries.push_back({key, pv});
+                return false;
+            }
+
+            if (!ctx->ok) {
+                logToFile("TRACE: buildOne message-thread build/retry failed for " + label + ": " + ctx->err);
+                r.ok = false;
+                r.error = label + ": " + ctx->err;
+                r.failedEntries.push_back({key, pv});
+                return false;
+            }
+            inst = std::move(ctx->inst);
+            ok = true;
         }
+
         logToFile("TRACE: buildOne staging " + label);
         if (isPreload)
-            engine.pushPreloadedPlugin(key, std::move(ctx->inst));
+            engine.pushPreloadedPlugin(key, std::move(inst));
         else
-            engine.pushStagedPlugin(key, std::move(ctx->inst));
+            engine.pushStagedPlugin(key, std::move(inst));
         ++r.builtCount;
         return true;
     }
@@ -254,48 +265,65 @@ private:
             return true;
         }
 
-        // Build on the MESSAGE THREAD (see buildOne comment).
-        struct BuildContext {
-            OpenRigEngine* engine;
-            juce::var pluginVar;
-            std::unique_ptr<juce::AudioPluginInstance> inst;
-            juce::String err;
-            bool ok = false;
-            std::atomic<bool> finished{false};
-        };
-        auto ctx = std::make_shared<BuildContext>();
-        ctx->engine = &engine;
-        ctx->pluginVar = pv;
+        bool requiresMessageThread = newPath.containsIgnoreCase("Super 8");
 
-        juce::WaitableEvent buildDone;
-        juce::MessageManager::getInstance()->callAsync(
-            [ctx, &buildDone]() {
-                ctx->ok = ctx->engine->buildPluginFromVar(ctx->pluginVar, ctx->inst, ctx->err) &&
-                          (bool)ctx->inst;
-                ctx->finished.store(true);
-                buildDone.signal();
-            });
+        std::unique_ptr<juce::AudioPluginInstance> inst;
+        juce::String err;
+        bool ok = false;
 
-        if (!buildDone.wait(180000)) {
-            logToFile("TRACE: buildMaster timed out (180s) on plugin build: " + label);
-            r.ok = false;
-            r.error = label + ": build timed out (180s)";
-            r.failedEntries.push_back({key, pv});
-            return false;
+        if (!requiresMessageThread) {
+            logToFile("TRACE: buildMaster " + label + " building off-thread...");
+            ok = engine.buildPluginFromVar(pv, inst, err) && (bool)inst;
+            if (!ok) {
+                logToFile("TRACE: buildMaster off-thread build failed for " + label + ", retrying on message thread. Error: " + err);
+            }
         }
 
-        if (!ctx->ok) {
-            logToFile("TRACE: buildMaster failed for " + label + ": " + ctx->err);
-            r.ok = false;
-            r.error = label + ": " + ctx->err;
-            r.failedEntries.push_back({key, pv});
-            return false;
+        if (!ok) {
+            logToFile("TRACE: buildMaster " + label + " building/retrying on message thread...");
+            struct BuildContext {
+                OpenRigEngine* engine;
+                juce::var pluginVar;
+                std::unique_ptr<juce::AudioPluginInstance> inst;
+                juce::String err;
+                bool ok = false;
+            };
+            auto ctx = std::make_shared<BuildContext>();
+            ctx->engine = &engine;
+            ctx->pluginVar = pv;
+
+            juce::WaitableEvent buildDone;
+            juce::MessageManager::getInstance()->callAsync(
+                [ctx, &buildDone]() {
+                    ctx->ok = ctx->engine->buildPluginFromVar(ctx->pluginVar, ctx->inst, ctx->err) &&
+                              (bool)ctx->inst;
+                    buildDone.signal();
+                });
+
+            if (!buildDone.wait(180000)) {
+                logToFile("TRACE: buildMaster timed out (180s) on message-thread build/retry: " + label);
+                r.ok = false;
+                r.error = label + ": build timed out (180s)";
+                r.failedEntries.push_back({key, pv});
+                return false;
+            }
+
+            if (!ctx->ok) {
+                logToFile("TRACE: buildMaster message-thread build/retry failed for " + label + ": " + ctx->err);
+                r.ok = false;
+                r.error = label + ": " + ctx->err;
+                r.failedEntries.push_back({key, pv});
+                return false;
+            }
+            inst = std::move(ctx->inst);
+            ok = true;
         }
+
         logToFile("TRACE: buildMaster staging " + label);
         if (isPreload)
-            engine.pushPreloadedPlugin(key, std::move(ctx->inst));
+            engine.pushPreloadedPlugin(key, std::move(inst));
         else
-            engine.pushStagedPlugin(key, std::move(ctx->inst));
+            engine.pushStagedPlugin(key, std::move(inst));
         ++r.builtCount;
         return true;
     }
