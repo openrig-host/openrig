@@ -6,6 +6,7 @@
 #include "ConfigModalOverlay.h"
 #include "MidiEffectsComponent.h"
 #include "SamplerComponent.h"
+#include "Mp3PlayerComponent.h"
 #include "ResourceInspectorModal.h"
 #include "SetupMidiTriggers.h"
 #include "LoadingOverlay.h"
