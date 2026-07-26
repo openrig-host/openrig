@@ -223,15 +223,41 @@ public:
 
         playing.store(false);
 
+        // Preload file into RAM to eliminate USB hard drive spin-down & latency stalls
+        juce::MemoryBlock fileData;
+        if (file.loadFileAsData(fileData) && fileData.getSize() > 0) {
+            auto memStream = std::make_unique<juce::MemoryInputStream>(fileData, true);
+            std::unique_ptr<juce::AudioFormatReader> reader(formatManager.createReaderFor(std::move(memStream)));
+
+            if (reader != nullptr) {
+                auto rawSource = std::make_unique<juce::AudioFormatReaderSource>(reader.release(), true);
+                auto bufferedSource = std::make_unique<juce::BufferingAudioSource>(rawSource.release(), bufferingThread, true, 131072);
+                bufferedSource->prepareToPlay(512, currentSampleRate);
+                bufferedSource->setNextReadPosition(0);
+
+                {
+                    juce::SpinLock::ScopedLockType al(audioLock);
+                    activeTrackMemory = std::move(fileData);
+                    readerSource = std::move(bufferedSource);
+                    currentReadPos.store(0);
+                    totalReadLength.store(readerSource->getTotalLength());
+                }
+                playing.store(true);
+                return;
+            }
+        }
+
+        // Fallback for direct disk reading with large 262,144 sample buffer (~6s)
         std::unique_ptr<juce::AudioFormatReader> reader(formatManager.createReaderFor(file));
         if (reader != nullptr) {
             auto rawSource = std::make_unique<juce::AudioFormatReaderSource>(reader.release(), true);
-            auto bufferedSource = std::make_unique<juce::BufferingAudioSource>(rawSource.release(), bufferingThread, true, 65536);
+            auto bufferedSource = std::make_unique<juce::BufferingAudioSource>(rawSource.release(), bufferingThread, true, 262144);
             bufferedSource->prepareToPlay(512, currentSampleRate);
             bufferedSource->setNextReadPosition(0);
 
             {
                 juce::SpinLock::ScopedLockType al(audioLock);
+                activeTrackMemory.setSize(0);
                 readerSource = std::move(bufferedSource);
                 currentReadPos.store(0);
                 totalReadLength.store(readerSource->getTotalLength());
@@ -239,6 +265,7 @@ public:
             playing.store(true);
         } else {
             juce::SpinLock::ScopedLockType al(audioLock);
+            activeTrackMemory.setSize(0);
             readerSource.reset();
             currentReadPos.store(0);
             totalReadLength.store(0);
@@ -438,6 +465,7 @@ private:
 
     juce::AudioFormatManager formatManager;
     std::unique_ptr<juce::PositionableAudioSource> readerSource;
+    juce::MemoryBlock activeTrackMemory;
     juce::TimeSliceThread bufferingThread{"Mp3BufferingThread"};
     juce::AudioBuffer<float> tempBuffer;
     juce::SpinLock audioLock;
