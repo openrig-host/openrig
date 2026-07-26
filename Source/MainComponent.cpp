@@ -1061,7 +1061,9 @@ void MainComponent::audioDeviceIOCallbackWithContext(
     if (expectedMs > 0.0 && elapsedMs > expectedMs * 1.5) {
       audioUnderrunCount++;
       lastGlitchStallMs.store(elapsedMs);
-      logAudioGlitch(elapsedMs, expectedMs);
+      pendingGlitchActualMs.store(elapsedMs);
+      pendingGlitchExpectedMs.store(expectedMs);
+      hasPendingGlitchLog.store(true);
     }
   }
 
@@ -1750,6 +1752,14 @@ void MainComponent::timerCallback() {
     OpenRigLog::log(OpenRigLog::Level::Warning,
                     "Audio underrun: a block emitted silence "
                     "(worker stall or rack not prepared).");
+
+  if (hasPendingGlitchLog.exchange(false)) {
+    double actual = pendingGlitchActualMs.exchange(0.0);
+    double expected = pendingGlitchExpectedMs.exchange(0.0);
+    if (actual > 0.0) {
+      logAudioGlitch(actual, expected);
+    }
+  }
 
   // Update live performance clock
   auto now = juce::Time::getCurrentTime();

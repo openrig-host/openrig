@@ -189,6 +189,9 @@ private:
   std::atomic<int> audioUnderrunCount{0};
   std::atomic<juce::int64> lastAudioCallbackTicks{0};
   std::atomic<double> lastGlitchStallMs{0.0};
+  std::atomic<double> pendingGlitchActualMs{0.0};
+  std::atomic<double> pendingGlitchExpectedMs{0.0};
+  std::atomic<bool> hasPendingGlitchLog{false};
   void logAudioGlitch(double actualMs, double expectedMs);
   void logAudioNanSpike(int channel, int sampleIndex, float badVal);
 
