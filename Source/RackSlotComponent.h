@@ -41,6 +41,9 @@ public:
   std::function<void()> onLoadStrip;
   std::function<void(const juce::File&)> onLoadStripFile;
   std::function<void(const juce::File&)> onLoadPresetFile;
+  std::function<juce::String(int)> getSlotName;
+  std::function<void()> onRename;
+  void updateOutputSelector();
 
   void mouseDoubleClick(const juce::MouseEvent &e) override;
   void mouseDown(const juce::MouseEvent &e) override;
@@ -94,6 +97,7 @@ private:
   juce::Slider iemSlider;
   juce::Slider iemOffsetKnob;
   juce::ComboBox inputSelector;
+  juce::ComboBox outputSelector;
   juce::Label noteRangeLabel;
 
   LEDIndicator midiLed{ThemeManager::get(Theme::Role::midiNote)};

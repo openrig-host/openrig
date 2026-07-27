@@ -232,6 +232,19 @@ void MainComponent::setupSlotComponents() {
     auto *slot = engine.getSlot(i);
     auto *comp = new RackSlotComponent(*slot, i, boutiqueLookAndFeel);
 
+    comp->getSlotName = [this](int idx) {
+      if (auto* s = engine.getSlot(idx))
+        return s->getName();
+      return juce::String();
+    };
+
+    comp->onRename = [this]() {
+      saveButtonMappings();
+      for (auto* c : rackSlotComponents) {
+        c->updateOutputSelector();
+      }
+    };
+
     // Populate Input Selector
     auto &selector = comp->getInputSelector();
     selector.clear();
@@ -1624,8 +1637,10 @@ void MainComponent::loadRigAsync(const juce::File &file, int buttonIndexForHighl
                 closeOrphanedPluginWindows();
                 if (ok) {
                     setupNameLabel.setText(fileName, juce::dontSendNotification);
-                    for (auto *comp : rackSlotComponents)
+                    for (auto *comp : rackSlotComponents) {
+                        comp->updateOutputSelector();
                         comp->repaint();
+                    }
                     repaint();
                     refreshSceneButtons();
                     if (highlight >= 0 && highlight < numSetupButtons) {

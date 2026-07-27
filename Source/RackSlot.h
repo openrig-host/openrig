@@ -376,6 +376,30 @@ public:
     lastIemLevel = iemBase;
   }
 
+  void sumToSubgroup(const juce::AudioBuffer<float> &slotBuffer,
+                     juce::AudioBuffer<float> &destBuffer) {
+    if (bypassed.load())
+      return;
+
+    int numSamples = slotBuffer.getNumSamples();
+    int channelsToSum =
+        (slotBuffer.getNumChannels() < 2) ? slotBuffer.getNumChannels() : 2;
+
+    float fohBase = fohLevel.load();
+
+    for (int ch = 0; ch < channelsToSum; ++ch) {
+      const float *ptr = slotBuffer.getReadPointer(ch);
+      if (ch < destBuffer.getNumChannels()) {
+        destBuffer.addFromWithRamp(ch, 0, ptr, numSamples, lastFohLevel, fohBase);
+      }
+    }
+
+    lastFohLevel = fohBase;
+  }
+
+  void setOutputTarget(int target) { outputTarget.store(target); }
+  int getOutputTarget() const { return outputTarget.load(); }
+
   // --- Mix Controls ---
   void setChannelLevel(float newLevel) {
     // Legacy: sets both FOH and IEM to same level
@@ -927,6 +951,7 @@ private:
   std::atomic<float> aux2SendLevel{0.0f};
   std::atomic<float> iemOffset{1.0f}; // 1.0 = same as FOH, >1.0 = louder in IEM
   std::atomic<size_t> estimatedRamBytes{0};
+  std::atomic<int> outputTarget{-1};
 
 public:
   size_t getEstimatedRamBytes() const { return estimatedRamBytes.load(); }

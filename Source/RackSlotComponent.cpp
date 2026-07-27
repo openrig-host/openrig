@@ -312,6 +312,17 @@ RackSlotComponent::RackSlotComponent(RackSlot &s, int index, juce::LookAndFeel &
     slot.setInputChannelIndex(inputSelector.getSelectedId() - 2);
   };
 
+  addAndMakeVisible(outputSelector);
+  outputSelector.setTooltip("Select output target (Main FOH/IEM or Subgroup)");
+  outputSelector.onChange = [this]() {
+    int selId = outputSelector.getSelectedId();
+    int target = selId - 2;
+    slot.setOutputTarget(target);
+    if (onRename) {
+      onRename();
+    }
+  };
+
   addAndMakeVisible(fohRoutingBtn);
   fohRoutingBtn.setClickingTogglesState(true);
   fohRoutingBtn.setButtonText("FOH");
@@ -860,8 +871,8 @@ void RackSlotComponent::resized() {
 
   const int rowHeight = 18;
 
-  // Top area: 3 slot buttons + input selector
-  auto topArea = bounds.removeFromTop(105);
+  // Top area: 3 slot buttons + input selector + output selector
+  auto topArea = bounds.removeFromTop(125);
   for (int i = 0; i < 3; ++i) {
     auto row = topArea.removeFromTop(20).reduced(2, 1);
     editGuiBtns[i].setBounds(
@@ -872,6 +883,9 @@ void RackSlotComponent::resized() {
   inputSelector.setBounds(inputRow);
   // MIDI LED next to input selector (right edge, 8x8 chassis bezel)
   midiLed.setBounds(inputRow.getRight() - 10, inputRow.getY() + 6, 8, 8);
+
+  auto outputRow = topArea.removeFromTop(20).reduced(2, 1);
+  outputSelector.setBounds(outputRow);
 
   // Bottom area: routing buttons (MUTE, FOH, IEM)
   auto buttonArea = bounds.removeFromBottom(60);
@@ -959,6 +973,7 @@ void RackSlotComponent::setSpecialModes(bool monitorIn, bool accordion, bool ret
   noteRangeLabel.setVisible(!isReturn);
   saveStripBtn.setVisible(!isReturn);
   loadStripBtn.setVisible(!isReturn);
+  outputSelector.setVisible(!isReturn);
 
   resized();
 }
@@ -1108,6 +1123,9 @@ void RackSlotComponent::showRenameDialog() {
         if (safe != nullptr && result == 1) {
           auto newName = alertWindow->getTextEditorContents("name");
           safe->slot.setName(newName);
+          if (safe->onRename) {
+            safe->onRename();
+          }
           safe->repaint();
         }
         delete alertWindow;
@@ -1240,4 +1258,26 @@ juce::String RackSlotComponent::getActiveNoteRangeString() const {
     return "C-2 - G8 (Full)";
 
   return midiNoteName(activeLow) + " - " + midiNoteName(activeHigh);
+}
+
+void RackSlotComponent::updateOutputSelector() {
+  outputSelector.clear(juce::dontSendNotification);
+  outputSelector.addItem("Main FOH/IEM", 1);
+
+  int numSlots = OpenRigConstants::kNumSlots;
+  if (slotIndex >= 0 && slotIndex < numSlots) {
+    for (int i = slotIndex + 1; i < numSlots; ++i) {
+      juce::String name = "Slot " + juce::String(i + 1);
+      if (getSlotName) {
+        juce::String customName = getSlotName(i);
+        if (customName.isNotEmpty()) {
+          name += ": " + customName;
+        }
+      }
+      outputSelector.addItem(name, i + 2);
+    }
+  }
+
+  int target = slot.getOutputTarget();
+  outputSelector.setSelectedId(target + 2, juce::dontSendNotification);
 }

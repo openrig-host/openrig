@@ -455,7 +455,6 @@ public:
         auto &midi = engine.slotMidiBuffers[slotIdx];
         int numSamples = scratch.getNumSamples();
 
-        scratch.clear();
         int inputIdx = slot->getInputChannelIndex();
 
         // Bounds check inputIdx against available channels
@@ -856,6 +855,7 @@ public:
         audioUnderrunFlag.store(true);
         return; // block-size mismatch; never reallocate on the audio thread
       }
+      scratchBuffers[i].clear();
     }
 
     // PARALLEL PROCESSING DECISION: If we have <= 1 active slot with VSTs loaded,
@@ -869,18 +869,28 @@ public:
       }
     }
 
-    if (slotsWithPlugins <= 3) {
+    bool hasSubgroups = false;
+    for (int i = 0; i < numActiveSlots; ++i) {
+      if (slots[i]->getOutputTarget() >= 0) {
+        hasSubgroups = true;
+        break;
+      }
+    }
+
+    if (slotsWithPlugins <= 3 || hasSubgroups) {
       // Process sequentially inline on the audio thread (highly stable)
+      aux1Bus.clear();
+      aux2Bus.clear();
       for (int i = 0; i < numActiveSlots; ++i) {
         preallocatedJobs[i]->setup(inputData, numInputs, slotsFinishedCount);
         preallocatedJobs[i]->runJob();
-      }
 
-      // Sum all processed buffers to buses
-      aux1Bus.clear();
-      aux2Bus.clear();
-      for (int i = 0; i < (int)slots.size(); ++i) {
-        slots[i]->sumToBuses(scratchBuffers[i], fohBus, iemBus, aux1Bus, aux2Bus);
+        int target = slots[i]->getOutputTarget();
+        if (target >= 0 && target < numActiveSlots && target > i) {
+          slots[i]->sumToSubgroup(scratchBuffers[i], scratchBuffers[target]);
+        } else {
+          slots[i]->sumToBuses(scratchBuffers[i], fohBus, iemBus, aux1Bus, aux2Bus);
+        }
       }
     } else {
       // Parallel Processing: Process simultaneously via thread pool (for complex multi-VST rigs)
@@ -1175,6 +1185,7 @@ public:
       st->setProperty("fohCC", s->getFohCC());
       st->setProperty("iemCC", s->getIemCC());
       st->setProperty("midiChannel", s->getMidiChannelOverride());
+      st->setProperty("outputTarget", s->getOutputTarget());
 
       // Save Channel Strip Settings
       auto *stripObj = new juce::DynamicObject();
@@ -1478,6 +1489,7 @@ public:
         s->setFohCC(v.getProperty("fohCC", -1));
         s->setIemCC(v.getProperty("iemCC", -1));
         s->setMidiChannelOverride(v.getProperty("midiChannel", -1));
+        s->setOutputTarget(v.getProperty("outputTarget", -1));
 
         // Load Channel Strip Settings
         if (auto *stripObj =
