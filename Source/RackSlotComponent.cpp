@@ -887,12 +887,18 @@ void RackSlotComponent::resized() {
   auto outputRow = topArea.removeFromTop(20).reduced(2, 1);
   outputSelector.setBounds(outputRow);
 
-  // Bottom area: routing buttons (MUTE, FOH, IEM)
+  // Bottom area: routing buttons (MUTE, FOH, IEM) + Learn Buttons
   auto buttonArea = bounds.removeFromBottom(60);
   int btnHeight = 20;
   bypassButton.setBounds(buttonArea.removeFromTop(btnHeight).reduced(2, 1));
-  fohRoutingBtn.setBounds(buttonArea.removeFromTop(btnHeight).reduced(2, 1));
-  iemRoutingBtn.setBounds(buttonArea.removeFromTop(btnHeight).reduced(2, 1));
+
+  auto fohRow = buttonArea.removeFromTop(btnHeight).reduced(2, 1);
+  fohLearnBtn.setBounds(fohRow.removeFromRight(20));
+  fohRoutingBtn.setBounds(fohRow);
+
+  auto iemRow = buttonArea.removeFromTop(btnHeight).reduced(2, 1);
+  iemLearnBtn.setBounds(iemRow.removeFromRight(20));
+  iemRoutingBtn.setBounds(iemRow);
 
   // CC / NR / DYN control row - side by side in 3 equal columns (width / 3)
   auto ctrlRow = bounds.removeFromBottom(rowHeight);
