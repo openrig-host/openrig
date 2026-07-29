@@ -1269,7 +1269,7 @@ void MainComponent::resetAudioDevice() {
 
 void MainComponent::showAboutDialog() {
   auto *w = new juce::AlertWindow(
-      "About OpenRig",
+      "About Fanfare",
       "",
       juce::MessageBoxIconType::InfoIcon);
 
@@ -1277,7 +1277,7 @@ void MainComponent::showAboutDialog() {
   public:
     AboutCustomComponent() {
       infoLabel.setText(
-          "OpenRig Live Performance Host  |  v1.0.0\n"
+          "Fanfare Live Performance Host  |  v1.0.0\n"
           "The Sovereign Stage Engine for Keyboardists\n\n"
           "Built for one job: getting you through a live set without a single dropout, stuck note, or fumbled song switch.",
           juce::dontSendNotification);
@@ -1292,7 +1292,7 @@ void MainComponent::showAboutDialog() {
 
       linkButton.setButtonText("this philosophy.");
       linkButton.setURL(juce::URL("https://youtu.be/WPc-VEqBPHI?si=H_G9lJGNPGONcPLP&t=108"));
-      linkButton.setColour(juce::HyperlinkButton::textColourId, juce::Colours::dodgerblue);
+      linkButton.setColour(juce::HyperlinkButton::textColourId, juce::Colour(0xFF00E5FF));
       linkButton.setFont(juce::FontOptions(13.5f, juce::Font::underlined), false, juce::Justification::topLeft);
       addAndMakeVisible(linkButton);
 
@@ -1302,28 +1302,28 @@ void MainComponent::showAboutDialog() {
       footerLabel.setJustificationType(juce::Justification::topLeft);
       addAndMakeVisible(footerLabel);
 
-      setSize(470, 160);
+      setSize(470, 150);
     }
 
     void resized() override {
       auto bounds = getLocalBounds();
       infoLabel.setBounds(bounds.removeFromTop(75));
 
-      auto lineBounds = bounds.removeFromTop(25);
+      auto lineBounds = bounds.removeFromTop(22);
       juce::Font font(juce::FontOptions(13.5f));
       juce::String text = "Design decisions for this app are strictly guided by ";
       
       juce::GlyphArrangement ga1;
       ga1.addLineOfText(font, text, 0.0f, 0.0f);
-      int prefixW = juce::roundToInt(ga1.getBoundingBox(0, -1, true).getWidth());
-      statementLabel.setBounds(lineBounds.removeFromLeft(prefixW));
+      int prefixW = juce::roundToInt(ga1.getBoundingBox(0, -1, true).getWidth()) + 2;
+      statementLabel.setBounds(lineBounds.getX(), lineBounds.getY(), prefixW, lineBounds.getHeight());
 
       juce::GlyphArrangement ga2;
       ga2.addLineOfText(font, "this philosophy.", 0.0f, 0.0f);
       int linkW = juce::roundToInt(ga2.getBoundingBox(0, -1, true).getWidth()) + 10;
-      linkButton.setBounds(lineBounds.removeFromLeft(linkW));
+      linkButton.setBounds(lineBounds.getX() + prefixW, lineBounds.getY() - 1, linkW, lineBounds.getHeight());
 
-      bounds.removeFromTop(8);
+      bounds.removeFromTop(10);
       footerLabel.setBounds(bounds.removeFromTop(20));
     }
 
