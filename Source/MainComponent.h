@@ -199,6 +199,8 @@ private:
   void logAudioNanSpike(int channel, int sampleIndex, float badVal);
 
   juce::Label setupNameLabel{"setupNameLabel", "No rig loaded"};
+  juce::ImageComponent logoComponent;
+  juce::Image logoImage;
   juce::Label clockLabel{"clockLabel", ""};
   juce::Label preloadStatusLabel{"preloadStatusLabel", ""};
   juce::Rectangle<int> headerBounds;
