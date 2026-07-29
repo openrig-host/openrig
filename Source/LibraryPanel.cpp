@@ -72,6 +72,52 @@ void LibraryList::setFilterQuery(const juce::String &query) {
   refresh();
 }
 
+void LibraryList::toggleFolderCollapsed(const juce::String &cat) {
+  if (collapsedFolders.count(cat) > 0)
+    collapsedFolders.erase(cat);
+  else
+    collapsedFolders.insert(cat);
+  refresh();
+}
+
+void LibraryList::createNewFolder() {
+  auto *aw = new juce::AlertWindow("New Category Folder",
+                                   "Enter a folder name to group setups/songs:",
+                                   juce::MessageBoxIconType::InfoIcon);
+  aw->addTextEditor("folderName", "", "Folder Name:");
+  aw->addButton("Create", 1, juce::KeyPress(juce::KeyPress::returnKey));
+  aw->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+
+  aw->enterModalState(true, juce::ModalCallbackFunction::create([this, aw](int result) {
+    if (result == 1) {
+      juce::String text = aw->getTextEditorContents("folderName").trim();
+      if (text.isNotEmpty()) {
+        juce::String cleanName = juce::File::createLegalFileName(text);
+        juce::File newDir = directory.getChildFile(cleanName);
+        if (!newDir.exists())
+          newDir.createDirectory();
+        refresh();
+      }
+    }
+  }), true);
+}
+
+void LibraryList::moveItemToFolder(const juce::File &file, const juce::String &targetSubfolder) {
+  if (!file.existsAsFile())
+    return;
+  juce::File targetDir = (targetSubfolder.isEmpty() || targetSubfolder.equalsIgnoreCase("GENERAL"))
+                             ? directory
+                             : directory.getChildFile(targetSubfolder);
+  if (!targetDir.exists())
+    targetDir.createDirectory();
+
+  juce::File destFile = targetDir.getChildFile(file.getFileName());
+  if (file != destFile) {
+    file.moveFileTo(destFile);
+    refresh();
+  }
+}
+
 void LibraryList::refresh() {
   directory.createDirectory();
   allFiles.clear();
@@ -97,6 +143,14 @@ void LibraryList::refresh() {
 
     std::vector<Item> favItems;
     std::map<juce::String, std::vector<Item>> categoryMap;
+
+    // Scan subdirectories so empty subfolders also show up as categories
+    juce::Array<juce::File> subDirs;
+    directory.findChildFiles(subDirs, juce::File::findDirectories, false);
+    for (const auto &sd : subDirs) {
+      juce::String folderCat = sd.getFileName().toUpperCase();
+      categoryMap[folderCat] = {};
+    }
 
     for (const auto &f : allFiles) {
       juce::String fileName = f.getFileNameWithoutExtension();
@@ -146,9 +200,16 @@ void LibraryList::refresh() {
     for (auto &kv : categoryMap) {
       if (kv.first != "GENERAL") {
         Item header;
-        header.displayName = "📁 " + kv.first;
+        bool isCollapsed = (collapsedFolders.count(kv.first) > 0);
+        header.displayName = (isCollapsed ? "\xe2\x96\xb6  " : "\xe2\x96\xbc  ") + kv.first; // ▶ / ▼
+        header.category = kv.first;
         header.isFolderHeader = true;
+        header.isCollapsed = isCollapsed;
+        header.folderDir = directory.getChildFile(kv.first);
         items.push_back(header);
+        if (isCollapsed && filterQuery.isEmpty()) {
+          continue; // Hide items in collapsed folder unless searching
+        }
       }
       for (const auto &it : kv.second)
         items.push_back(it);
@@ -231,13 +292,66 @@ void LibraryList::listBoxItemClicked(int row, const juce::MouseEvent &e) {
     return;
 
   const auto &item = items[row];
-  if (item.isFolderHeader)
+
+  if (item.isFolderHeader) {
+    if (item.displayName.contains("FAVORITES"))
+      return;
+
+    if (e.mods.isPopupMenu()) {
+      juce::PopupMenu menu;
+      menu.addItem(1, item.isCollapsed ? "Expand Folder" : "Collapse Folder");
+      menu.addItem(2, "New Subfolder...");
+      menu.addItem(3, "Reveal in Explorer");
+      menu.addItem(4, "Delete Empty Folder");
+
+      menu.showMenuAsync(juce::PopupMenu::Options(), [this, item](int result) {
+        if (result == 1) {
+          toggleFolderCollapsed(item.category);
+        } else if (result == 2) {
+          createNewFolder();
+        } else if (result == 3) {
+          if (item.folderDir.exists())
+            item.folderDir.startAsProcess();
+        } else if (result == 4) {
+          if (item.folderDir.exists() && item.folderDir.findChildFiles(juce::File::findFiles, false).isEmpty()) {
+            item.folderDir.deleteRecursively();
+            refresh();
+          } else {
+            juce::AlertWindow::showMessageBoxAsync(
+                juce::MessageBoxIconType::WarningIcon, "Folder Not Empty",
+                "Please delete or move all setups out of this folder before deleting it.");
+          }
+        }
+      });
+    } else {
+      toggleFolderCollapsed(item.category);
+    }
     return;
+  }
 
   if (e.mods.isPopupMenu()) {
     juce::PopupMenu menu;
     bool isFav = item.isFavorite;
     menu.addItem(10, isFav ? "Unpin Favorite" : "Pin to Favorites");
+    menu.addSeparator();
+
+    // "Move to Folder..." Submenu
+    juce::PopupMenu moveSubmenu;
+    juce::Array<juce::File> subDirs;
+    directory.findChildFiles(subDirs, juce::File::findDirectories, false);
+
+    moveSubmenu.addItem(100, "Root / General");
+    int subId = 101;
+    std::map<int, juce::String> folderIdMap;
+    for (const auto &sd : subDirs) {
+      juce::String folderName = sd.getFileName();
+      moveSubmenu.addItem(subId, folderName);
+      folderIdMap[subId] = folderName;
+      subId++;
+    }
+    moveSubmenu.addSeparator();
+    moveSubmenu.addItem(999, "+ New Folder...");
+    menu.addSubMenu("Move to Folder", moveSubmenu);
     menu.addSeparator();
 
     if (kind == Kind::Setups) {
@@ -253,15 +367,22 @@ void LibraryList::listBoxItemClicked(int row, const juce::MouseEvent &e) {
       menu.addSeparator();
     }
 
+    menu.addItem(6, "Reveal in Explorer");
     menu.addItem(4, "Delete Item");
 
-    menu.showMenuAsync(juce::PopupMenu::Options(), [this, row](int result) {
+    menu.showMenuAsync(juce::PopupMenu::Options(), [this, row, folderIdMap](int result) {
       if (row < 0 || row >= (int)items.size()) return;
       const auto &targetItem = items[row];
       auto file = targetItem.file;
 
       if (result == 10) {
         toggleFavorite(file);
+      } else if (result == 100) {
+        moveItemToFolder(file, "");
+      } else if (result == 999) {
+        createNewFolder();
+      } else if (folderIdMap.count(result) > 0) {
+        moveItemToFolder(file, folderIdMap.at(result));
       } else if (result == 1) {
         learningFile = file;
         repaint();
@@ -284,6 +405,8 @@ void LibraryList::listBoxItemClicked(int row, const juce::MouseEvent &e) {
             }));
       } else if (result == 5) {
         OpenRig::SetlistManager::getInstance().addSetup(file);
+      } else if (result == 6) {
+        file.revealToUser();
       }
     });
   }
@@ -293,8 +416,11 @@ void LibraryList::listBoxItemDoubleClicked(int row, const juce::MouseEvent &) {
   if (row < 0 || row >= (int)items.size())
     return;
   const auto &item = items[row];
-  if (item.isFolderHeader)
+  if (item.isFolderHeader) {
+    if (!item.displayName.contains("FAVORITES"))
+      toggleFolderCollapsed(item.category);
     return;
+  }
 
   if (kind != Kind::Strips && onDoubleClicked)
     onDoubleClicked(item.file);
@@ -327,6 +453,18 @@ LibraryPanel::LibraryPanel() {
     if (setsList) setsList->setFilterQuery(q);
     if (setupsList) setupsList->setFilterQuery(q);
     if (stripsList) stripsList->setFilterQuery(q);
+  };
+
+  addAndMakeVisible(newFolderBtn);
+  newFolderBtn.setButtonText("+ Folder");
+  newFolderBtn.setTooltip("Create a new category folder for setups/songs");
+  newFolderBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xFF26292E));
+  newFolderBtn.setColour(juce::TextButton::textColourOffId, juce::Colour(0xFF00E5FF));
+  newFolderBtn.onClick = [this] {
+    int activeTab = tabs->getCurrentTabIndex();
+    if (activeTab == 0 && setsList) setsList->createNewFolder();
+    else if (activeTab == 1 && setupsList) setupsList->createNewFolder();
+    else if (activeTab == 2 && stripsList) stripsList->createNewFolder();
   };
 
   tabs = std::make_unique<juce::TabbedComponent>(
@@ -396,7 +534,9 @@ void LibraryPanel::assignLearnedTrigger(SetupMidiTrigger t) {
 }
 
 void LibraryPanel::resized() {
-  searchEditor.setBounds(4, 4, getWidth() - 8, 24);
+  int btnW = 65;
+  searchEditor.setBounds(4, 4, getWidth() - 8 - btnW - 4, 24);
+  newFolderBtn.setBounds(getWidth() - 4 - btnW, 4, btnW, 24);
   tabs->setBounds(0, 32, getWidth(), getHeight() - 32);
 }
 

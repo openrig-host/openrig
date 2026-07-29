@@ -24,3 +24,9 @@ Source_BACKUP*/
 # OS
 .DS_Store
 Thumbs.db
+
+# Temp code dumps & archives (not source — keep out of auto-commit)
+OpenRig_*.zip
+combined_headers.txt
+openrig-code.txt
+raw-soutce-openrig.txt

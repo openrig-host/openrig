@@ -14,6 +14,8 @@
 #pragma comment(lib, "psapi.lib")
 #endif
 
+inline std::atomic<uint32_t> g_audioThreadId{0};
+
 namespace OpenRigLog {
 
 struct ProcessMemoryStats {
@@ -105,8 +107,8 @@ inline void log(Level level, const juce::String &msg) {
   juce::String fullMsg =
       juce::Time::getCurrentTime().toString(true, true) + " " + prefix + msg;
 
-  if (level >= Level::Warning) {
-    // Write warnings and errors synchronously to disk to prevent loss on crash
+  if (level >= Level::Warning && g_audioThreadId.load() != (uint32_t)::GetCurrentThreadId()) {
+    // Write warnings and errors synchronously to disk ONLY if on a non-audio thread
     writeDirectlyToFile(fullMsg);
   } else {
     // Queue info and debug logs to keep disk I/O off the hot path
@@ -121,7 +123,13 @@ inline void log(Level level, const juce::String &msg) {
 inline void logToFile(const juce::String &msg) {
   juce::String fullMsg =
       juce::Time::getCurrentTime().toString(true, true) + " - " + msg;
-  writeDirectlyToFile(fullMsg);
+  if (g_audioThreadId.load() != (uint32_t)::GetCurrentThreadId()) {
+    writeDirectlyToFile(fullMsg);
+  } else {
+    // Audio thread: never touch disk — queue for the message-thread flush.
+    const juce::ScopedLock sl(logQueueLock);
+    logQueue.add(fullMsg);
+  }
 }
 
 // Drain the queue and write to disk. Call from the message thread (e.g. Timer).
@@ -187,7 +195,6 @@ struct FlightEvent {
 constexpr size_t kFlightRecorderSize = 256;
 inline FlightEvent g_flightRecorder[kFlightRecorderSize];
 inline std::atomic<size_t> g_flightRecorderHead{0};
-inline std::atomic<uint32_t> g_audioThreadId{0};
 inline std::atomic<uint32_t> g_mainThreadId{0};
 
 inline void recordFlightEvent(int slotIdx, const char* msg) {

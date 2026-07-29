@@ -12,73 +12,132 @@ class SetlistPreloaderThread : public juce::Thread {
 public:
     SetlistPreloaderThread(OpenRigEngine* e)
         : juce::Thread("Setlist Preloader"), engine(e) {}
-    ~SetlistPreloaderThread() override { stopPreloading(); }
 
-    void preloadSetup(const juce::File& file) {
-        stopPreloading();
-        setupFile = file;
-        isPreloaded = false;
-        isPreloadFailed = false;
-        if (engine != nullptr && setupFile.existsAsFile()) {
-            startThread(juce::Thread::Priority::normal);
-            triggerChangeCallback();
-        } else {
-            triggerChangeCallback();
-        }
-    }
-
-    void stopPreloading() {
+    ~SetlistPreloaderThread() override {
         if (isThreadRunning()) {
             signalThreadShouldExit();
-            waitForThreadToExit(3000);
+            requestSignal();
+            stopThread(5000);
+        }
+    }
+
+    // (Re)target the preload. Safe to call any time, even while a build is in
+    // flight: the in-flight build is invalidated and the latest target wins
+    // once the current build finishes. Never restarts a running thread.
+    void preloadSetup(const juce::File& file) {
+        if (engine == nullptr) return;
+        {
+            const juce::ScopedLock sl(targetLock);
+            cancelFlag.store(true);          // any in-flight build result is now stale
+            pendingTarget = file;
+            hasPendingTarget = file.existsAsFile();
         }
         isPreloaded = false;
         isPreloadFailed = false;
-    }
-
-    void run() override {
-        if (engine == nullptr) return;
-        engine->clearPreloadedCache();
-
-        auto loaded = RigSerializer::load(setupFile);
-        if (!loaded.ok) {
-            isPreloadFailed = true;
-            triggerChangeCallback();
-            return;
-        }
-
-        if (threadShouldExit()) return;
-
-        // Build with isPreload = true so instances are stored in preloadedPlugins
-        auto buildResult = RigBuilder::build(*engine, loaded.rig, nullptr, true);
-        if (!buildResult.ok) {
-            isPreloadFailed = true;
-        } else {
-            isPreloaded = true;
-        }
+        requestSignal();
+        if (!isThreadRunning())
+            startThread(juce::Thread::Priority::normal);
         triggerChangeCallback();
     }
 
-    bool isPreloading() const { return isThreadRunning(); }
+    // Cancel the current/queued preload. Does not kill the worker thread (the
+    // destructor does that), so re-preloading later never races a restart.
+    void stopPreloading() {
+        {
+            const juce::ScopedLock sl(targetLock);
+            cancelFlag.store(true);
+            hasPendingTarget = false;
+            pendingTarget = juce::File{};
+            setupFile = juce::File{};
+        }
+        isPreloaded = false;
+        isPreloadFailed = false;
+        requestSignal();
+        triggerChangeCallback();
+    }
+
+    void run() override {
+        while (!threadShouldExit()) {
+            juce::File target;
+            {
+                const juce::ScopedLock sl(targetLock);
+                if (hasPendingTarget) {
+                    target = pendingTarget;
+                    setupFile = target;
+                    hasPendingTarget = false;
+                    cancelFlag.store(false); // fresh build
+                }
+            }
+
+            if (target == juce::File{}) {
+                targetChanged.wait(100); // idle until a new target arrives
+                continue;
+            }
+
+            if (engine == nullptr) break;
+
+            isBuilding = true;
+            triggerChangeCallback();
+
+            engine->clearPreloadedCache();
+            if (threadShouldExit() || cancelFlag.load()) { isBuilding = false; continue; }
+
+            auto loaded = RigSerializer::load(target);
+            if (threadShouldExit() || cancelFlag.load()) { isBuilding = false; continue; }
+            if (!loaded.ok) {
+                isPreloadFailed = true;
+                isBuilding = false;
+                triggerChangeCallback();
+                continue;
+            }
+
+            // Build with isPreload = true so instances are stored in preloadedPlugins
+            auto buildResult = RigBuilder::build(*engine, loaded.rig, nullptr, true);
+            if (threadShouldExit() || cancelFlag.load()) { isBuilding = false; continue; }
+
+            if (!buildResult.ok)
+                isPreloadFailed = true;
+            else
+                isPreloaded = true;
+            isBuilding = false;
+            triggerChangeCallback();
+        }
+    }
+
+    bool isPreloading() const { return isBuilding.load(); }
     bool getIsPreloaded() const { return isPreloaded; }
     bool getIsPreloadFailed() const { return isPreloadFailed; }
-    juce::File getSetupFile() const { return setupFile; }
+    juce::File getSetupFile() const {
+        const juce::ScopedLock sl(targetLock);
+        return setupFile;
+    }
 
     std::function<void()> onStateChanged;
 
 private:
+    void requestSignal() { targetChanged.signal(); }
     void triggerChangeCallback() {
         if (onStateChanged) {
-            juce::MessageManager::getInstance()->callAsync([this]() {
-                if (onStateChanged) onStateChanged();
+            juce::WeakReference<SetlistPreloaderThread> safe(this);
+            juce::MessageManager::getInstance()->callAsync([safe]() {
+                if (safe.get() != nullptr && safe->onStateChanged)
+                    safe->onStateChanged();
             });
         }
     }
 
     OpenRigEngine* engine;
+    mutable juce::CriticalSection targetLock;
+    juce::File pendingTarget;
+    bool hasPendingTarget = false;
     juce::File setupFile;
+    juce::WaitableEvent targetChanged;
+    std::atomic<bool> cancelFlag{false};
+    std::atomic<bool> isBuilding{false};
     std::atomic<bool> isPreloaded{false};
     std::atomic<bool> isPreloadFailed{false};
+
+    JUCE_DECLARE_WEAK_REFERENCEABLE(SetlistPreloaderThread)
 };
 
 class SetlistManager : public juce::ChangeBroadcaster {
@@ -89,6 +148,8 @@ public:
     }
 
     void setEngine(OpenRigEngine* newEngine) {
+        if (preloaderThread)
+            preloaderThread->stopPreloading(); // cancel any in-flight build first
         engine = newEngine;
         preloaderThread = std::make_unique<SetlistPreloaderThread>(engine);
         preloaderThread->onStateChanged = [this]() {
@@ -186,9 +247,7 @@ public:
     }
 
     juce::File getNextFile() const {
-        if (hasNext())
-            return setups[activeIndex + 1];
-        return {};
+        return getNextPreloadTarget();
     }
 
     juce::File getPrevFile() const {
@@ -197,11 +256,40 @@ public:
         return {};
     }
 
+    juce::File getNextPreloadTarget() const {
+        const int n = setups.size();
+        if (n == 0)
+            return {};
+        const int start = (activeIndex >= 0) ? activeIndex : 0;
+        // Scan forward (wrapping) for the next slot that has a real setup file,
+        // skipping empty slots. Wraps to CORE (slot 0) naturally if needed.
+        for (int offset = 1; offset < n; ++offset) {
+            const int idx = (start + offset) % n;
+            if (setups[idx].existsAsFile())
+                return setups[idx];
+        }
+        return {};
+    }
+
+    void setSlotSetup(int index, const juce::File& file) {
+        if (index < 0) return;
+        while (setups.size() <= index) {
+            setups.add(juce::File{});
+        }
+        setups.set(index, file);
+        sendChangeMessage();
+        triggerPreloadOfNext();
+    }
+
     bool saveSetlist(const juce::File& file) {
         juce::DynamicObject::Ptr obj = new juce::DynamicObject();
         juce::Array<juce::var> pathsArr;
+        auto songsDir = RigLibrary::getSongsDirectory();
         for (const auto& f : setups) {
-            pathsArr.add(f.getFileName());
+            // Store paths relative to the songs directory so setlists are
+            // portable. For in-dir files this is a bare filename; for files
+            // elsewhere it is a ../ or absolute path, both resolvable on reload.
+            pathsArr.add(f.getRelativePathFrom(songsDir));
         }
         obj->setProperty("setups", pathsArr);
         obj->setProperty("activeIndex", activeIndex);
@@ -231,6 +319,8 @@ public:
                     juce::File setupFile = RigLibrary::getSongsDirectory().getChildFile(name);
                     if (setupFile.existsAsFile()) {
                         setups.add(setupFile);
+                    } else {
+                        setups.add(juce::File(name));
                     }
                 }
             }
@@ -252,7 +342,7 @@ public:
         if (engine == nullptr || preloaderThread == nullptr)
             return;
 
-        juce::File nextFile = getNextFile();
+        juce::File nextFile = getNextPreloadTarget();
         if (nextFile.existsAsFile()) {
             preloaderThread->preloadSetup(nextFile);
         } else {

@@ -85,6 +85,25 @@ MainComponent::MainComponent() {
   if (avrtModule != nullptr) {
     avSetMmThreadFn = (PAvSetMmThreadCharacteristicsA)GetProcAddress(avrtModule, "AvSetMmThreadCharacteristicsA");
   }
+
+  // Elevate process priority so Windows scheduler doesn't preempt audio
+  // processing when other programs launch or perform heavy I/O
+  if (!SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS)) {
+    LOG_WARN("Failed to set HIGH_PRIORITY_CLASS for process");
+  } else {
+    LOG_INFO("Process elevated to HIGH_PRIORITY_CLASS");
+  }
+
+  // Lock a generous working set minimum so Windows cannot page out VST sample
+  // libraries when other applications demand RAM. 512 MB min / 2 GB max keeps
+  // Kontakt/sample-based plugins resident through system activity spikes.
+  SIZE_T wsMin = 512ULL * 1024 * 1024;
+  SIZE_T wsMax = 2048ULL * 1024 * 1024;
+  if (!SetProcessWorkingSetSize(GetCurrentProcess(), wsMin, wsMax)) {
+    LOG_WARN("Failed to lock process working set (512 MB - 2 GB)");
+  } else {
+    LOG_INFO("Process working set locked: min 512 MB, max 2 GB");
+  }
 #endif
   // Initialize MIDI collector with default rate
   midiCollector.reset(OpenRigConstants::kDefaultSampleRate);
@@ -869,6 +888,33 @@ void MainComponent::setupSetupButtons() {
   loadSetBtn.onClick = [this] { loadSetFromFile(); };
   setupBuilderBtn.onClick = [this] { showSetupBuilderOverlay(); };
 
+  queueButtons.clear();
+  for (int i = 0; i < numSetupButtons; ++i) {
+    auto* btn = new OpenRig::QueueButtonComponent(i);
+    btn->onClick = [this, i] { loadRigFile(i); };
+    btn->onFileDropped = [this](int slotIdx, const juce::File& file) {
+      if (slotIdx >= 0 && slotIdx < numSetupButtons) {
+        setupFilePaths[slotIdx] = file.getFullPathName();
+        saveButtonMappings();
+        auto& sm = OpenRig::SetlistManager::getInstance();
+        sm.setSlotSetup(slotIdx, file);
+        updatePreloadStatus();
+      }
+    };
+    btn->onAssignRequested = [this](int slotIdx) { assignJsonToButton(slotIdx); };
+    btn->onClearRequested = [this](int slotIdx) {
+      if (slotIdx >= 0 && slotIdx < numSetupButtons) {
+        setupFilePaths[slotIdx] = "";
+        saveButtonMappings();
+        auto& sm = OpenRig::SetlistManager::getInstance();
+        sm.setSlotSetup(slotIdx, juce::File{});
+        updatePreloadStatus();
+      }
+    };
+    addAndMakeVisible(btn);
+    queueButtons.add(btn);
+  }
+
   // Scene management buttons
   addAndMakeVisible(addSceneBtn);
   addAndMakeVisible(saveSceneBtn);
@@ -931,40 +977,113 @@ void MainComponent::setupSetupButtons() {
 void MainComponent::refreshSceneButtons() {
   sceneButtons.clear();
   int numScenes = engine.getNumScenes();
-  for (int i = 0; i < numScenes; ++i) {
-    auto *btn = new juce::TextButton(engine.getSceneName(i));
-    btn->setClickingTogglesState(true);
-    btn->setRadioGroupId(9999, juce::dontSendNotification);
-    btn->setColour(juce::TextButton::buttonColourId,
-                   ThemeManager::get(Theme::Role::panelAlt));
-    btn->setColour(juce::TextButton::buttonOnColourId,
-                   ThemeManager::get(Theme::Role::accent));
 
-    // Show assigned PC in tooltip if set
+  while (sceneSetupFilePaths.size() < numScenes)
+    sceneSetupFilePaths.add("");
+
+  for (int i = 0; i < numScenes; ++i) {
+    auto *btn = new OpenRig::SceneButtonComponent(i, engine.getSceneName(i));
+
+    juce::File assignedFile(sceneSetupFilePaths[i]);
+    if (assignedFile.existsAsFile()) {
+      btn->setAssignedFile(assignedFile);
+    }
+
     int assignedPC = engine.getSceneMidiPC(i);
     int assignedCh = engine.getSceneMidiChannel(i);
-    if (assignedPC >= 0) {
-      juce::String tip = "PC " + juce::String(assignedPC);
-      if (assignedCh > 0) tip += " / Ch " + juce::String(assignedCh);
-      btn->setTooltip(tip);
-      // Tint button slightly to indicate it has a trigger
-      btn->setColour(juce::TextButton::buttonColourId,
-                     ThemeManager::get(Theme::Role::iem).darker(0.4f));
+    btn->setMidiTriggerInfo(assignedPC, assignedCh);
+
+    if (i == engine.getCurrentSceneIndex()) {
+      btn->setActive(true);
     }
 
     int sceneIdx = i;
-    btn->onClick = [this, sceneIdx] {
+    btn->onFileDropped = [this](int idx, const juce::File& file) {
+      while (sceneSetupFilePaths.size() <= idx) sceneSetupFilePaths.add("");
+      sceneSetupFilePaths.set(idx, file.getFullPathName());
+      saveButtonMappings();
+      refreshSceneButtons();
+    };
+
+    btn->onClicked = [this, sceneIdx](int) {
+      if (sceneIdx >= 0 && sceneIdx < sceneSetupFilePaths.size()) {
+        juce::File f(sceneSetupFilePaths[sceneIdx]);
+        if (f.existsAsFile()) {
+          loadRigAsync(f);
+          return;
+        }
+      }
       engine.saveCurrentStateToScene(engine.getCurrentSceneIndex());
       engine.loadScene(sceneIdx);
       for (int j = 0; j < sceneButtons.size(); ++j)
-        sceneButtons[j]->setToggleState(j == sceneIdx,
-                                        juce::dontSendNotification);
+        sceneButtons[j]->setActive(j == sceneIdx);
     };
 
-    btn->addMouseListener(this, false);
+    btn->onRightClicked = [this, sceneIdx](int, const juce::MouseEvent&) {
+      juce::PopupMenu menu;
+      juce::File assigned(sceneSetupFilePaths.size() > sceneIdx ? sceneSetupFilePaths[sceneIdx] : "");
 
-    if (i == engine.getCurrentSceneIndex())
-      btn->setToggleState(true, juce::dontSendNotification);
+      menu.addSectionHeader("PRESET / SCENE " + juce::String(sceneIdx + 1));
+      menu.addItem(1, "Assign Setup File...");
+      if (assigned.existsAsFile()) {
+        menu.addItem(2, "Clear Setup Assignment");
+      }
+      menu.addSeparator();
+
+      int currentPC = engine.getSceneMidiPC(sceneIdx);
+      if (currentPC >= 0) {
+        int currentCh = engine.getSceneMidiChannel(sceneIdx);
+        juce::String info = "MIDI Trigger: PC " + juce::String(currentPC);
+        if (currentCh > 0) info += " / Ch " + juce::String(currentCh);
+        menu.addItem(-1, info, false, false);
+        menu.addSeparator();
+      }
+      menu.addItem(3, "Assign MIDI Trigger (Learn)...");
+      if (currentPC >= 0)
+        menu.addItem(4, "Clear MIDI Trigger");
+
+      auto* b = sceneButtons[sceneIdx];
+      menu.showMenuAsync(juce::PopupMenu::Options{}.withTargetComponent(b),
+        [this, sceneIdx](int result) {
+          if (result == 1) {
+            auto fileChooser = std::make_shared<juce::FileChooser>(
+              "Select Setup File...", OpenRig::RigLibrary::getSongsDirectory(), "*.json");
+            fileChooser->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+              [this, sceneIdx, fileChooser](const juce::FileChooser& fc) {
+                auto file = fc.getResult();
+                if (file.existsAsFile()) {
+                  while (sceneSetupFilePaths.size() <= sceneIdx) sceneSetupFilePaths.add("");
+                  sceneSetupFilePaths.set(sceneIdx, file.getFullPathName());
+                  saveButtonMappings();
+                  refreshSceneButtons();
+                }
+              });
+          } else if (result == 2) {
+            if (sceneIdx < sceneSetupFilePaths.size())
+              sceneSetupFilePaths.set(sceneIdx, "");
+            saveButtonMappings();
+            refreshSceneButtons();
+          } else if (result == 3) {
+            auto* alert = new juce::AlertWindow(
+              "MIDI Learn",
+              "Send a Program Change from your controller now...",
+              juce::AlertWindow::InfoIcon);
+            alert->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+
+            sceneMidiLearnArmed = sceneIdx;
+            alert->enterModalState(true,
+              juce::ModalCallbackFunction::create([this](int) {
+                sceneMidiLearnArmed = -1;
+              }));
+            sceneLearnAlert = alert;
+          } else if (result == 4) {
+            engine.clearSceneMidiTrigger(sceneIdx);
+            saveButtonMappings();
+            refreshSceneButtons();
+          }
+        });
+    };
+
     addAndMakeVisible(btn);
     sceneButtons.add(btn);
   }
@@ -1088,7 +1207,17 @@ void MainComponent::audioDeviceIOCallbackWithContext(
       if (HANDLE h = avSetMmThreadFn("Pro Audio", &taskIndex)) {
         mmcssRegistered = true;
         LOG_INFO("Audio thread registered with MMCSS Pro Audio characteristics");
+      } else {
+        // MMCSS unavailable — use HIGHEST (not TIME_CRITICAL, which can starve
+        // the OS when combined with the audio spin-wait barrier).
+        SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_HIGHEST);
+        mmcssRegistered = true;
+        LOG_WARN("MMCSS unavailable — audio thread set to THREAD_PRIORITY_HIGHEST");
       }
+    } else {
+      SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_HIGHEST);
+      mmcssRegistered = true;
+      LOG_WARN("avrt.dll not loaded — audio thread set to THREAD_PRIORITY_HIGHEST");
     }
   }
 #endif
@@ -1347,27 +1476,41 @@ void MainComponent::changeListenerCallback(juce::ChangeBroadcaster* source) {
 
 void MainComponent::updatePreloadStatus() {
   auto& sm = OpenRig::SetlistManager::getInstance();
-  if (!sm.hasNext()) {
-    preloadStatusLabel.setText("", juce::dontSendNotification);
-    preloadStatusLabel.setVisible(false);
-    return;
+  juce::File preloadTarget = sm.getNextPreloadTarget();
+  int activeIdx = sm.getActiveIndex();
+
+  for (int i = 0; i < queueButtons.size(); ++i) {
+    if (i < numSetupButtons) {
+      juce::File slotFile(setupFilePaths[i]);
+      queueButtons[i]->setAssignedFile(slotFile);
+
+      bool isActive = (i == activeIdx) || (activeIdx < 0 && i == currentSetupIndex && slotFile.existsAsFile());
+      bool isPreloaded = sm.isPreloaded() && (preloadTarget == slotFile) && slotFile.existsAsFile();
+      bool isPreloading = sm.isPreloading() && (preloadTarget == slotFile) && slotFile.existsAsFile();
+
+      queueButtons[i]->setSlotStates(isActive, isPreloaded, isPreloading);
+    }
   }
 
-  juce::String nextName = sm.getNextFile().getFileNameWithoutExtension();
-  preloadStatusLabel.setVisible(true);
-
-  if (sm.isPreloading()) {
-    preloadStatusLabel.setText("Preloading next: " + nextName + "...", juce::dontSendNotification);
-    preloadStatusLabel.setColour(juce::Label::textColourId, ThemeManager::get(Theme::Role::warn));
-  } else if (sm.isPreloaded()) {
-    preloadStatusLabel.setText("Next Ready: " + nextName, juce::dontSendNotification);
-    preloadStatusLabel.setColour(juce::Label::textColourId, ThemeManager::get(Theme::Role::ok));
-  } else if (sm.isPreloadFailed()) {
-    preloadStatusLabel.setText("Preload Failed: " + nextName, juce::dontSendNotification);
-    preloadStatusLabel.setColour(juce::Label::textColourId, juce::Colour(0xffff4444));
+  if (preloadTarget.existsAsFile()) {
+    preloadStatusLabel.setVisible(true);
+    juce::String nextName = preloadTarget.getFileNameWithoutExtension();
+    if (sm.isPreloading()) {
+      preloadStatusLabel.setText("Preloading next: " + nextName + "...", juce::dontSendNotification);
+      preloadStatusLabel.setColour(juce::Label::textColourId, ThemeManager::get(Theme::Role::warn));
+    } else if (sm.isPreloaded()) {
+      preloadStatusLabel.setText("Next Ready: " + nextName, juce::dontSendNotification);
+      preloadStatusLabel.setColour(juce::Label::textColourId, ThemeManager::get(Theme::Role::ok));
+    } else if (sm.isPreloadFailed()) {
+      preloadStatusLabel.setText("Preload Failed: " + nextName, juce::dontSendNotification);
+      preloadStatusLabel.setColour(juce::Label::textColourId, juce::Colour(0xffff4444));
+    } else {
+      preloadStatusLabel.setText("Next: " + nextName + " (Not Preloaded)", juce::dontSendNotification);
+      preloadStatusLabel.setColour(juce::Label::textColourId, ThemeManager::get(Theme::Role::textDim));
+    }
   } else {
-    preloadStatusLabel.setText("Next: " + nextName + " (Not Preloaded)", juce::dontSendNotification);
-    preloadStatusLabel.setColour(juce::Label::textColourId, ThemeManager::get(Theme::Role::textDim));
+    preloadStatusLabel.setText("", juce::dontSendNotification);
+    preloadStatusLabel.setVisible(false);
   }
 }
 
@@ -1477,18 +1620,20 @@ void MainComponent::resized() {
   xrunsLabel.setBounds(startX + telemetryWidth * 3, centerBar.getY(), xrunsWidth, centerBar.getHeight());
   clockLabel.setBounds(startX + telemetryWidth * 3 + xrunsWidth, centerBar.getY(), clockWidth, centerBar.getHeight());
 
-  // Header area - Row 2: setup buttons (smaller)
-  auto presetRow = r.removeFromTop(30);
+  // Header area - Row 2: stage queue buttons
+  auto presetRow = r.removeFromTop(38);
 
   // Save/Load Set buttons on left
   saveSetBtn.setBounds(presetRow.removeFromLeft(70).reduced(2));
   loadSetBtn.setBounds(presetRow.removeFromLeft(70).reduced(2));
   setupBuilderBtn.setBounds(presetRow.removeFromLeft(90).reduced(2));
 
-  // Setup buttons fill rest
-  int btnWidth = presetRow.getWidth() / numSetupButtons;
-  for (int i = 0; i < numSetupButtons; ++i) {
-    setupButtons[i].setBounds(presetRow.removeFromLeft(btnWidth).reduced(1));
+  // Stage Queue buttons fill rest
+  if (!queueButtons.isEmpty()) {
+    int btnWidth = presetRow.getWidth() / queueButtons.size();
+    for (int i = 0; i < queueButtons.size(); ++i) {
+      queueButtons[i]->setBounds(presetRow.removeFromLeft(btnWidth).reduced(1));
+    }
   }
 
   // Header area - Row 3: scene (preset) buttons
@@ -1643,11 +1788,8 @@ void MainComponent::loadRigAsync(const juce::File &file, int buttonIndexForHighl
                     }
                     repaint();
                     refreshSceneButtons();
-                    if (highlight >= 0 && highlight < numSetupButtons) {
-                        for (int i = 0; i < numSetupButtons; ++i)
-                            setupButtons[i].setToggleState(i == highlight,
-                                                           juce::dontSendNotification);
-                    }
+                    // Active-queue highlighting is driven by updatePreloadStatus()
+                    // via the SetlistManager change broadcaster (setActiveIndex).
                     midiMonitorLabel.setText("RIG: " + message,
                                              juce::dontSendNotification);
 
@@ -1693,7 +1835,9 @@ void MainComponent::assignJsonToButton(int buttonIndex) {
         if (file.existsAsFile()) {
           setupFilePaths[buttonIndex] = file.getFullPathName();
           saveButtonMappings();
-          updateSetupButtonLabels();
+          auto& sm = OpenRig::SetlistManager::getInstance();
+          sm.setSlotSetup(buttonIndex, file);
+          updatePreloadStatus();
         }
       });
 }
@@ -1709,6 +1853,12 @@ void MainComponent::saveButtonMappings() {
   }
   root->setProperty("buttons", paths);
 
+  juce::Array<juce::var> scenePaths;
+  for (int i = 0; i < sceneSetupFilePaths.size(); ++i) {
+    scenePaths.add(sceneSetupFilePaths[i]);
+  }
+  root->setProperty("sceneButtons", scenePaths);
+
   mappingsFile.replaceWithText(juce::JSON::toString(juce::var(root)));
 }
 
@@ -1720,10 +1870,23 @@ void MainComponent::loadButtonMappings() {
 
   auto json = juce::JSON::parse(mappingsFile.loadFileAsString());
   if (auto *arr = json.getProperty("buttons", juce::var()).getArray()) {
+    auto& sm = OpenRig::SetlistManager::getInstance();
     for (int i = 0; i < std::min((int)arr->size(), numSetupButtons); ++i) {
       setupFilePaths[i] = arr->getReference(i).toString();
+      if (!setupFilePaths[i].isEmpty()) {
+        sm.setSlotSetup(i, juce::File(setupFilePaths[i]));
+      }
     }
   }
+
+  if (auto *sceneArr = json.getProperty("sceneButtons", juce::var()).getArray()) {
+    sceneSetupFilePaths.clear();
+    for (int i = 0; i < sceneArr->size(); ++i) {
+      sceneSetupFilePaths.add(sceneArr->getReference(i).toString());
+    }
+  }
+
+  updatePreloadStatus();
 }
 
 void MainComponent::timerCallback() {
@@ -1978,23 +2141,19 @@ void MainComponent::applySetlistFromFile(const juce::File &file) {
   auto *obj = json.getDynamicObject();
   if (!obj)
     return;
+  auto& sm = OpenRig::SetlistManager::getInstance();
   for (int i = 0; i < numSetupButtons; ++i) {
     juce::String key = "setup_" + juce::String(i);
     if (obj->hasProperty(key)) {
       setupFilePaths[i] = obj->getProperty(key).toString();
-      if (juce::File(setupFilePaths[i]).existsAsFile())
-        setupButtons[i].setColour(juce::TextButton::buttonColourId,
-                                 ThemeManager::get(Theme::Role::ok));
-      else
-        setupButtons[i].setColour(juce::TextButton::buttonColourId,
-                                 ThemeManager::get(Theme::Role::raised));
+      sm.setSlotSetup(i, juce::File(setupFilePaths[i]));
     } else {
       setupFilePaths[i] = "";
-      setupButtons[i].setColour(juce::TextButton::buttonColourId,
-                               ThemeManager::get(Theme::Role::raised));
+      sm.setSlotSetup(i, juce::File{});
     }
   }
   saveButtonMappings();
+  updatePreloadStatus();
 }
 
 void MainComponent::loadSetFile(const juce::File &file) {
@@ -2035,53 +2194,7 @@ void MainComponent::mouseDown(const juce::MouseEvent &e) {
     return;
   }
 
-  for (int i = 0; i < sceneButtons.size(); ++i) {
-    if (e.originalComponent == sceneButtons[i]) {
-      if (e.mods.isRightButtonDown()) {
-        int sceneIdx = i;
-        auto* btn = sceneButtons[i];
 
-        juce::PopupMenu menu;
-        int currentPC = engine.getSceneMidiPC(sceneIdx);
-        if (currentPC >= 0) {
-          int currentCh = engine.getSceneMidiChannel(sceneIdx);
-          juce::String info = "MIDI Trigger: PC " + juce::String(currentPC);
-          if (currentCh > 0) info += " / Ch " + juce::String(currentCh);
-          menu.addItem(-1, info, false, false);
-          menu.addSeparator();
-        }
-        menu.addItem(1, "Assign MIDI Trigger (Learn)...");
-        if (currentPC >= 0)
-          menu.addItem(2, "Clear MIDI Trigger");
-
-        menu.showMenuAsync(juce::PopupMenu::Options{}.withTargetComponent(btn),
-          [this, sceneIdx](int result) {
-            if (result == 1) {
-              // Show learn dialog — waits for next incoming Program Change
-              auto* alert = new juce::AlertWindow(
-                "MIDI Learn",
-                "Send a Program Change from your controller now...",
-                juce::AlertWindow::InfoIcon);
-              alert->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
-
-              // Arm the learn bus to intercept the next PC
-              sceneMidiLearnArmed = sceneIdx;
-              alert->enterModalState(true,
-                juce::ModalCallbackFunction::create([this](int) {
-                  sceneMidiLearnArmed = -1;
-                }));
-              sceneLearnAlert = alert;
-
-            } else if (result == 2) {
-              engine.clearSceneMidiTrigger(sceneIdx);
-              saveButtonMappings(); // Persist scene MIDI trigger changes to disk
-              refreshSceneButtons();
-            }
-          });
-      }
-      return;
-    }
-  }
 }
 
 bool MainComponent::keyPressed (const juce::KeyPress& key, juce::Component* originatingComponent) {

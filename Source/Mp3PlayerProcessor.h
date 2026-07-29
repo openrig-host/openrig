@@ -17,6 +17,8 @@ public:
         double durationSeconds = 0.0;
     };
 
+    std::function<void()> onPlayStarted;
+
     Mp3PlayerProcessor() {
         formatManager.registerBasicFormats();
         formatManager.registerFormat(new juce::FlacAudioFormat(), true);
@@ -72,8 +74,8 @@ public:
 
     void prepare(double sampleRate, int maxBlockSize = 8192) {
         currentSampleRate = sampleRate > 0.0 ? sampleRate : 44100.0;
-        int allocSize = juce::jmax(maxBlockSize, 8192);
-        tempBuffer.setSize(2, allocSize);
+        int allocSize = juce::jmax(maxBlockSize, 16384);
+        tempBuffer.setSize(2, allocSize, false, false, true);
         tempBuffer.clear();
 
         levelerL.prepare(currentSampleRate);
@@ -105,9 +107,12 @@ public:
 
         int numSamples = buffer.getNumSamples();
         int numChannels = buffer.getNumChannels();
-        if (tempBuffer.getNumSamples() < numSamples || tempBuffer.getNumChannels() < numChannels) {
-            tempBuffer.setSize(numChannels, numSamples, false, false, false);
-        }
+        // tempBuffer is pre-sized in prepareToPlay() (2 ch, >= 16384 samples).
+        // Never reallocate on the audio thread — clamp to the available capacity.
+        int capSamples = tempBuffer.getNumSamples();
+        if (capSamples < numSamples)
+            numSamples = capSamples;
+        int tempChannels = tempBuffer.getNumChannels();
         tempBuffer.clear();
 
         juce::AudioSourceChannelInfo info(&tempBuffer, 0, numSamples);
@@ -120,14 +125,15 @@ public:
             levelerL.setEnabled(true);
             levelerR.setEnabled(true);
             float* L = tempBuffer.getWritePointer(0);
-            float* R = tempBuffer.getNumChannels() > 1 ? tempBuffer.getWritePointer(1) : nullptr;
+            float* R = tempChannels > 1 ? tempBuffer.getWritePointer(1) : nullptr;
             for (int i = 0; i < numSamples; ++i) {
                 L[i] = levelerL.process(L[i]);
                 if (R) R[i] = levelerR.process(R[i]);
             }
         }
 
-        for (int ch = 0; ch < numChannels; ++ch) {
+        int channelsToCopy = juce::jmin(numChannels, tempChannels);
+        for (int ch = 0; ch < channelsToCopy; ++ch) {
             buffer.addFrom(ch, 0, tempBuffer, ch, 0, numSamples);
         }
 
@@ -254,6 +260,7 @@ public:
                     totalReadLength.store(readerSource->getTotalLength());
                 }
                 playing.store(true);
+                if (onPlayStarted) onPlayStarted();
                 return;
             }
         }
@@ -274,6 +281,7 @@ public:
                 totalReadLength.store(readerSource->getTotalLength());
             }
             playing.store(true);
+            if (onPlayStarted) onPlayStarted();
         } else {
             juce::SpinLock::ScopedLockType al(audioLock);
             activeTrackMemory.setSize(0);
@@ -301,6 +309,7 @@ public:
                     currentReadPos.store(0);
                 }
                 playing.store(true);
+                if (onPlayStarted) onPlayStarted();
                 return;
             }
         }

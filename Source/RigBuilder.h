@@ -199,6 +199,7 @@ private:
                 juce::String err;
                 bool ok = false;
                 std::atomic<bool> done{false};
+                std::atomic<bool> abandoned{false};
             };
             auto bctx = std::make_shared<BuildThreadContext>();
             bctx->engine = &engine;
@@ -206,9 +207,18 @@ private:
 
             std::thread t([bctx]() {
 #ifdef _WIN32
-                ::CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+                ::CoInitializeEx(nullptr, COINIT_MULTITHREADED);
 #endif
-                bctx->ok = bctx->engine->buildPluginFromVar(bctx->pluginVar, bctx->inst, bctx->err) && (bool)bctx->inst;
+                std::unique_ptr<juce::AudioPluginInstance> tmpInst;
+                juce::String tmpErr;
+                bool tmpOk = bctx->engine->buildPluginFromVar(bctx->pluginVar, tmpInst, tmpErr) && (bool)tmpInst;
+                if (!bctx->abandoned.load()) {
+                    bctx->inst = std::move(tmpInst);
+                    bctx->err = tmpErr;
+                    bctx->ok = tmpOk;
+                } else {
+                    tmpInst = nullptr; // Instantly release instance and host resources if thread was abandoned
+                }
 #ifdef _WIN32
                 ::CoUninitialize();
 #endif
@@ -222,10 +232,13 @@ private:
                 waitCount++;
             }
 
+            bool timedOut = false;
             if (!bctx->done.load()) {
+                bctx->abandoned.store(true);
                 logToFile("TRACE: buildOne " + label + " timed out (25s) on background build. Detaching thread...");
                 t.detach(); // Allow the thread to remain stuck in background without hanging OpenRig
                 ok = false;
+                timedOut = true;
                 err = "build timed out (25s)";
             } else {
                 t.join();
@@ -235,7 +248,15 @@ private:
             }
 
             if (!ok) {
-                logToFile("TRACE: buildOne off-thread build failed for " + label + ", retrying on message thread. Error: " + err);
+                logToFile("TRACE: buildOne off-thread build failed for " + label + ". Error: " + err);
+            }
+
+            if (timedOut) {
+                logToFile("WARNING: buildOne " + label + " background build timed out; skipping message-thread retry to avoid concurrent entry race.");
+                r.ok = false;
+                r.error = label + ": " + err;
+                r.failedEntries.push_back({key, pv});
+                return false;
             }
         }
 
@@ -327,6 +348,7 @@ private:
                 juce::String err;
                 bool ok = false;
                 std::atomic<bool> done{false};
+                std::atomic<bool> abandoned{false};
             };
             auto bctx = std::make_shared<BuildThreadContext>();
             bctx->engine = &engine;
@@ -334,9 +356,18 @@ private:
 
             std::thread t([bctx]() {
 #ifdef _WIN32
-                ::CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+                ::CoInitializeEx(nullptr, COINIT_MULTITHREADED);
 #endif
-                bctx->ok = bctx->engine->buildPluginFromVar(bctx->pluginVar, bctx->inst, bctx->err) && (bool)bctx->inst;
+                std::unique_ptr<juce::AudioPluginInstance> tmpInst;
+                juce::String tmpErr;
+                bool tmpOk = bctx->engine->buildPluginFromVar(bctx->pluginVar, tmpInst, tmpErr) && (bool)tmpInst;
+                if (!bctx->abandoned.load()) {
+                    bctx->inst = std::move(tmpInst);
+                    bctx->err = tmpErr;
+                    bctx->ok = tmpOk;
+                } else {
+                    tmpInst = nullptr; // Instantly release instance and host resources if thread was abandoned
+                }
 #ifdef _WIN32
                 ::CoUninitialize();
 #endif
@@ -350,10 +381,13 @@ private:
                 waitCount++;
             }
 
+            bool timedOut = false;
             if (!bctx->done.load()) {
+                bctx->abandoned.store(true);
                 logToFile("TRACE: buildMaster " + label + " timed out (25s) on background build. Detaching thread...");
                 t.detach(); // Allow thread to remain stuck in background
                 ok = false;
+                timedOut = true;
                 err = "build timed out (25s)";
             } else {
                 t.join();
@@ -363,7 +397,15 @@ private:
             }
 
             if (!ok) {
-                logToFile("TRACE: buildMaster off-thread build failed for " + label + ", retrying on message thread. Error: " + err);
+                logToFile("TRACE: buildMaster off-thread build failed for " + label + ". Error: " + err);
+            }
+
+            if (timedOut) {
+                logToFile("WARNING: buildMaster " + label + " background build timed out; skipping message-thread retry to avoid concurrent entry race.");
+                r.ok = false;
+                r.error = label + ": " + err;
+                r.failedEntries.push_back({key, pv});
+                return false;
             }
         }
 

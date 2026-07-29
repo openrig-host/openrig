@@ -47,6 +47,8 @@ public:
   }
 
   void shutdown() override {
+    LOG_INFO("OpenRig shutting down cleanly. Flushing log and terminating process...");
+    OpenRigLog::flushLog();
     mainWindow = nullptr; // (deletes our window)
 
 #ifdef _WIN32

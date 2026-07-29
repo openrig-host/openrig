@@ -441,10 +441,14 @@ public:
       // Boost worker thread to Pro Audio priority
       thread_local bool mmcssApplied = false;
       if (!mmcssApplied) {
+        bool boosted = false;
         if (engine.avSetMmThread != nullptr) {
           DWORD taskIndex = 0;
-          engine.avSetMmThread(L"Pro Audio", &taskIndex);
+          if (engine.avSetMmThread(L"Pro Audio", &taskIndex))
+            boosted = true;
         }
+        if (!boosted)
+          SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_HIGHEST);
         mmcssApplied = true;
       }
 #endif
@@ -460,27 +464,30 @@ public:
         // Bounds check inputIdx against available channels
         if (inputIdx >= 0 && rawInput != nullptr &&
             inputIdx < numInputChannels) {
-          // Hardware input routing: copy from raw pointers
+          // Hardware input routing: add from raw pointers to preserve any subgroup audio
           if (const float *l = rawInput[inputIdx])
-            scratch.copyFrom(0, 0, l, numSamples);
+            scratch.addFrom(0, 0, l, numSamples);
 
           // Special case: Monitor In (slot 0) always duplicates mono to stereo
-          // This allows stereo effects (reverb, delay) to create spatial
-          // imaging
+          // This allows stereo effects (reverb, delay) to create spatial imaging
           if (slotIdx == 0) {
             if (const float *l = rawInput[inputIdx])
-              scratch.copyFrom(1, 0, l, numSamples);
+              scratch.addFrom(1, 0, l, numSamples);
           }
           // For other slots: support stereo hardware pairs if they exist
           else if (inputIdx + 1 < numInputChannels) {
             if (const float *r = rawInput[inputIdx + 1])
-              scratch.copyFrom(1, 0, r, numSamples);
+              scratch.addFrom(1, 0, r, numSamples);
           } else if (const float *l = rawInput[inputIdx]) {
             // Fallback for last channel: duplicate mono to right
-            scratch.copyFrom(1, 0, l, numSamples);
+            scratch.addFrom(1, 0, l, numSamples);
           }
         }
-        slot->processBlock(scratch, midi);
+        // Subgroup target slots are seeded here (hardware input only); their full
+        // DSP chain runs once AFTER subgroup accumulation in the parallel path so it
+        // processes the summed subgroup audio. Non-targets always process here.
+        if (!seedOnly)
+          slot->processBlock(scratch, midi);
       }
 
       completedToken.store(myToken, std::memory_order_release); // publishes scratch writes
@@ -493,6 +500,12 @@ public:
     const float *const *rawInput = nullptr;
     int numInputChannels = 0;
     std::atomic<int> *counter = nullptr;
+
+   public:
+    // When true, runJob() only seeds hardware input and skips processBlock(). Used by
+    // the parallel path for subgroup target slots so their DSP chain runs exactly once,
+    // on the accumulated subgroup audio, instead of twice.
+    bool seedOnly = false;
   };
 
   void prepareToPlay(int samplesPerBlockExpected, double sampleRate) {
@@ -726,9 +739,9 @@ public:
         }
     }
 
-    // Use TryLock to avoid blocking the audio thread if UI has the lock
-    juce::GenericScopedTryLock<juce::CriticalSection> sl(lock);
-    if (!sl.isLocked()) {
+    // Real-time audio rendering runs completely lock-free during playback.
+    // We check isApplyingRig atomic flag only to pause rendering during full song switches.
+    if (isApplyingRig.load(std::memory_order_acquire)) {
       for (int i = 0; i < numOutputs; ++i)
         if (outputData[i])
           juce::FloatVectorOperations::clear(outputData[i], numSamples);
@@ -877,19 +890,29 @@ public:
       }
     }
 
-    if (slotsWithPlugins <= 3 || hasSubgroups) {
-      // Process sequentially inline on the audio thread (highly stable)
+    if (slotsWithPlugins <= 3) {
+      // Process sequentially inline on the audio thread for small setups
       aux1Bus.clear();
       aux2Bus.clear();
       for (int i = 0; i < numActiveSlots; ++i) {
+        preallocatedJobs[i]->seedOnly = false; // targets process inline here, in order
         preallocatedJobs[i]->setup(inputData, numInputs, slotsFinishedCount);
         preallocatedJobs[i]->runJob();
 
         int target = slots[i]->getOutputTarget();
         if (target >= 0 && target < numActiveSlots && target > i) {
-          slots[i]->sumToSubgroup(scratchBuffers[i], scratchBuffers[target]);
+          slots[i]->sumToSubgroup(scratchBuffers[i], scratchBuffers[target], aux1Bus, aux2Bus);
+          slots[i]->sumToIemBus(scratchBuffers[i], iemBus);
         } else {
-          slots[i]->sumToBuses(scratchBuffers[i], fohBus, iemBus, aux1Bus, aux2Bus);
+          bool isSubgroupTarget = false;
+          for (int k = 0; k < numActiveSlots; ++k) {
+            if (slots[k]->getOutputTarget() == i) { isSubgroupTarget = true; break; }
+          }
+          if (isSubgroupTarget) {
+            slots[i]->sumToFohBusOnly(scratchBuffers[i], fohBus, aux1Bus, aux2Bus);
+          } else {
+            slots[i]->sumToBuses(scratchBuffers[i], fohBus, iemBus, aux1Bus, aux2Bus);
+          }
         }
       }
     } else {
@@ -916,8 +939,17 @@ public:
         preallocatedJobs[i]->setup(inputData, numInputs, slotsFinishedCount);
       slotsFinishedCount.store(0); // diagnostic only; the wait uses completion tokens
 
-      for (int i = 0; i < numActiveSlots; ++i)
+      // Subgroup targets are seeded-only here (hardware input, no processBlock); their
+      // DSP chain runs once in Step 2 on the accumulated subgroup audio. This makes the
+      // parallel path produce identical results to the sequential path (no double process).
+      for (int i = 0; i < numActiveSlots; ++i) {
+        bool isTgt = false;
+        for (int k = 0; k < numActiveSlots; ++k) {
+          if (slots[k]->getOutputTarget() == i) { isTgt = true; break; }
+        }
+        preallocatedJobs[i]->seedOnly = isTgt;
         threadPool.addJob(preallocatedJobs[i], false);
+      }
 
       // Spin-wait barrier (BOUNDED). Generous 300k spin budget for safety.
       bool timedOut = false;
@@ -953,11 +985,46 @@ public:
         aux1Bus.clear();
         aux2Bus.clear();
       } else {
-        // Sum all processed buffers to buses
+        // Step 1: Accumulate subgroup sends and IEM mixes
         aux1Bus.clear();
         aux2Bus.clear();
         for (int i = 0; i < (int)slots.size(); ++i) {
-          slots[i]->sumToBuses(scratchBuffers[i], fohBus, iemBus, aux1Bus, aux2Bus);
+          int target = slots[i]->getOutputTarget();
+          if (target >= 0 && target < (int)slots.size() && target > i) {
+            slots[i]->sumToSubgroup(scratchBuffers[i], scratchBuffers[target], aux1Bus, aux2Bus);
+            slots[i]->sumToIemBus(scratchBuffers[i], iemBus);
+          }
+        }
+
+        // Step 2: Process DSP chain for subgroup target slots on accumulated subgroup audio
+        for (int i = 0; i < (int)slots.size(); ++i) {
+          bool isSubgroupTarget = false;
+          for (int k = 0; k < (int)slots.size(); ++k) {
+            if (slots[k]->getOutputTarget() == i) { isSubgroupTarget = true; break; }
+          }
+          if (isSubgroupTarget) {
+            // Use the slot's own MIDI buffer for parity with the sequential path
+            // (runJob skipped processBlock for this seed-only target).
+            slots[i]->processBlock(scratchBuffers[i], slotMidiBuffers[i]);
+          }
+        }
+
+        // Step 3: Sum to buses (subgroup targets sum to FOH only to avoid IEM double-feeding)
+        for (int i = 0; i < (int)slots.size(); ++i) {
+          int target = slots[i]->getOutputTarget();
+          if (target >= 0 && target < (int)slots.size() && target > i) {
+            // Upstream slots already summed to subgroup & IEM above
+            continue;
+          }
+          bool isSubgroupTarget = false;
+          for (int k = 0; k < (int)slots.size(); ++k) {
+            if (slots[k]->getOutputTarget() == i) { isSubgroupTarget = true; break; }
+          }
+          if (isSubgroupTarget) {
+            slots[i]->sumToFohBusOnly(scratchBuffers[i], fohBus, aux1Bus, aux2Bus);
+          } else {
+            slots[i]->sumToBuses(scratchBuffers[i], fohBus, iemBus, aux1Bus, aux2Bus);
+          }
         }
       }
     }
@@ -1102,14 +1169,31 @@ public:
     }
 
     // Update master peaks
-    fohPeakL = fohBus.getMagnitude(0, 0, fohBus.getNumSamples());
-    fohPeakR = (fohBus.getNumChannels() > 1)
+    float fL = fohBus.getMagnitude(0, 0, fohBus.getNumSamples());
+    float fR = (fohBus.getNumChannels() > 1)
                    ? fohBus.getMagnitude(1, 0, fohBus.getNumSamples())
-                   : fohPeakL;
-    iemPeakL = iemBus.getMagnitude(0, 0, iemBus.getNumSamples());
-    iemPeakR = (iemBus.getNumChannels() > 1)
+                   : fL;
+    float iL = iemBus.getMagnitude(0, 0, iemBus.getNumSamples());
+    float iR = (iemBus.getNumChannels() > 1)
                    ? iemBus.getMagnitude(1, 0, iemBus.getNumSamples())
-                   : iemPeakL;
+                   : iL;
+
+    // Master Bus Output Protection (Sanitize NaN / Inf to protect hardware & hearing)
+    if (!std::isfinite(fL) || !std::isfinite(fR)) {
+      fohBus.clear();
+      fL = 0.0f;
+      fR = 0.0f;
+    }
+    if (!std::isfinite(iL) || !std::isfinite(iR)) {
+      iemBus.clear();
+      iL = 0.0f;
+      iR = 0.0f;
+    }
+
+    fohPeakL.store(fL);
+    fohPeakR.store(fR);
+    iemPeakL.store(iL);
+    iemPeakR.store(iR);
   }
 
   // --- Master FX Management ---
@@ -1385,6 +1469,12 @@ public:
   void applyRig(const juce::var &rig) {
     if (!rig.isObject())
       return;
+
+    isApplyingRig.store(true, std::memory_order_release);
+    struct AutoReset {
+      std::atomic<bool> &flag;
+      ~AutoReset() { flag.store(false, std::memory_order_release); }
+    } resetFlag{isApplyingRig};
 
     juce::ScopedLock sl(lock);
 
@@ -2452,7 +2542,8 @@ public:
   void setCurrentSceneIndex(int index) { currentSceneIndex = index; }
 
   juce::String getMasterPluginName(bool isFoh, int chainIndex) const {
-    juce::ScopedLock sl(lock);
+    juce::GenericScopedTryLock<juce::CriticalSection> sl(lock);
+    if (!sl.isLocked()) return "";
     const auto &chain = isFoh ? fohPluginChain : iemPluginChain;
     if (chainIndex >= 0 && chainIndex < (int)chain.size()) {
       if (chain[chainIndex])
@@ -2463,7 +2554,8 @@ public:
 
   juce::AudioPluginInstance *getMasterPluginInstance(bool isFoh,
                                                      int chainIndex) const {
-    juce::ScopedLock sl(lock);
+    juce::GenericScopedTryLock<juce::CriticalSection> sl(lock);
+    if (!sl.isLocked()) return nullptr;
     const auto &chain = isFoh ? fohPluginChain : iemPluginChain;
     if (chainIndex >= 0 && chainIndex < (int)chain.size())
       return chain[chainIndex].get();
@@ -2667,6 +2759,9 @@ private:
   // Post-load fade-in to prevent transient bursts when a rig is applied
   std::atomic<int> postLoadFadeRemaining{0};
   std::atomic<int> postLoadFadeTotal{0};
+
+  // Rig transition atomic guard
+  std::atomic<bool> isApplyingRig{false};
 
   // Master FX chains
   juce::SpinLock masterFxLock;

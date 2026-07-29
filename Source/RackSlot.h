@@ -27,7 +27,10 @@
  */
 class RackSlot {
 public:
-  RackSlot(const juce::String &name) : slotName(name) { setDefaultCCs(); }
+  RackSlot(const juce::String &name) : slotName(name) {
+    setDefaultCCs();
+    mp3Player.onPlayStarted = [this] { setBypass(false); };
+  }
   ~RackSlot() = default;
 
   void prepare(double sampleRate, int maxBlockSize = 8192) {
@@ -187,63 +190,69 @@ public:
       midiOutChain[i].clear();
 
     {
+      // Try-lock: if the UI is swapping a plugin in this chain, skip this block
+      // (brief gap) instead of blocking the real-time audio thread.
       juce::SpinLock::ScopedTryLockType pcl(pluginLock);
-      if (pcl.isLocked()) {
-        int chainLen = juce::jmax((int)pluginChain.size(), 3);
-        for (int i = 0; i < chainLen; ++i) {
-          if (i < 3 && chainMidiOut[i].isMidiOut.load()) {
-            if (chainSettings[i].enabled.load()) {
-              int low = chainSettings[i].lowNote.load();
-              int high = chainSettings[i].highNote.load();
-              int outCh = chainMidiOut[i].channel.load();
+      if (!pcl.isLocked())
+        return;
+      int chainLen = juce::jmax((int)pluginChain.size(), 3);
+      for (int i = 0; i < chainLen; ++i) {
+        if (i < 3 && chainMidiOut[i].isMidiOut.load()) {
+          if (chainSettings[i].enabled.load()) {
+            int low = chainSettings[i].lowNote.load();
+            int high = chainSettings[i].highNote.load();
+            int outCh = chainMidiOut[i].channel.load();
 
-              for (const auto metadata : midiMessages) {
-                auto msg = metadata.getMessage();
-                if (msg.isNoteOnOrOff()) {
-                  int note = msg.getNoteNumber();
-                  if (note >= low && note <= high) {
-                    midiOutChain[i].addEvent(
-                        msg.isNoteOn()
-                            ? juce::MidiMessage::noteOn(outCh, note, msg.getVelocity())
-                            : juce::MidiMessage::noteOff(outCh, note, msg.getVelocity()),
-                        metadata.samplePosition);
-                  }
-                } else if (msg.isController()) {
-                  int ccNum = msg.getControllerNumber();
-                  if (isCCAllowed(ccNum)) {
-                    midiOutChain[i].addEvent(
-                        juce::MidiMessage::controllerEvent(outCh, ccNum, msg.getControllerValue()),
-                        metadata.samplePosition);
-                  }
-                } else if (msg.isPitchWheel()) {
+            for (const auto metadata : midiMessages) {
+              auto msg = metadata.getMessage();
+              if (msg.isNoteOnOrOff()) {
+                int note = msg.getNoteNumber();
+                if (note >= low && note <= high) {
                   midiOutChain[i].addEvent(
-                      juce::MidiMessage::pitchWheel(outCh, msg.getPitchWheelValue()),
-                      metadata.samplePosition);
-                } else if (msg.isAftertouch()) {
-                  midiOutChain[i].addEvent(
-                      juce::MidiMessage::aftertouchChange(outCh, msg.getNoteNumber(),
-                                                          msg.getAfterTouchValue()),
-                      metadata.samplePosition);
-                } else if (msg.isChannelPressure()) {
-                  midiOutChain[i].addEvent(
-                      juce::MidiMessage::channelPressureChange(outCh, msg.getChannelPressureValue()),
+                      msg.isNoteOn()
+                          ? juce::MidiMessage::noteOn(outCh, note, msg.getVelocity())
+                          : juce::MidiMessage::noteOff(outCh, note, msg.getVelocity()),
                       metadata.samplePosition);
                 }
+              } else if (msg.isController()) {
+                int ccNum = msg.getControllerNumber();
+                if (isCCAllowed(ccNum)) {
+                  midiOutChain[i].addEvent(
+                      juce::MidiMessage::controllerEvent(outCh, ccNum, msg.getControllerValue()),
+                      metadata.samplePosition);
+                }
+              } else if (msg.isPitchWheel()) {
+                midiOutChain[i].addEvent(
+                    juce::MidiMessage::pitchWheel(outCh, msg.getPitchWheelValue()),
+                    metadata.samplePosition);
+              } else if (msg.isAftertouch()) {
+                midiOutChain[i].addEvent(
+                    juce::MidiMessage::aftertouchChange(outCh, msg.getNoteNumber(),
+                                                        msg.getAfterTouchValue()),
+                    metadata.samplePosition);
+              } else if (msg.isChannelPressure()) {
+                midiOutChain[i].addEvent(
+                    juce::MidiMessage::channelPressureChange(outCh, msg.getChannelPressureValue()),
+                    metadata.samplePosition);
               }
             }
-            continue; // not a plugin slot
           }
+          continue; // not a plugin slot
+        }
 
-          if (i >= (int)pluginChain.size())
-            continue;
+        if (i >= (int)pluginChain.size())
+          continue;
 
-          auto &plugin = pluginChain[i];
-          if (plugin && (i >= 3 || chainSettings[i].enabled.load())) {
-            try {
-              bool isInstrument = (i < 3) ? chainIsInstrument[i].load() : plugin->getPluginDescription().isInstrument;
-              if (isInstrument) {
-                scratchBuffer.setSize(slotBuffer.getNumChannels(), slotBuffer.getNumSamples(), false, false, true);
-                scratchBuffer.clear();
+        auto &plugin = pluginChain[i];
+        if (plugin && (i >= 3 || chainSettings[i].enabled.load())) {
+          try {
+            bool isInstrument = (i < 3) ? chainIsInstrument[i].load() : plugin->getPluginDescription().isInstrument;
+            if (isInstrument) {
+              int numCh = slotBuffer.getNumChannels();
+              int numSamp = slotBuffer.getNumSamples();
+              if (scratchBuffer.getNumChannels() < numCh || scratchBuffer.getNumSamples() < numSamp)
+                scratchBuffer.setSize(numCh, numSamp, false, false, true);
+              scratchBuffer.clear(0, numSamp);
 
                 filteredMidiScratch.clear();
                 int low = (i < 3) ? chainSettings[i].lowNote.load() : 0;
@@ -289,7 +298,6 @@ public:
           }
         }
       }
-    }
 
     // 2. Process Channel Strip (Gate -> EQ -> Comp)
     strip.processBlock(slotBuffer);
@@ -376,8 +384,60 @@ public:
     lastIemLevel = iemBase;
   }
 
+  void sumToFohBusOnly(const juce::AudioBuffer<float> &slotBuffer,
+                       juce::AudioBuffer<float> &fohBus,
+                       juce::AudioBuffer<float> &aux1,
+                       juce::AudioBuffer<float> &aux2) {
+    if (bypassed.load())
+      return;
+
+    int numSamples = slotBuffer.getNumSamples();
+    int channelsToSum = (slotBuffer.getNumChannels() < 2) ? slotBuffer.getNumChannels() : 2;
+
+    float fohBase = fohLevel.load();
+    float a1Level = aux1SendLevel.load();
+    float a2Level = aux2SendLevel.load();
+
+    for (int ch = 0; ch < channelsToSum; ++ch) {
+      const float *ptr = slotBuffer.getReadPointer(ch);
+
+      if (fohEnabled.load() && ch < fohBus.getNumChannels())
+        fohBus.addFromWithRamp(ch, 0, ptr, numSamples, lastFohLevel, fohBase);
+
+      if (ch < aux1.getNumChannels())
+        aux1.addFrom(ch, 0, ptr, numSamples, fohBase * a1Level);
+      if (ch < aux2.getNumChannels())
+        aux2.addFrom(ch, 0, ptr, numSamples, fohBase * a2Level);
+    }
+
+    lastFohLevel = fohBase;
+  }
+
+  void sumToIemBus(const juce::AudioBuffer<float> &slotBuffer,
+                   juce::AudioBuffer<float> &iemBus) {
+    if (bypassed.load() || !iemEnabled.load())
+      return;
+
+    int numSamples = slotBuffer.getNumSamples();
+    int channelsToSum = (slotBuffer.getNumChannels() < 2) ? slotBuffer.getNumChannels() : 2;
+
+    float fohBase = fohLevel.load();
+    float offset = iemOffset.load();
+    float iemBase = fohBase * offset;
+
+    for (int ch = 0; ch < channelsToSum; ++ch) {
+      const float *ptr = slotBuffer.getReadPointer(ch);
+      if (ch < iemBus.getNumChannels()) {
+        iemBus.addFromWithRamp(ch, 0, ptr, numSamples, lastIemLevel, iemBase);
+      }
+    }
+    lastIemLevel = iemBase;
+  }
+
   void sumToSubgroup(const juce::AudioBuffer<float> &slotBuffer,
-                     juce::AudioBuffer<float> &destBuffer) {
+                     juce::AudioBuffer<float> &destBuffer,
+                     juce::AudioBuffer<float> &aux1,
+                     juce::AudioBuffer<float> &aux2) {
     if (bypassed.load())
       return;
 
@@ -386,12 +446,18 @@ public:
         (slotBuffer.getNumChannels() < 2) ? slotBuffer.getNumChannels() : 2;
 
     float fohBase = fohLevel.load();
+    float a1Level = aux1SendLevel.load();
+    float a2Level = aux2SendLevel.load();
 
     for (int ch = 0; ch < channelsToSum; ++ch) {
       const float *ptr = slotBuffer.getReadPointer(ch);
-      if (ch < destBuffer.getNumChannels()) {
+      if (fohEnabled.load() && ch < destBuffer.getNumChannels()) {
         destBuffer.addFromWithRamp(ch, 0, ptr, numSamples, lastFohLevel, fohBase);
       }
+      if (ch < aux1.getNumChannels())
+        aux1.addFrom(ch, 0, ptr, numSamples, fohBase * a1Level);
+      if (ch < aux2.getNumChannels())
+        aux2.addFrom(ch, 0, ptr, numSamples, fohBase * a2Level);
     }
 
     lastFohLevel = fohBase;

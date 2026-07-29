@@ -119,13 +119,42 @@ public:
                           maxSliderPos, style, slider);
   }
 
-  void drawLinearSliderThumb(juce::Graphics &g, int x, int /*y*/, int width,
-                             int /*height*/, float sliderPos,
+  void drawLinearSliderThumb(juce::Graphics &g, int x, int y, int width,
+                             int height, float sliderPos,
                              float /*minSliderPos*/, float /*maxSliderPos*/,
                              const juce::Slider::SliderStyle /*style*/,
                              juce::Slider &slider) override {
 
-    // Modern Vector Fader Cap
+    if (slider.isHorizontal()) {
+      float thumbHeight = (float)height * (useModernStyle ? 0.75f : 0.85f);
+      float thumbWidth = juce::jmax(8.0f, thumbHeight * 0.5f);
+
+      float thumbX = sliderPos - (thumbWidth * 0.5f);
+      float thumbY = (float)y + ((float)height - thumbHeight) * 0.5f;
+
+      juce::Rectangle<float> thumbRect(thumbX, thumbY, thumbWidth, thumbHeight);
+      float cornerSize = useModernStyle ? 2.0f : 3.0f;
+
+      // 1. Drop Shadow
+      g.setColour(ThemeManager::get(Theme::Role::background).withAlpha(0.5f));
+      g.fillRoundedRectangle(thumbRect.translated(0.0f, 1.0f), cornerSize);
+
+      // 2. Thumb Body
+      g.setColour(ThemeManager::get(Theme::Role::knobFace));
+      g.fillRoundedRectangle(thumbRect, cornerSize);
+
+      // 3. Central Accent Line
+      juce::Colour accentCol = ThemeManager::get(Theme::Role::accent);
+      g.setColour(accentCol);
+      g.drawVerticalLine((int)thumbRect.getCentreX(), thumbRect.getY() + 2.0f, thumbRect.getBottom() - 2.0f);
+
+      // 4. Border
+      g.setColour(ThemeManager::get(Theme::Role::background).darker(0.3f));
+      g.drawRoundedRectangle(thumbRect, cornerSize, 1.0f);
+      return;
+    }
+
+    // Modern Vector Fader Cap (Vertical)
     float thumbWidth = (float)width * (useModernStyle ? 0.65f : 0.75f); // Good width relative to track
     float thumbHeight = thumbWidth * (useModernStyle ? 1.4f : 1.6f);   // Aspect ratio
 
@@ -196,7 +225,7 @@ public:
   }
 
   void drawLinearSliderBackground(juce::Graphics &g, int x, int y, int width,
-                                  int height, float /*sliderPos*/,
+                                  int height, float sliderPos,
                                   float /*minSliderPos*/,
                                   float /*maxSliderPos*/,
                                   const juce::Slider::SliderStyle /*style*/,
@@ -250,12 +279,34 @@ public:
       }
 
     } else {
-      // Horizontal logic (just in case)
+      float trackHeight = useModernStyle ? 6.0f : 8.0f;
+      float trackCorner = useModernStyle ? 3.0f : 4.0f;
       juce::Rectangle<float> trackArea((float)x,
-                                       (float)y + (height - trackWidth) * 0.5f,
-                                       (float)width, (float)trackWidth);
+                                       (float)y + ((float)height - trackHeight) * 0.5f,
+                                       (float)width, (float)trackHeight);
+
+      // Track groove background
       g.setColour(ThemeManager::get(Theme::Role::trackGroove));
-      g.fillRoundedRectangle(trackArea, cornerSize);
+      g.fillRoundedRectangle(trackArea, trackCorner);
+
+      // Active progress fill (from x to sliderPos)
+      float fillWidth = juce::jlimit(0.0f, (float)width, sliderPos - (float)x);
+      if (fillWidth > 0.0f) {
+        juce::Rectangle<float> activeArea(trackArea.getX(), trackArea.getY(), fillWidth, trackArea.getHeight());
+        juce::Colour accentCol = ThemeManager::get(Theme::Role::accent);
+        auto id = slider.getComponentID();
+        if (id == "foh" || id == "master_foh")
+          accentCol = ThemeManager::get(Theme::Role::foh);
+        else if (id == "iem" || id == "master_iem")
+          accentCol = ThemeManager::get(Theme::Role::iem);
+
+        g.setColour(accentCol.withAlpha(0.85f));
+        g.fillRoundedRectangle(activeArea, trackCorner);
+      }
+
+      // Border
+      g.setColour(ThemeManager::get(Theme::Role::background).darker(0.3f));
+      g.drawRoundedRectangle(trackArea, trackCorner, 1.0f);
     }
   }
 

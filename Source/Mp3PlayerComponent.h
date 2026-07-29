@@ -120,11 +120,17 @@ public:
         addAndMakeVisible(levelerBtn);
         addAndMakeVisible(levelerMeter);
 
-        volSlider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
-        volSlider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 45, 15);
+        volLabel.setText("GAIN", juce::dontSendNotification);
+        volLabel.setFont(juce::FontOptions(11.0f, juce::Font::bold));
+        volLabel.setJustificationType(juce::Justification::centred);
+        volLabel.setColour(juce::Label::textColourId, ThemeManager::get(Theme::Role::accent));
+        addAndMakeVisible(volLabel);
+
+        volSlider.setSliderStyle(juce::Slider::LinearVertical);
+        volSlider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 50, 18);
         volSlider.setRange(0.0, 1.5, 0.01);
         volSlider.setValue(processor.getGain(), juce::dontSendNotification);
-        volSlider.setTooltip("MP3 Volume");
+        volSlider.setTooltip("MP3 Output Volume Fader");
         volSlider.onValueChange = [this] { processor.setGain((float)volSlider.getValue()); };
         addAndMakeVisible(volSlider);
 
@@ -200,10 +206,29 @@ public:
 
         area.removeFromTop(8);
 
-        // Current Track Display
+        // Bottom Playlist Action Buttons Row
+        auto btnRow = area.removeFromBottom(28);
+        int bw = btnRow.getWidth() / 6;
+        addFilesBtn.setBounds(btnRow.removeFromLeft(bw).reduced(2));
+        addFolderBtn.setBounds(btnRow.removeFromLeft(bw).reduced(2));
+        removeBtn.setBounds(btnRow.removeFromLeft(bw).reduced(2));
+        clearBtn.setBounds(btnRow.removeFromLeft(bw).reduced(2));
+        savePlaylistBtn.setBounds(btnRow.removeFromLeft(bw).reduced(2));
+        loadPlaylistBtn.setBounds(btnRow.reduced(2));
+
+        area.removeFromBottom(8);
+
+        // Dedicated Right Column for Output Fader
+        auto faderCol = area.removeFromRight(55);
+        volLabel.setBounds(faderCol.removeFromTop(18));
+        volSlider.setBounds(faderCol);
+
+        area.removeFromRight(10);
+
+        // Left Side Main Player Area
         trackTitleLabel.setBounds(area.removeFromTop(24));
         timeLabel.setBounds(area.removeFromTop(18));
-        positionSlider.setBounds(area.removeFromTop(20));
+        positionSlider.setBounds(area.removeFromTop(22));
 
         area.removeFromTop(8);
 
@@ -217,24 +242,11 @@ public:
         
         loopBtn.setBounds(transportRow.removeFromLeft(100).reduced(2));
         shuffleBtn.setBounds(transportRow.removeFromLeft(110).reduced(2));
-        
-        volSlider.setBounds(transportRow.removeFromRight(60).reduced(2));
+        levelerBtn.setBounds(transportRow.removeFromLeft(110).reduced(2));
 
         area.removeFromTop(10);
 
-        // Playlist Buttons Row
-        auto btnRow = area.removeFromBottom(28);
-        int bw = btnRow.getWidth() / 6;
-        addFilesBtn.setBounds(btnRow.removeFromLeft(bw).reduced(2));
-        addFolderBtn.setBounds(btnRow.removeFromLeft(bw).reduced(2));
-        removeBtn.setBounds(btnRow.removeFromLeft(bw).reduced(2));
-        clearBtn.setBounds(btnRow.removeFromLeft(bw).reduced(2));
-        savePlaylistBtn.setBounds(btnRow.removeFromLeft(bw).reduced(2));
-        loadPlaylistBtn.setBounds(btnRow.reduced(2));
-
-        area.removeFromBottom(8);
-
-        // Table
+        // Playlist Table
         listBox.setBounds(area);
     }
 
@@ -427,6 +439,7 @@ private:
     juce::TextButton shuffleBtn;
     juce::TextButton levelerBtn;
     GainReductionMeter levelerMeter;
+    juce::Label volLabel;
     juce::Slider volSlider;
 
     juce::ListBox listBox;

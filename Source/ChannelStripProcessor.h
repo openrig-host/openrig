@@ -476,6 +476,21 @@ public:
   std::atomic<bool> irEnabled{false};
   std::atomic<float> irMix{0.3f};
 
+  // Cached parameter state to prevent per-block coefficient recomputation
+  bool cachedGateEnabled = false;
+  float cachedGateThresh = -999.0f;
+  bool cachedEqEnabled = false;
+  float cachedVolGain = -999.0f;
+  float cachedMasterGain = -999.0f;
+  float cachedEqBands[10] = {-999.0f, -999.0f, -999.0f, -999.0f, -999.0f, -999.0f, -999.0f, -999.0f, -999.0f, -999.0f};
+  bool cachedCompEnabled = false;
+  float cachedCompAmt = -999.0f;
+  float cachedCompMakeup = -999.0f;
+  int cachedCompPreset = -1;
+  bool cachedChorusEnabled = false;
+  float cachedChorusRate = -999.0f;
+  float cachedChorusMix = -999.0f;
+
   ConvolutionReverb &getIRReverb() { return irReverb; }
   const ConvolutionReverb &getIRReverb() const { return irReverb; }
 
@@ -507,37 +522,60 @@ public:
     float choRate = chorusRate.load();
     float choMix = chorusMix.load();
 
-    gateL.setEnabled(gEnabled);
-    gateL.setThreshold(gThresh);
-    gateR.setEnabled(gEnabled);
-    gateR.setThreshold(gThresh);
+    if (gEnabled != cachedGateEnabled || gThresh != cachedGateThresh) {
+      cachedGateEnabled = gEnabled;
+      cachedGateThresh = gThresh;
+      gateL.setEnabled(gEnabled);
+      gateL.setThreshold(gThresh);
+      gateR.setEnabled(gEnabled);
+      gateR.setThreshold(gThresh);
+    }
 
-    eqL.setEnabled(eEnabled);
-    eqL.setVolGain(vGain);
-    eqL.setMasterGain(mGain);
-    eqR.setEnabled(eEnabled);
-    eqR.setVolGain(vGain);
-    eqR.setMasterGain(mGain);
+    if (eEnabled != cachedEqEnabled || vGain != cachedVolGain || mGain != cachedMasterGain) {
+      cachedEqEnabled = eEnabled;
+      cachedVolGain = vGain;
+      cachedMasterGain = mGain;
+      eqL.setEnabled(eEnabled);
+      eqL.setVolGain(vGain);
+      eqL.setMasterGain(mGain);
+      eqR.setEnabled(eEnabled);
+      eqR.setVolGain(vGain);
+      eqR.setMasterGain(mGain);
+    }
 
     for (int b = 0; b < 10; ++b) {
       float bg = eqBands[b].load();
-      eqL.setBandGain(b, bg);
-      eqR.setBandGain(b, bg);
+      if (bg != cachedEqBands[b]) {
+        cachedEqBands[b] = bg;
+        eqL.setBandGain(b, bg);
+        eqR.setBandGain(b, bg);
+      }
     }
 
-    compL.setEnabled(cEnabled);
-    compL.setPreset(cPreset, cMakeup);
-    compL.setAmount(cAmt);
-    compR.setEnabled(cEnabled);
-    compR.setPreset(cPreset, cMakeup);
-    compR.setAmount(cAmt);
+    if (cEnabled != cachedCompEnabled || cAmt != cachedCompAmt || cMakeup != cachedCompMakeup || cPreset != cachedCompPreset) {
+      cachedCompEnabled = cEnabled;
+      cachedCompAmt = cAmt;
+      cachedCompMakeup = cMakeup;
+      cachedCompPreset = cPreset;
+      compL.setEnabled(cEnabled);
+      compL.setPreset(cPreset, cMakeup);
+      compL.setAmount(cAmt);
+      compR.setEnabled(cEnabled);
+      compR.setPreset(cPreset, cMakeup);
+      compR.setAmount(cAmt);
+    }
 
-    chorusL.setEnabled(choEnabled);
-    chorusL.setRate(choRate);
-    chorusL.setMix(choMix);
-    chorusR.setEnabled(choEnabled);
-    chorusR.setRate(choRate);
-    chorusR.setMix(choMix);
+    if (choEnabled != cachedChorusEnabled || choRate != cachedChorusRate || choMix != cachedChorusMix) {
+      cachedChorusEnabled = choEnabled;
+      cachedChorusRate = choRate;
+      cachedChorusMix = choMix;
+      chorusL.setEnabled(choEnabled);
+      chorusL.setRate(choRate);
+      chorusL.setMix(choMix);
+      chorusR.setEnabled(choEnabled);
+      chorusR.setRate(choRate);
+      chorusR.setMix(choMix);
+    }
 
     int numSamples = buffer.getNumSamples();
     auto *L = buffer.getWritePointer(0);

@@ -28,6 +28,8 @@ target_sources(OpenRig PRIVATE
     DaveCoreProject/Source/BoutiqueLookAndFeel.cpp
     DaveCoreProject/Source/ConfigModalOverlay.cpp
     DaveCoreProject/Source/LibraryPanel.cpp
+    DaveCoreProject/Source/QueueButtonComponent.cpp
+    DaveCoreProject/Source/SceneButtonComponent.cpp
     DaveCoreProject/Source/RigSerializer.cpp
     DaveCoreProject/Source/RigBuilder.cpp
     DaveCoreProject/Source/RigTransitioner.cpp

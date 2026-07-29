@@ -14,8 +14,10 @@ public:
     juce::String displayName;
     juce::String category;
     bool isFolderHeader = false;
+    bool isCollapsed = false;
     bool isFavorite = false;
     juce::Colour badgeColour;
+    juce::File folderDir;
   };
 
   explicit LibraryList(Kind k);
@@ -34,6 +36,11 @@ public:
   juce::var getDragSourceDescription(const juce::SparseSet<int>& selectedRows) override;
 
   juce::File getSelectedFile() const;
+  juce::File getDirectory() const { return directory; }
+
+  void toggleFolderCollapsed(const juce::String &category);
+  void createNewFolder();
+  void moveItemToFolder(const juce::File &file, const juce::String &targetSubfolder);
 
   std::function<void(const juce::File &)> onDoubleClicked;
 
@@ -47,6 +54,7 @@ private:
   std::vector<juce::File> allFiles;
   std::vector<Item> items;
   std::set<juce::String> favorites;
+  std::set<juce::String> collapsedFolders;
   int selectedRow = -1;
 
   void loadFavorites();
@@ -80,6 +88,7 @@ public:
 
 private:
   juce::TextEditor searchEditor;
+  juce::TextButton newFolderBtn;
   std::unique_ptr<juce::TabbedComponent> tabs;
   std::unique_ptr<LibraryList> setsList, setupsList, stripsList;
   std::unique_ptr<OpenRig::SetlistPanel> setlistPanel;

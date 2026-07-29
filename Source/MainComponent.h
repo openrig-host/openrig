@@ -21,6 +21,8 @@
 #include "OpenRigEngine.h"
 #include "RackSlotComponent.h"
 #include "RigLibrary.h"
+#include "QueueButtonComponent.h"
+#include "SceneButtonComponent.h"
 #include "RigTransitioner.h"
 #include "AnalogVuMeter.h"
 #include <JuceHeader.h>
@@ -107,9 +109,9 @@ private:
   // Async rig transitions (Pillar B); CC-learn uses the MidiLearnBus singleton
   std::unique_ptr<OpenRig::RigTransitioner> transitioner;
 
-  // Setup buttons - each links to a JSON rig file
+  // Stage Queue buttons - each links to a JSON rig file
   static constexpr int numSetupButtons = OpenRigConstants::kNumSetupButtons;
-  juce::TextButton setupButtons[numSetupButtons];
+  juce::OwnedArray<OpenRig::QueueButtonComponent> queueButtons;
   juce::String setupFilePaths[numSetupButtons];
   juce::TextButton saveSetBtn{"SAVE SET"};
   juce::TextButton loadSetBtn{"LOAD SET"};
@@ -120,7 +122,8 @@ private:
   juce::TextButton saveSceneBtn{"SAVE SCENE"};
   juce::TextButton renameSceneBtn{"RENAME"};
   juce::TextButton deleteSceneBtn{"DELETE"};
-  juce::OwnedArray<juce::TextButton> sceneButtons;
+  juce::OwnedArray<OpenRig::SceneButtonComponent> sceneButtons;
+  juce::StringArray sceneSetupFilePaths;
   void refreshSceneButtons();
   void showSetupBuilderOverlay();
 
