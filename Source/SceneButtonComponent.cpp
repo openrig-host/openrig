@@ -1,7 +1,7 @@
 #include "SceneButtonComponent.h"
 #include "RigLibrary.h"
 
-namespace OpenRig {
+namespace Fanfare {
 
 SceneButtonComponent::SceneButtonComponent(int index, const juce::String& name)
     : juce::Button("SceneButton_" + juce::String(index)), sceneIndex(index), defaultName(name) {
@@ -130,4 +130,4 @@ void SceneButtonComponent::paintButton(juce::Graphics& g, bool shouldDrawButtonA
     }
 }
 
-} // namespace OpenRig
+} // namespace Fanfare

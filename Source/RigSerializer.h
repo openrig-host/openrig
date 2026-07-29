@@ -1,10 +1,10 @@
 #pragma once
 
 #include <JuceHeader.h>
-#include "OpenRigConstants.h"
+#include "FanfareConstants.h"
 #include "RigModel.h"
 
-namespace OpenRig {
+namespace Fanfare {
 
 /**
     RigSerializer
@@ -160,7 +160,7 @@ public:
         // 3. Global default MIDI channel (1 = legacy behaviour).
         if (auto* obj = rig.getDynamicObject()) {
             if (!obj->hasProperty("defaultMidiChannel"))
-                obj->setProperty("defaultMidiChannel", OpenRigConstants::kDefaultMidiChannel);
+                obj->setProperty("defaultMidiChannel", FanfareConstants::kDefaultMidiChannel);
         }
 
         // Stamp the new version so a re-save persists the migration.
@@ -179,7 +179,7 @@ public:
 
     /** Ensure the on-disk OpenRig library layout exists. */
     static void ensureLibraryLayout() {
-        using namespace OpenRigConstants;
+        using namespace FanfareConstants;
         getAppDirectory().createDirectory();
         getSongsDirectory().createDirectory();
         getSetsDirectory().createDirectory();
@@ -188,7 +188,7 @@ public:
     }
 
     // ----- Song-level (de)serialization -----
-    // These bridge the engine's `var` rig representation and the OpenRig::Song
+    // These bridge the engine's `var` rig representation and the Fanfare::Song
     // POD model used by the async RigBuilder/RigTransitioner path.
 
     /** Read, validate, migrate and convert a rig file into a Song. */
@@ -222,4 +222,4 @@ private:
     }
 };
 
-} // namespace OpenRig
+} // namespace Fanfare

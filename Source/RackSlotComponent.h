@@ -4,7 +4,7 @@
 #include "ChannelStripProcessor.h"
 #include "LEDIndicator.h"
 #include "MidiLearnBus.h"
-#include "OpenRigConstants.h"
+#include "FanfareConstants.h"
 #include "RackSlot.h"
 #include "BoutiqueLookAndFeel.h"
 #include <JuceHeader.h>
@@ -120,7 +120,7 @@ private:
   int prevHighNote = -1;
   bool cachedHasAnyPlugin = false;
 
-  using LearnBus = OpenRig::MidiLearnBus;
+  using LearnBus = Fanfare::MidiLearnBus;
   void armFaderLearn(bool isFoh);
   void resetLearnButtonVisuals();
   juce::TextButton *armedLearnBtn = nullptr;

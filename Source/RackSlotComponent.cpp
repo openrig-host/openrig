@@ -537,7 +537,7 @@ void RackSlotComponent::armFaderLearn(bool isFoh) {
 
   RackSlot *s = &slot;
   bool foh = isFoh;
-  OpenRig::LearnTarget t;
+  Fanfare::LearnTarget t;
   t.isFader = true;
   t.isFohFader = isFoh;
   t.slotIndex = slotIndex;
@@ -572,9 +572,9 @@ void RackSlotComponent::armFaderLearn(bool isFoh) {
 void RackSlotComponent::timerCallback() {
   float decay = 0.85f;
 
-  float peakL = OpenRigLog::amplitudeToLogScale(slot.getLeftPeak() *
+  float peakL = FanfareLog::amplitudeToLogScale(slot.getLeftPeak() *
                                                 slot.getChannelLevel());
-  float peakR = OpenRigLog::amplitudeToLogScale(slot.getRightPeak() *
+  float peakR = FanfareLog::amplitudeToLogScale(slot.getRightPeak() *
                                                 slot.getChannelLevel());
 
   curLeft = std::max(peakL, curLeft * decay);
@@ -1139,7 +1139,7 @@ void RackSlotComponent::showRenameDialog() {
 }
 
 void RackSlotComponent::showLoadStripMenu() {
-  auto stripsDir = OpenRigConstants::getAppDirectory().getChildFile("strips");
+  auto stripsDir = FanfareConstants::getAppDirectory().getChildFile("strips");
   juce::Array<juce::File> stripFiles;
   if (stripsDir.isDirectory())
     stripsDir.findChildFiles(stripFiles, juce::File::findFiles, false,
@@ -1270,7 +1270,7 @@ void RackSlotComponent::updateOutputSelector() {
   outputSelector.clear(juce::dontSendNotification);
   outputSelector.addItem("Main FOH/IEM", 1);
 
-  int numSlots = OpenRigConstants::kNumSlots;
+  int numSlots = FanfareConstants::kNumSlots;
   if (slotIndex >= 0 && slotIndex < numSlots) {
     for (int i = slotIndex + 1; i < numSlots; ++i) {
       juce::String name = "Slot " + juce::String(i + 1);

@@ -1,6 +1,6 @@
 #pragma once
 #include <JuceHeader.h>
-#include "OpenRigConstants.h"
+#include "FanfareConstants.h"
 
 struct SetupMidiTrigger {
     bool isProgramChange = true;
@@ -21,7 +21,7 @@ public:
     }
     
     void load() {
-        auto file = OpenRigConstants::getAppDirectory().getChildFile("setup_midi_triggers.json");
+        auto file = FanfareConstants::getAppDirectory().getChildFile("setup_midi_triggers.json");
         if (file.existsAsFile()) {
             auto varObj = juce::JSON::parse(file);
             if (auto* obj = varObj.getDynamicObject()) {
@@ -42,7 +42,7 @@ public:
     }
     
     void save() {
-        auto file = OpenRigConstants::getAppDirectory().getChildFile("setup_midi_triggers.json");
+        auto file = FanfareConstants::getAppDirectory().getChildFile("setup_midi_triggers.json");
         file.getParentDirectory().createDirectory();
         
         auto* obj = new juce::DynamicObject();

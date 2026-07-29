@@ -17,7 +17,7 @@ public:
 
 class GainReductionMeter : public juce::Component, public juce::Timer {
 public:
-  GainReductionMeter(OpenRigDSP::SimpleComp &c) : comp(c) { startTimer(30); }
+  GainReductionMeter(FanfareDSP::SimpleComp &c) : comp(c) { startTimer(30); }
 
   void timerCallback() override {
     float targetGr = comp.getGainReductionDb();
@@ -71,7 +71,7 @@ public:
   }
 
 private:
-  OpenRigDSP::SimpleComp &comp;
+  FanfareDSP::SimpleComp &comp;
   float lastGr = 0.0f;
 };
 

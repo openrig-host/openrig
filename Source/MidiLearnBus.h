@@ -4,7 +4,7 @@
 #include <functional>
 #include <atomic>
 
-namespace OpenRig {
+namespace Fanfare {
 
 class MidiLearnBus {
 public:
@@ -133,4 +133,4 @@ private:
 // Backward-compatible alias
 using LearnTarget = MidiLearnBus::Target;
 
-} // namespace OpenRig
+} // namespace Fanfare

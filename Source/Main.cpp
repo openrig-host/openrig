@@ -16,13 +16,13 @@
 #endif
 
 //==============================================================================
-class OpenRigApplication : public juce::JUCEApplication {
+class FanfareApplication : public juce::JUCEApplication {
 public:
   //==============================================================================
-  OpenRigApplication() {}
+  FanfareApplication() {}
 
   const juce::String getApplicationName() override {
-    return "OpenRig";
+    return "Fanfare";
   }
   const juce::String getApplicationVersion() override {
     return ProjectInfo::versionString;
@@ -39,16 +39,16 @@ public:
 #endif
 
 #ifdef _WIN32
-    OpenRigLog::setupCrashHandlers();
+    FanfareLog::setupCrashHandlers();
 #endif
-    juce::SystemStats::setApplicationCrashHandler(OpenRigLog::crashHandler);
+    juce::SystemStats::setApplicationCrashHandler(FanfareLog::crashHandler);
 
     mainWindow.reset(new MainWindow(getApplicationName()));
   }
 
   void shutdown() override {
-    LOG_INFO("OpenRig shutting down cleanly. Flushing log and terminating process...");
-    OpenRigLog::flushLog();
+    LOG_INFO("Fanfare shutting down cleanly. Flushing log and terminating process...");
+    FanfareLog::flushLog();
     mainWindow = nullptr; // (deletes our window)
 
 #ifdef _WIN32
@@ -150,7 +150,7 @@ static void runDispatchLoopSEH() {
 
 // Factory for the application instance.
 static juce::JUCEApplicationBase *juce_CreateApplication() {
-  return new OpenRigApplication();
+  return new FanfareApplication();
 }
 
 #ifdef _WIN32
@@ -173,5 +173,5 @@ extern "C" int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR lpCmdLine, int) {
   return 0;
 }
 #else
-START_JUCE_APPLICATION(OpenRigApplication)
+START_JUCE_APPLICATION(FanfareApplication)
 #endif

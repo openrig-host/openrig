@@ -4,7 +4,7 @@
 #include <vector>
 #include <set>
 
-namespace OpenRig {
+namespace Fanfare {
 
 struct PluginState {
     juce::String name;
@@ -173,4 +173,4 @@ struct Set {
     std::vector<Song> songs;
 };
 
-} // namespace OpenRig
+} // namespace Fanfare

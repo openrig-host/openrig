@@ -84,14 +84,14 @@ public:
   std::function<void(const juce::File &)> onSetupDoubleClicked;
   std::function<void(const juce::File &)> onSetDoubleClicked;
 
-  OpenRig::SetlistPanel* getSetlistPanel() { return setlistPanel.get(); }
+  Fanfare::SetlistPanel* getSetlistPanel() { return setlistPanel.get(); }
 
 private:
   juce::TextEditor searchEditor;
   juce::TextButton newFolderBtn;
   std::unique_ptr<juce::TabbedComponent> tabs;
   std::unique_ptr<LibraryList> setsList, setupsList, stripsList;
-  std::unique_ptr<OpenRig::SetlistPanel> setlistPanel;
+  std::unique_ptr<Fanfare::SetlistPanel> setlistPanel;
 
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(LibraryPanel)
 };

@@ -1,6 +1,6 @@
 #include "RigSerializer.h"
 
-namespace OpenRig {
+namespace Fanfare {
 
 bool RigSerializer::readSongFromFile(const juce::File& file, Song& outSong) {
     LoadResult result = load(file);
@@ -31,9 +31,9 @@ bool RigSerializer::varToSong(const juce::var& rig, Song& out) {
     out.fohMasterLevel = (float)rig.getProperty("fohMasterLevel", 1.0);
     out.iemMasterLevel = (float)rig.getProperty("iemMasterLevel", 1.0);
     out.fohOutputOffset = rig.getProperty("fohOutputOffset",
-                                          OpenRigConstants::kDefaultFohOutputOffset);
+                                          FanfareConstants::kDefaultFohOutputOffset);
     out.iemOutputOffset = rig.getProperty("iemOutputOffset",
-                                          OpenRigConstants::kDefaultIemOutputOffset);
+                                          FanfareConstants::kDefaultIemOutputOffset);
 
     auto readPluginState = [](const juce::var& v) {
         PluginState ps;
@@ -667,7 +667,7 @@ bool RigSerializer::readStripFromFile(const juce::File& file, SongSlot& outSlot)
         if (auto* arr = mp3Obj->getProperty("tracks").getArray()) {
             for (const auto& tv : *arr) {
                 if (auto* to = tv.getDynamicObject()) {
-                    OpenRig::Mp3TrackSettings ts;
+                    Fanfare::Mp3TrackSettings ts;
                     ts.path = to->hasProperty("path") ? to->getProperty("path").toString() : "";
                     ts.title = to->hasProperty("title") ? to->getProperty("title").toString() : "";
                     ts.duration = to->hasProperty("duration") ? (double)to->getProperty("duration") : 0.0;
@@ -729,4 +729,4 @@ bool RigSerializer::readStripFromFile(const juce::File& file, SongSlot& outSlot)
     return true;
 }
 
-} // namespace OpenRig
+} // namespace Fanfare

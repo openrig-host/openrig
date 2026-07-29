@@ -1,6 +1,6 @@
 #pragma once
 
-#include "OpenRigConstants.h"
+#include "FanfareConstants.h"
 #include "JuceHeader.h"
 #include <juce_dsp/juce_dsp.h>
 #include <atomic>
@@ -11,7 +11,7 @@
 // Dependency-free implementation of Gate, EQ, and Compressor
 // ==============================================================================
 
-namespace OpenRigDSP {
+namespace FanfareDSP {
 
 // Simple math constants
 constexpr float PI = 3.14159265359f;
@@ -626,4 +626,4 @@ private:
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ChannelStripProcessor);
 };
 
-} // namespace OpenRigDSP
+} // namespace FanfareDSP

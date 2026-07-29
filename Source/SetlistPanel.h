@@ -5,7 +5,7 @@
 #include "BoutiqueLookAndFeel.h"
 #include "ThemeManager.h"
 
-namespace OpenRig {
+namespace Fanfare {
 
 class SetlistPanel : public juce::Component,
                      public juce::ListBoxModel,
@@ -192,4 +192,4 @@ private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SetlistPanel)
 };
 
-} // namespace OpenRig
+} // namespace Fanfare

@@ -1,7 +1,7 @@
 #include "QueueButtonComponent.h"
 #include "RigLibrary.h"
 
-namespace OpenRig {
+namespace Fanfare {
 
 QueueButtonComponent::QueueButtonComponent(int index)
     : juce::Button("QueueButton_" + juce::String(index)), slotIndex(index) {
@@ -148,4 +148,4 @@ void QueueButtonComponent::paintButton(juce::Graphics& g, bool shouldDrawButtonA
     g.drawText(title, titleArea, juce::Justification::centred, true);
 }
 
-} // namespace OpenRig
+} // namespace Fanfare

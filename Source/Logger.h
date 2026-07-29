@@ -16,7 +16,7 @@
 
 inline std::atomic<uint32_t> g_audioThreadId{0};
 
-namespace OpenRigLog {
+namespace FanfareLog {
 
 struct ProcessMemoryStats {
   size_t workingSetBytes = 0;
@@ -53,7 +53,7 @@ inline Level currentMinLevel = Level::Info;
 inline juce::File getLogFile() {
   static const juce::File f =
       juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
-          .getChildFile("OpenRig")
+          .getChildFile("Fanfare")
           .getChildFile("OpenRig_log.txt");
   return f;
 }
@@ -158,18 +158,18 @@ inline void flushLog() {
 }
 
 // Convenience macros
-#define LOG_DEBUG(msg) OpenRigLog::log(OpenRigLog::Level::Debug, msg)
-#define LOG_INFO(msg) OpenRigLog::log(OpenRigLog::Level::Info, msg)
-#define LOG_WARN(msg) OpenRigLog::log(OpenRigLog::Level::Warning, msg)
-#define LOG_ERROR(msg) OpenRigLog::log(OpenRigLog::Level::Error, msg)
+#define LOG_DEBUG(msg) FanfareLog::log(FanfareLog::Level::Debug, msg)
+#define LOG_INFO(msg) FanfareLog::log(FanfareLog::Level::Info, msg)
+#define LOG_WARN(msg) FanfareLog::log(FanfareLog::Level::Warning, msg)
+#define LOG_ERROR(msg) FanfareLog::log(FanfareLog::Level::Error, msg)
 
 /**
  * Logarithmic scale for VU meters
  * Maps linear amplitude to 0..1 range using a -60dB floor
  */
-} // namespace OpenRigLog
+} // namespace FanfareLog
 
-using OpenRigLog::logToFile;
+using FanfareLog::logToFile;
 
 /**
  * Logarithmic scale for VU meters
@@ -421,7 +421,7 @@ inline void crashHandler(void *exceptionInfo) {
 
 #endif
 
-  OpenRigLog::flushLog();
+  FanfareLog::flushLog();
 #ifdef _WIN32
   TerminateProcess(GetCurrentProcess(), 1);
 #endif
@@ -460,7 +460,7 @@ inline void setupCrashHandlers() {
 }
 #endif
 
-namespace OpenRigLog {
+namespace FanfareLog {
   using ::g_audioThreadId;
   using ::amplitudeToLogScale;
   using ::safeExecutePluginCall;

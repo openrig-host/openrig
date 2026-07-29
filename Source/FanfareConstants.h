@@ -1,11 +1,11 @@
 #pragma once
 
 // ==============================================================================
-// OpenRig Constants
+// Fanfare Constants
 // Central location for all magic numbers and configuration values
 // ==============================================================================
 
-namespace OpenRigConstants {
+namespace FanfareConstants {
 
 // --- Slot Configuration ---
 constexpr int kNumSlots = 12;
@@ -66,7 +66,7 @@ constexpr int kCk88Drawbar1CC = 86;    // 1' drawbar
 // --- Consolidated Paths ---
 inline juce::File getAppDirectory() {
     return juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
-        .getChildFile("OpenRig");
+        .getChildFile("Fanfare");
 }
 inline juce::File getVst3Directory() {
 #if JUCE_MAC
@@ -94,5 +94,5 @@ inline juce::File getSettingsDirectory() {
     return getAppDirectory().getChildFile("settings");
 }
 
-} // namespace OpenRigConstants
+} // namespace FanfareConstants
 

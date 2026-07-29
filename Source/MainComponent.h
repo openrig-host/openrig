@@ -17,8 +17,8 @@
 #include "MidiMonitorComponent.h"
 #include "NoteRangeComponent.h"
 #include "IMidiNoteLearner.h"
-#include "OpenRigConstants.h"
-#include "OpenRigEngine.h"
+#include "FanfareConstants.h"
+#include "FanfareEngine.h"
 #include "RackSlotComponent.h"
 #include "RigLibrary.h"
 #include "QueueButtonComponent.h"
@@ -72,7 +72,7 @@ public:
 private:
   //==============================================================================
   juce::AudioDeviceManager deviceManager;
-  OpenRigEngine engine;
+  FanfareEngine engine;
   BoutiqueLookAndFeel boutiqueLookAndFeel;
   juce::TooltipWindow tooltipWindow{this};
 
@@ -107,11 +107,11 @@ private:
   int currentSetupIndex = 0;
 
   // Async rig transitions (Pillar B); CC-learn uses the MidiLearnBus singleton
-  std::unique_ptr<OpenRig::RigTransitioner> transitioner;
+  std::unique_ptr<Fanfare::RigTransitioner> transitioner;
 
   // Stage Queue buttons - each links to a JSON rig file
-  static constexpr int numSetupButtons = OpenRigConstants::kNumSetupButtons;
-  juce::OwnedArray<OpenRig::QueueButtonComponent> queueButtons;
+  static constexpr int numSetupButtons = FanfareConstants::kNumSetupButtons;
+  juce::OwnedArray<Fanfare::QueueButtonComponent> queueButtons;
   juce::String setupFilePaths[numSetupButtons];
   juce::TextButton saveSetBtn{"SAVE SET"};
   juce::TextButton loadSetBtn{"LOAD SET"};
@@ -122,7 +122,7 @@ private:
   juce::TextButton saveSceneBtn{"SAVE SCENE"};
   juce::TextButton renameSceneBtn{"RENAME"};
   juce::TextButton deleteSceneBtn{"DELETE"};
-  juce::OwnedArray<OpenRig::SceneButtonComponent> sceneButtons;
+  juce::OwnedArray<Fanfare::SceneButtonComponent> sceneButtons;
   juce::StringArray sceneSetupFilePaths;
   void refreshSceneButtons();
   void showSetupBuilderOverlay();
@@ -141,7 +141,7 @@ private:
   void saveSetToFile();
   void loadSetFromFile();
   void applySetlistFromFile(const juce::File &file);
-  void showScanResultsDialog(const OpenRigEngine::ScanResults &results);
+  void showScanResultsDialog(const FanfareEngine::ScanResults &results);
   void showMasterPluginMenu(bool isFoh, int chainIndex);
   void openMasterPluginEditor(bool isFoh, int chainIndex);
   void updatePreloadStatus();
@@ -274,7 +274,7 @@ private:
       juce::String setupFile = SetupMidiTriggers::getInstance().findSetupForTrigger(true, pgNum, channel);
       if (setupFile.isNotEmpty()) {
         juce::MessageManager::callAsync([this, setupFile]() {
-          loadRigFromFile(OpenRig::RigLibrary::getSongsDirectory().getChildFile(setupFile));
+          loadRigFromFile(Fanfare::RigLibrary::getSongsDirectory().getChildFile(setupFile));
         });
         return;
       }
@@ -305,7 +305,7 @@ private:
       juce::String setupFile = SetupMidiTriggers::getInstance().findSetupForTrigger(false, ccNum, channel);
       if (setupFile.isNotEmpty()) {
         juce::MessageManager::callAsync([this, setupFile]() {
-          loadRigFromFile(OpenRig::RigLibrary::getSongsDirectory().getChildFile(setupFile));
+          loadRigFromFile(Fanfare::RigLibrary::getSongsDirectory().getChildFile(setupFile));
         });
         return;
       }
@@ -317,7 +317,7 @@ private:
       int ccVal = msg.getControllerValue();
       int channel = msg.getChannel();
 
-      if (OpenRig::MidiLearnBus::getInstance().handleMidiCC(ccNum, ccVal, channel)) {
+      if (Fanfare::MidiLearnBus::getInstance().handleMidiCC(ccNum, ccVal, channel)) {
         return; // Intercepted by learn mode
       }
     }

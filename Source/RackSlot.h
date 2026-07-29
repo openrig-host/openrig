@@ -270,7 +270,7 @@ public:
                   }
                 }
 
-                OpenRigLog::safeExecutePluginCall([&]() {
+                FanfareLog::safeExecutePluginCall([&]() {
                   plugin->processBlock(scratchBuffer, filteredMidiScratch);
                 }, "processBlock (" + plugin->getName() + ")");
 
@@ -281,14 +281,14 @@ public:
                     slotBuffer.addFrom(ch, 0, scratchBuffer, ch, 0, slotBuffer.getNumSamples());
                 }
               } else {
-                OpenRigLog::safeExecutePluginCall([&]() {
+                FanfareLog::safeExecutePluginCall([&]() {
                   plugin->processBlock(slotBuffer, midiMessages);
                 }, "processBlock (" + plugin->getName() + ")");
               }
               consecutivePluginErrors.store(0);
             } catch (...) {
               int errs = consecutivePluginErrors.fetch_add(1) + 1;
-              if (errs >= OpenRigConstants::kMaxPluginExceptionsBeforeBypass) {
+              if (errs >= FanfareConstants::kMaxPluginExceptionsBeforeBypass) {
                 bypassed.store(true);
                 logToFile("ERROR: Slot '" + slotName + "' plugin '" + plugin->getName() +
                           "' threw " + juce::String(errs) +
@@ -500,7 +500,7 @@ public:
   bool isInputActive() const { return inputActive.load(); }
 
   // Channel Strip Accessors
-  OpenRigDSP::ChannelStripProcessor &getStrip() { return strip; }
+  FanfareDSP::ChannelStripProcessor &getStrip() { return strip; }
 
   // Aux Sends & IEM Offset
   void setAux1Send(float level) {
@@ -1002,7 +1002,7 @@ private:
   SamplerProcessor sampler;
   Mp3PlayerProcessor mp3Player;
 
-  OpenRigDSP::ChannelStripProcessor strip;
+  FanfareDSP::ChannelStripProcessor strip;
 
   juce::SpinLock pluginLock;
   juce::SpinLock injectedMidiLock;

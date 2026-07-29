@@ -2,11 +2,11 @@
 
 #include <JuceHeader.h>
 #include "Logger.h"
-#include "OpenRigEngine.h"
+#include "FanfareEngine.h"
 #include "RigBuilder.h"
 #include "RigSerializer.h"
 
-namespace OpenRig {
+namespace Fanfare {
 
 /**
     RigTransitioner
@@ -37,7 +37,7 @@ public:
         std::function<void(bool ok, juce::String message, int builtCount)> onComplete;
     };
 
-    RigTransitioner(OpenRigEngine &e)
+    RigTransitioner(FanfareEngine &e)
         : juce::Thread("OpenRig Transitioner"), engine(e) {}
 
     ~RigTransitioner() override { stopTransition(); }
@@ -170,7 +170,7 @@ private:
         }
     }
 
-    OpenRigEngine &engine;
+    FanfareEngine &engine;
     Callbacks callbacks;
 
     juce::File sourceFile;
@@ -180,4 +180,4 @@ private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(RigTransitioner)
 };
 
-} // namespace OpenRig
+} // namespace Fanfare

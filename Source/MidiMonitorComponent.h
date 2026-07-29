@@ -4,7 +4,7 @@
 #include "BoutiqueLookAndFeel.h"
 #include "MidiLearnBus.h"
 #include "ThemeManager.h"
-#include "OpenRigConstants.h"
+#include "FanfareConstants.h"
 
 class MidiMonitorComponent : public juce::Component, public juce::Timer {
 public:
@@ -53,7 +53,7 @@ public:
       pushEvent(ev);
     } else if (msg.isController()) {
       MidiEvent ev;
-      bool armed = OpenRig::MidiLearnBus::getInstance().isArmed();
+      bool armed = Fanfare::MidiLearnBus::getInstance().isArmed();
       juce::String text = "CC" + juce::String(msg.getControllerNumber()).paddedLeft('0', 3) +
                           " = " + juce::String(msg.getControllerValue()).paddedLeft('0', 3);
       if (armed) {
@@ -188,7 +188,7 @@ public:
 
     // Poll the learn bus for armed/capture annotations.
     {
-      auto &bus = OpenRig::MidiLearnBus::getInstance();
+      auto &bus = Fanfare::MidiLearnBus::getInstance();
       juce::String newArmed = bus.armedLabel();
       auto newCap = bus.lastCapture();
       if (newArmed != armedLabelNow ||
@@ -222,7 +222,7 @@ private:
   std::vector<MidiEvent> displayEvents;
 
   juce::String armedLabelNow;
-  OpenRig::MidiLearnBus::Capture lastCap;
+  Fanfare::MidiLearnBus::Capture lastCap;
 
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MidiMonitorComponent)
 };

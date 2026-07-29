@@ -56,20 +56,20 @@ public:
     }
 
     void saveLastFolderToSettings() {
-        auto appData = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory).getChildFile("OpenRig");
+        auto appData = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory).getChildFile("Fanfare");
         if (!appData.exists()) appData.createDirectory();
         auto settingsFile = appData.getChildFile("mp3_last_folder.txt");
         settingsFile.replaceWithText(lastFolderPath);
     }
 
     void loadLastFolderFromSettings() {
-        auto settingsFile = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory).getChildFile("OpenRig").getChildFile("mp3_last_folder.txt");
+        auto settingsFile = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory).getChildFile("Fanfare").getChildFile("mp3_last_folder.txt");
         if (settingsFile.existsAsFile()) {
             lastFolderPath = settingsFile.loadFileAsString().trim();
         }
     }
 
-    OpenRigDSP::SimpleComp levelerL, levelerR;
+    FanfareDSP::SimpleComp levelerL, levelerR;
     std::atomic<bool> levelerEnabled{true};
 
     void prepare(double sampleRate, int maxBlockSize = 8192) {
@@ -97,7 +97,7 @@ public:
         levelerEnabled.store(enabled);
     }
     bool isLevelerEnabled() const { return levelerEnabled.load(); }
-    OpenRigDSP::SimpleComp& getLevelerReference() { return levelerL; }
+    FanfareDSP::SimpleComp& getLevelerReference() { return levelerL; }
 
     void processBlock(juce::AudioBuffer<float>& buffer) {
         if (!playing.load()) return;

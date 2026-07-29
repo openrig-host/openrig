@@ -106,19 +106,19 @@ MainComponent::MainComponent() {
   }
 #endif
   // Initialize MIDI collector with default rate
-  midiCollector.reset(OpenRigConstants::kDefaultSampleRate);
+  midiCollector.reset(FanfareConstants::kDefaultSampleRate);
 
   // One-time, non-destructive migration of legacy scattered rig files into
   // the consolidated %APPDATA%/OpenRig library layout.
-  OpenRig::RigLibrary::migrateLegacyLibraryIfNeeded();
-  OpenRig::RigSerializer::ensureLibraryLayout();
+  Fanfare::RigLibrary::migrateLegacyLibraryIfNeeded();
+  Fanfare::RigSerializer::ensureLibraryLayout();
 
   // Async rig transitioner (Pillar B: trustworthy, non-freezing song switches)
-  transitioner = std::make_unique<OpenRig::RigTransitioner>(engine);
+  transitioner = std::make_unique<Fanfare::RigTransitioner>(engine);
 
   // Listen for audio/MIDI/setlist changes
   deviceManager.addChangeListener(this);
-  OpenRig::SetlistManager::getInstance().addChangeListener(this);
+  Fanfare::SetlistManager::getInstance().addChangeListener(this);
 
   // Load persisted theme before applying the look and feel so the LnF reflects
   // the user's saved choice on first paint.
@@ -153,7 +153,7 @@ MainComponent::MainComponent() {
     resized();
   };
 
-  OpenRig::SetlistManager::getInstance().setEngine(&engine);
+  Fanfare::SetlistManager::getInstance().setEngine(&engine);
 
   libraryPanel = std::make_unique<LibraryPanel>();
   addAndMakeVisible(libraryPanel.get());
@@ -166,9 +166,9 @@ MainComponent::MainComponent() {
   if (auto* slp = libraryPanel->getSetlistPanel()) {
     slp->onAddCurrentRequested = [this] {
       juce::String currentSetupName = setupNameLabel.getText();
-      juce::File file = OpenRig::RigLibrary::getSongsDirectory().getChildFile(currentSetupName + ".json");
+      juce::File file = Fanfare::RigLibrary::getSongsDirectory().getChildFile(currentSetupName + ".json");
       if (file.existsAsFile()) {
-        OpenRig::SetlistManager::getInstance().addSetup(file);
+        Fanfare::SetlistManager::getInstance().addSetup(file);
       } else {
         juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "Setlist", "Please save the current rig first before adding it to the setlist.");
       }
@@ -179,9 +179,9 @@ MainComponent::MainComponent() {
   }
 
   // Final setup
-  setSize(OpenRigConstants::kDefaultWindowWidth,
-          OpenRigConstants::kDefaultWindowHeight);
-  startTimer(OpenRigConstants::kTimerIntervalMs);
+  setSize(FanfareConstants::kDefaultWindowWidth,
+          FanfareConstants::kDefaultWindowHeight);
+  startTimer(FanfareConstants::kTimerIntervalMs);
 
   // Setup MIDI inputs
   auto midiInputs = juce::MidiInput::getAvailableDevices();
@@ -208,7 +208,7 @@ MainComponent::~MainComponent() {
     transitioner->stopTransition();
   activePluginWindows.clear();
   deviceManager.removeChangeListener(this);
-  OpenRig::SetlistManager::getInstance().removeChangeListener(this);
+  Fanfare::SetlistManager::getInstance().removeChangeListener(this);
   ThemeManager::getInstance().removeChangeListener(this);
   saveAudioSettings();
   deviceManager.removeMidiInputDeviceCallback({}, this);
@@ -443,7 +443,7 @@ void MainComponent::setupSlotComponents() {
     comp->onSaveStrip = [this, i] {
       fileChooser = std::make_unique<juce::FileChooser>(
           "Save Strip As...",
-          OpenRigConstants::getAppDirectory().getChildFile("strips"),
+          FanfareConstants::getAppDirectory().getChildFile("strips"),
           "*.orstrip");
       fileChooser->launchAsync(
           juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles,
@@ -468,8 +468,8 @@ void MainComponent::setupSlotComponents() {
               }
           }
           auto loadPreset = [this, i, comp, selectedFile] {
-              OpenRig::SongSlot loadedSlot;
-              if (OpenRig::RigSerializer::readStripFromFile(selectedFile, loadedSlot)) {
+              Fanfare::SongSlot loadedSlot;
+              if (Fanfare::RigSerializer::readStripFromFile(selectedFile, loadedSlot)) {
                   engine.loadSlotPreset(i, loadedSlot);
                   comp->repaint();
               }
@@ -494,7 +494,7 @@ void MainComponent::setupSlotComponents() {
       } else {
           fileChooser = std::make_unique<juce::FileChooser>(
               "Load Strip...",
-              OpenRigConstants::getAppDirectory().getChildFile("strips"),
+              FanfareConstants::getAppDirectory().getChildFile("strips"),
               "*.orstrip");
           fileChooser->launchAsync(
               juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
@@ -502,8 +502,8 @@ void MainComponent::setupSlotComponents() {
                 auto file = fc.getResult();
                 if (file == juce::File{})
                   return;
-                OpenRig::SongSlot loadedSlot;
-                if (OpenRig::RigSerializer::readStripFromFile(file, loadedSlot)) {
+                Fanfare::SongSlot loadedSlot;
+                if (Fanfare::RigSerializer::readStripFromFile(file, loadedSlot)) {
                     engine.loadSlotPreset(i, loadedSlot);
                     comp->repaint();
                 }
@@ -518,8 +518,8 @@ void MainComponent::setupSlotComponents() {
 
     // Drag-and-drop strip preset from the library sidebar
     comp->onLoadPresetFile = [this, i, comp](const juce::File &file) {
-      OpenRig::SongSlot loadedSlot;
-      if (OpenRig::RigSerializer::readStripFromFile(file, loadedSlot))
+      Fanfare::SongSlot loadedSlot;
+      if (Fanfare::RigSerializer::readStripFromFile(file, loadedSlot))
         engine.loadSlotPreset(i, loadedSlot);
       comp->repaint();
     };
@@ -624,7 +624,7 @@ void MainComponent::setupHeaderButtons() {
     scanButton.setEnabled(false);
     engine.scanForPlugins();
   };
-  engine.onScanFinished = [this](OpenRigEngine::ScanResults results) {
+  engine.onScanFinished = [this](FanfareEngine::ScanResults results) {
     scanButton.setButtonText("SCAN FOR PLUGINS");
     scanButton.setEnabled(true);
     engine.applyScanResults(results.newPlugins, results.missingPlugins);
@@ -660,8 +660,8 @@ void MainComponent::setupHeaderButtons() {
   audioSettingsBtn.setTooltip("Audio & MIDI Setup: Low-latency driver configuration, sample rates & MIDI routing.");
   audioSettingsBtn.onClick = [this] {
     auto *selector = new juce::AudioDeviceSelectorComponent(
-        deviceManager, 0, OpenRigConstants::kDefaultInputChannels, 0,
-        OpenRigConstants::kDefaultOutputChannels, true, true, true, false);
+        deviceManager, 0, FanfareConstants::kDefaultInputChannels, 0,
+        FanfareConstants::kDefaultOutputChannels, true, true, true, false);
     selector->setSize(500, 400);
     juce::DialogWindow::LaunchOptions options;
     options.content.setOwned(selector);
@@ -775,7 +775,7 @@ void MainComponent::setupHeaderButtons() {
   saveBtn.onClick = [this] {
     auto chooser = std::make_shared<juce::FileChooser>(
         "Save Rig Configuration",
-        OpenRig::RigLibrary::getSongsDirectory(),
+        Fanfare::RigLibrary::getSongsDirectory(),
         "*.json");
 
     chooser->launchAsync(
@@ -788,7 +788,7 @@ void MainComponent::setupHeaderButtons() {
               file = file.withFileExtension(".json");
 
             juce::String json = engine.exportRigToJson();
-            if (OpenRig::RigSerializer::save(file, json)) {
+            if (Fanfare::RigSerializer::save(file, json)) {
               LOG_INFO("Rig saved to: " + file.getFullPathName());
             } else {
               LOG_ERROR("Failed to save rig to: " + file.getFullPathName());
@@ -803,7 +803,7 @@ void MainComponent::setupHeaderButtons() {
   loadBtn.onClick = [this] {
     auto chooser = std::make_shared<juce::FileChooser>(
         "Load Rig Configuration",
-        OpenRig::RigLibrary::getSongsDirectory(),
+        Fanfare::RigLibrary::getSongsDirectory(),
         "*.json");
 
     chooser->launchAsync(juce::FileBrowserComponent::openMode |
@@ -820,7 +820,7 @@ void MainComponent::setupHeaderButtons() {
   prevSetlistBtn.setColour(juce::TextButton::buttonColourId, ThemeManager::get(Theme::Role::panelAlt));
   prevSetlistBtn.setTooltip("Previous Song in Setlist");
   prevSetlistBtn.onClick = [this] {
-      auto& sm = OpenRig::SetlistManager::getInstance();
+      auto& sm = Fanfare::SetlistManager::getInstance();
       if (sm.hasPrev()) {
           int idx = sm.getActiveIndex() - 1;
           loadRigFromFile(sm.getSetups()[idx], idx);
@@ -831,7 +831,7 @@ void MainComponent::setupHeaderButtons() {
   nextSetlistBtn.setColour(juce::TextButton::buttonColourId, ThemeManager::get(Theme::Role::panelAlt));
   nextSetlistBtn.setTooltip("Next Song in Setlist (Background Preloaded)");
   nextSetlistBtn.onClick = [this] {
-      auto& sm = OpenRig::SetlistManager::getInstance();
+      auto& sm = Fanfare::SetlistManager::getInstance();
       if (sm.hasNext()) {
           int idx = sm.getActiveIndex() + 1;
           loadRigFromFile(sm.getSetups()[idx], idx);
@@ -890,13 +890,13 @@ void MainComponent::setupSetupButtons() {
 
   queueButtons.clear();
   for (int i = 0; i < numSetupButtons; ++i) {
-    auto* btn = new OpenRig::QueueButtonComponent(i);
+    auto* btn = new Fanfare::QueueButtonComponent(i);
     btn->onClick = [this, i] { loadRigFile(i); };
     btn->onFileDropped = [this](int slotIdx, const juce::File& file) {
       if (slotIdx >= 0 && slotIdx < numSetupButtons) {
         setupFilePaths[slotIdx] = file.getFullPathName();
         saveButtonMappings();
-        auto& sm = OpenRig::SetlistManager::getInstance();
+        auto& sm = Fanfare::SetlistManager::getInstance();
         sm.setSlotSetup(slotIdx, file);
         updatePreloadStatus();
       }
@@ -906,7 +906,7 @@ void MainComponent::setupSetupButtons() {
       if (slotIdx >= 0 && slotIdx < numSetupButtons) {
         setupFilePaths[slotIdx] = "";
         saveButtonMappings();
-        auto& sm = OpenRig::SetlistManager::getInstance();
+        auto& sm = Fanfare::SetlistManager::getInstance();
         sm.setSlotSetup(slotIdx, juce::File{});
         updatePreloadStatus();
       }
@@ -982,7 +982,7 @@ void MainComponent::refreshSceneButtons() {
     sceneSetupFilePaths.add("");
 
   for (int i = 0; i < numScenes; ++i) {
-    auto *btn = new OpenRig::SceneButtonComponent(i, engine.getSceneName(i));
+    auto *btn = new Fanfare::SceneButtonComponent(i, engine.getSceneName(i));
 
     juce::File assignedFile(sceneSetupFilePaths[i]);
     if (assignedFile.existsAsFile()) {
@@ -1047,7 +1047,7 @@ void MainComponent::refreshSceneButtons() {
         [this, sceneIdx](int result) {
           if (result == 1) {
             auto fileChooser = std::make_shared<juce::FileChooser>(
-              "Select Setup File...", OpenRig::RigLibrary::getSongsDirectory(), "*.json");
+              "Select Setup File...", Fanfare::RigLibrary::getSongsDirectory(), "*.json");
             fileChooser->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
               [this, sceneIdx, fileChooser](const juce::FileChooser& fc) {
                 auto file = fc.getResult();
@@ -1150,7 +1150,7 @@ void MainComponent::setupMasterSection() {
 }
 
 void MainComponent::logAudioGlitch(double actualMs, double expectedMs) {
-  auto appData = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory).getChildFile("OpenRig");
+  auto appData = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory).getChildFile("Fanfare");
   if (!appData.exists()) appData.createDirectory();
   auto logFile = appData.getChildFile("audio_underrun_log.txt");
 
@@ -1166,7 +1166,7 @@ void MainComponent::logAudioGlitch(double actualMs, double expectedMs) {
 }
 
 void MainComponent::logAudioNanSpike(int channel, int sampleIndex, float badVal) {
-  auto appData = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory).getChildFile("OpenRig");
+  auto appData = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory).getChildFile("Fanfare");
   if (!appData.exists()) appData.createDirectory();
   auto logFile = appData.getChildFile("audio_underrun_log.txt");
 
@@ -1231,14 +1231,14 @@ void MainComponent::audioDeviceIOCallbackWithContext(
 void MainComponent::saveAudioSettings() {
   auto xml = deviceManager.createStateXml();
   if (xml != nullptr) {
-    auto file = OpenRigConstants::getAppDirectory().getChildFile("audio_settings.xml");
+    auto file = FanfareConstants::getAppDirectory().getChildFile("audio_settings.xml");
     file.getParentDirectory().createDirectory();
     xml->writeTo(file);
   }
 }
 
 void MainComponent::loadAudioSettings() {
-  auto file = OpenRigConstants::getAppDirectory().getChildFile("audio_settings.xml");
+  auto file = FanfareConstants::getAppDirectory().getChildFile("audio_settings.xml");
   if (file.existsAsFile()) {
     auto xml = juce::XmlDocument::parse(file);
     if (xml != nullptr)
@@ -1469,13 +1469,13 @@ void MainComponent::changeListenerCallback(juce::ChangeBroadcaster* source) {
     repaint();
     for (auto* c : getChildren())
       c->repaint();
-  } else if (source == &OpenRig::SetlistManager::getInstance()) {
+  } else if (source == &Fanfare::SetlistManager::getInstance()) {
     updatePreloadStatus();
   }
 }
 
 void MainComponent::updatePreloadStatus() {
-  auto& sm = OpenRig::SetlistManager::getInstance();
+  auto& sm = Fanfare::SetlistManager::getInstance();
   juce::File preloadTarget = sm.getNextPreloadTarget();
   int activeIdx = sm.getActiveIndex();
 
@@ -1775,7 +1775,7 @@ void MainComponent::loadRigAsync(const juce::File &file, int buttonIndexForHighl
       return;
 
     transitioner->transitionToFile(file,
-        OpenRig::RigTransitioner::Callbacks{
+        Fanfare::RigTransitioner::Callbacks{
             [this](juce::String progress) { setLoadingMessage(progress); },
             [this, highlight, file, targetSetlistIndex, fileName = file.getFileNameWithoutExtension()](bool ok, juce::String message, int) {
                 hideLoadingOverlay();
@@ -1794,7 +1794,7 @@ void MainComponent::loadRigAsync(const juce::File &file, int buttonIndexForHighl
                                              juce::dontSendNotification);
 
                     // Update active index in SetlistManager if this file belongs to the setlist
-                    auto& sm = OpenRig::SetlistManager::getInstance();
+                    auto& sm = Fanfare::SetlistManager::getInstance();
                     if (targetSetlistIndex >= 0) {
                         sm.setActiveIndex(targetSetlistIndex);
                     } else if (sm.getActiveFile() != file) {
@@ -1821,7 +1821,7 @@ void MainComponent::loadRigAsync(const juce::File &file, int buttonIndexForHighl
 }
 
 void MainComponent::assignJsonToButton(int buttonIndex) {
-  auto setupsDir = OpenRig::RigLibrary::getSongsDirectory();
+  auto setupsDir = Fanfare::RigLibrary::getSongsDirectory();
   setupsDir.createDirectory();
 
   auto chooser = std::make_shared<juce::FileChooser>("Select JSON Rig File",
@@ -1835,7 +1835,7 @@ void MainComponent::assignJsonToButton(int buttonIndex) {
         if (file.existsAsFile()) {
           setupFilePaths[buttonIndex] = file.getFullPathName();
           saveButtonMappings();
-          auto& sm = OpenRig::SetlistManager::getInstance();
+          auto& sm = Fanfare::SetlistManager::getInstance();
           sm.setSlotSetup(buttonIndex, file);
           updatePreloadStatus();
         }
@@ -1843,7 +1843,7 @@ void MainComponent::assignJsonToButton(int buttonIndex) {
 }
 
 void MainComponent::saveButtonMappings() {
-  auto mappingsFile = OpenRig::RigLibrary::buttonMappingsFile();
+  auto mappingsFile = Fanfare::RigLibrary::buttonMappingsFile();
   mappingsFile.getParentDirectory().createDirectory();
 
   auto *root = new juce::DynamicObject();
@@ -1863,14 +1863,14 @@ void MainComponent::saveButtonMappings() {
 }
 
 void MainComponent::loadButtonMappings() {
-  auto mappingsFile = OpenRig::RigLibrary::buttonMappingsFile();
+  auto mappingsFile = Fanfare::RigLibrary::buttonMappingsFile();
 
   if (!mappingsFile.existsAsFile())
     return;
 
   auto json = juce::JSON::parse(mappingsFile.loadFileAsString());
   if (auto *arr = json.getProperty("buttons", juce::var()).getArray()) {
-    auto& sm = OpenRig::SetlistManager::getInstance();
+    auto& sm = Fanfare::SetlistManager::getInstance();
     for (int i = 0; i < std::min((int)arr->size(), numSetupButtons); ++i) {
       setupFilePaths[i] = arr->getReference(i).toString();
       if (!setupFilePaths[i].isEmpty()) {
@@ -1897,7 +1897,7 @@ void MainComponent::timerCallback() {
   static int memUpdateTicks = 19;
   if (++memUpdateTicks >= 20) {
     memUpdateTicks = 0;
-    auto memStats = OpenRigLog::getMemoryStats();
+    auto memStats = FanfareLog::getMemoryStats();
     juce::String appRamStr = ResourceInspectorModal::formatBytes(memStats.workingSetBytes);
     ramLabel.setText("RAM: " + appRamStr + " (" + juce::String(memStats.systemRamLoadPercent) + "%)", juce::dontSendNotification);
   }
@@ -1931,7 +1931,7 @@ void MainComponent::timerCallback() {
   }
 
   if (engine.consumeAudioUnderrun())
-    OpenRigLog::log(OpenRigLog::Level::Warning,
+    FanfareLog::log(FanfareLog::Level::Warning,
                     "Audio underrun: a block emitted silence "
                     "(worker stall or rack not prepared).");
 
@@ -1963,13 +1963,13 @@ void MainComponent::timerCallback() {
   masterVuMeterR.setLevel(engine.getFohPeakR());
 
   float decay = 0.85f;
-  masterFohL = std::max(OpenRigLog::amplitudeToLogScale(engine.getFohPeakL()),
+  masterFohL = std::max(FanfareLog::amplitudeToLogScale(engine.getFohPeakL()),
                         masterFohL * decay);
-  masterFohR = std::max(OpenRigLog::amplitudeToLogScale(engine.getFohPeakR()),
+  masterFohR = std::max(FanfareLog::amplitudeToLogScale(engine.getFohPeakR()),
                         masterFohR * decay);
-  masterIemL = std::max(OpenRigLog::amplitudeToLogScale(engine.getIemPeakL()),
+  masterIemL = std::max(FanfareLog::amplitudeToLogScale(engine.getIemPeakL()),
                         masterIemL * decay);
-  masterIemR = std::max(OpenRigLog::amplitudeToLogScale(engine.getIemPeakR()),
+  masterIemR = std::max(FanfareLog::amplitudeToLogScale(engine.getIemPeakR()),
                         masterIemR * decay);
 
   // Repaint header (labels, FX buttons) AND master column (VU meters).
@@ -2072,7 +2072,7 @@ void MainComponent::loadRigFromFile(const juce::File &file, int targetSetlistInd
                          juce::dontSendNotification);
 }
 
-void MainComponent::showScanResultsDialog(const OpenRigEngine::ScanResults &results) {
+void MainComponent::showScanResultsDialog(const FanfareEngine::ScanResults &results) {
   // Display plugin scanner results
   juce::String msg = "Scan complete.\n\n";
   msg += "Plugins found: " + juce::String(results.newPlugins.size()) + "\n";
@@ -2092,7 +2092,7 @@ void MainComponent::showScanResultsDialog(const OpenRigEngine::ScanResults &resu
 void MainComponent::saveSetToFile() {
   fileChooser = std::make_unique<juce::FileChooser>(
       "Save Set...",
-      OpenRig::RigLibrary::getSetsDirectory(),
+      Fanfare::RigLibrary::getSetsDirectory(),
       "*.orset");
   fileChooser->launchAsync(
       juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles,
@@ -2122,7 +2122,7 @@ void MainComponent::saveSetToFile() {
 void MainComponent::loadSetFromFile() {
   fileChooser = std::make_unique<juce::FileChooser>(
       "Load Set...",
-      OpenRig::RigLibrary::getSetsDirectory(),
+      Fanfare::RigLibrary::getSetsDirectory(),
       "*.orset");
   fileChooser->launchAsync(
       juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
@@ -2141,7 +2141,7 @@ void MainComponent::applySetlistFromFile(const juce::File &file) {
   auto *obj = json.getDynamicObject();
   if (!obj)
     return;
-  auto& sm = OpenRig::SetlistManager::getInstance();
+  auto& sm = Fanfare::SetlistManager::getInstance();
   for (int i = 0; i < numSetupButtons; ++i) {
     juce::String key = "setup_" + juce::String(i);
     if (obj->hasProperty(key)) {
@@ -2187,7 +2187,7 @@ void MainComponent::mouseDown(const juce::MouseEvent &e) {
     return;
   }
   if (e.originalComponent == &xrunsLabel) {
-    auto appData = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory).getChildFile("OpenRig");
+    auto appData = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory).getChildFile("Fanfare");
     auto logFile = appData.getChildFile("audio_underrun_log.txt");
     if (!logFile.existsAsFile()) logFile.replaceWithText("No audio underruns detected yet.\n");
     logFile.startAsProcess();
@@ -2202,7 +2202,7 @@ bool MainComponent::keyPressed (const juce::KeyPress& key, juce::Component* orig
     return false;
 
   if (key == juce::KeyPress::spaceKey) {
-    auto& sm = OpenRig::SetlistManager::getInstance();
+    auto& sm = Fanfare::SetlistManager::getInstance();
     if (sm.hasNext()) {
       int idx = sm.getActiveIndex() + 1;
       loadRigFromFile(sm.getSetups()[idx], idx);

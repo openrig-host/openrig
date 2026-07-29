@@ -8,9 +8,9 @@
 #include <objbase.h>
 #endif
 #include "Logger.h"
-#include "OpenRigEngine.h"
+#include "FanfareEngine.h"
 
-namespace OpenRig {
+namespace Fanfare {
 
 // Shared, refcounted state for off-thread -> message-thread plugin builds, so
 // the async callback can NEVER dangle if the transitioner thread is torn down
@@ -53,7 +53,7 @@ public:
         std::vector<FailedEntry> failedEntries;
     };
 
-    static Result build(OpenRigEngine &engine, const juce::var &rig,
+    static Result build(FanfareEngine &engine, const juce::var &rig,
                         std::function<void(const juce::String&)> onProgress = nullptr,
                         bool isPreload = false) {
         Result r;
@@ -83,7 +83,7 @@ public:
 
                         juce::String label = "Slot " + juce::String(i + 1) +
                                              " chain " + juce::String(p + 1);
-                        buildOne(engine, pv, OpenRigEngine::stagingKeyFor(i, p, true),
+                        buildOne(engine, pv, FanfareEngine::stagingKeyFor(i, p, true),
                                  snap.slotChains, i, p, label, r, isPreload);
                     }
                 }
@@ -135,7 +135,7 @@ public:
 
     // Retry building a single failed entry on the message thread. Pushes the
     // result into the staging cache on success.
-    static bool rebuildOnMessageThread(OpenRigEngine &engine,
+    static bool rebuildOnMessageThread(FanfareEngine &engine,
                                        const FailedEntry &entry,
                                        juce::String &error) {
         logToFile("TRACE: rebuildOnMessageThread starting for key: " + entry.key);
@@ -155,7 +155,7 @@ public:
     }
 
 private:
-    static bool buildOne(OpenRigEngine &engine, const juce::var &pv,
+    static bool buildOne(FanfareEngine &engine, const juce::var &pv,
                          const juce::String &key,
                          const std::vector<juce::StringArray> &slotPaths,
                          int slotIdx, int chainIdx, const juce::String &label,
@@ -193,7 +193,7 @@ private:
         if (!requiresMessageThread) {
             logToFile("TRACE: buildOne " + label + " building off-thread...");
             struct BuildThreadContext {
-                OpenRigEngine* engine;
+                FanfareEngine* engine;
                 juce::var pluginVar;
                 std::unique_ptr<juce::AudioPluginInstance> inst;
                 juce::String err;
@@ -263,7 +263,7 @@ private:
         if (!ok) {
             logToFile("TRACE: buildOne " + label + " building/retrying on message thread...");
             struct BuildContext {
-                OpenRigEngine* engine;
+                FanfareEngine* engine;
                 juce::var pluginVar;
                 std::unique_ptr<juce::AudioPluginInstance> inst;
                 juce::String err;
@@ -309,10 +309,10 @@ private:
         return true;
     }
 
-    static bool buildMaster(OpenRigEngine &engine, const juce::var &pv, bool isFoh,
+    static bool buildMaster(FanfareEngine &engine, const juce::var &pv, bool isFoh,
                             int chainIdx, const juce::StringArray &masterPaths,
                             const juce::String &label, Result &r, bool isPreload = false) {
-        juce::String key = OpenRigEngine::stagingKeyFor(-1, chainIdx, isFoh);
+        juce::String key = FanfareEngine::stagingKeyFor(-1, chainIdx, isFoh);
         if (isPreload ? engine.hasPreloadedPlugin(key) : engine.stagingHasKey(key)) {
             logToFile("TRACE: buildMaster " + label + " already staged/preloaded, skipping build.");
             return true;
@@ -342,7 +342,7 @@ private:
         if (!requiresMessageThread) {
             logToFile("TRACE: buildMaster " + label + " building off-thread...");
             struct BuildThreadContext {
-                OpenRigEngine* engine;
+                FanfareEngine* engine;
                 juce::var pluginVar;
                 std::unique_ptr<juce::AudioPluginInstance> inst;
                 juce::String err;
@@ -412,7 +412,7 @@ private:
         if (!ok) {
             logToFile("TRACE: buildMaster " + label + " building/retrying on message thread...");
             struct BuildContext {
-                OpenRigEngine* engine;
+                FanfareEngine* engine;
                 juce::var pluginVar;
                 std::unique_ptr<juce::AudioPluginInstance> inst;
                 juce::String err;
@@ -459,4 +459,4 @@ private:
     }
 };
 
-} // namespace OpenRig
+} // namespace Fanfare

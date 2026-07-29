@@ -1,14 +1,14 @@
 #pragma once
 
 #include <JuceHeader.h>
-#include "OpenRigEngine.h"
+#include "FanfareEngine.h"
 #include "ThemeManager.h"
 
 class ResourceInspectorModal : public juce::Component,
                               public juce::TableListBoxModel,
                               public juce::Timer {
 public:
-    ResourceInspectorModal(OpenRigEngine& eng, std::function<void()> onClose)
+    ResourceInspectorModal(FanfareEngine& eng, std::function<void()> onClose)
         : engine(eng), closeCallback(onClose)
     {
         setOpaque(true);
@@ -66,7 +66,7 @@ public:
     };
 
     void updateData() {
-        memStats = OpenRigLog::getMemoryStats();
+        memStats = FanfareLog::getMemoryStats();
 
         rows.clear();
 
@@ -205,14 +205,14 @@ public:
     }
 
 private:
-    OpenRigEngine& engine;
+    FanfareEngine& engine;
     std::function<void()> closeCallback;
     juce::Label titleLabel;
     juce::TextButton closeBtn;
     juce::TextButton refreshBtn;
     juce::TableListBox table;
 
-    OpenRigLog::ProcessMemoryStats memStats;
+    FanfareLog::ProcessMemoryStats memStats;
     std::vector<RowData> rows;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ResourceInspectorModal)

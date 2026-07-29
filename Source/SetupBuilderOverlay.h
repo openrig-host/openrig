@@ -4,7 +4,7 @@
 #include "RigLibrary.h"
 #include "RigSerializer.h"
 #include "BoutiqueLookAndFeel.h"
-#include "OpenRigConstants.h"
+#include "FanfareConstants.h"
 #include "ThemeManager.h"
 
 class StripRowComponent : public juce::Component {
@@ -94,7 +94,7 @@ public:
         addAndMakeVisible(closeBtn);
 
         // Load strips list
-        stripsDir = OpenRig::RigLibrary::getPresetsDirectory();
+        stripsDir = Fanfare::RigLibrary::getPresetsDirectory();
         stripFiles = stripsDir.findChildFiles(juce::File::findFiles, false, "*.orstrip");
         selectedStates.resize(stripFiles.size(), false);
         ccValues.resize(stripFiles.size(), 7); // Default to CC 7 (Volume)
@@ -237,7 +237,7 @@ private:
         juce::Array<juce::var> channelsArr;
 
         int midiChannel = 1;
-        for (int i = 0; i < OpenRigConstants::kNumSlots; ++i) {
+        for (int i = 0; i < FanfareConstants::kNumSlots; ++i) {
             if (i < chosenStrips.size()) {
                 auto stripFile = chosenStrips[i];
                 auto stripJson = juce::JSON::parse(stripFile);
@@ -278,7 +278,7 @@ private:
         auto* defaultScene = new juce::DynamicObject();
         defaultScene->setProperty("name", "INIT PRESET");
         juce::Array<juce::var> statesArr;
-        for (int i = 0; i < OpenRigConstants::kNumSlots; ++i) {
+        for (int i = 0; i < FanfareConstants::kNumSlots; ++i) {
             auto* stateObj = new juce::DynamicObject();
             stateObj->setProperty("bypassed", true);
             stateObj->setProperty("level", 0.8f);
@@ -328,7 +328,7 @@ private:
         root->setProperty("currentSceneIndex", 0);
 
         // Save new setup file to Songs/ folder
-        auto targetFile = OpenRig::RigLibrary::getSongsDirectory().getChildFile(songName + ".json");
+        auto targetFile = Fanfare::RigLibrary::getSongsDirectory().getChildFile(songName + ".json");
         targetFile.deleteFile();
         targetFile.getParentDirectory().createDirectory();
 

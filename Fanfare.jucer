@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<JUCERPROJECT id="y15uHa" name="OpenRig" projectType="guiapp" useAppConfig="1"
-              addUsingNamespaceToJuceHeader="0" jucerFormatVersion="1">
-  <MAINGROUP id="kDqy99" name="DaveCore">
+<JUCERPROJECT id="y15uHa" name="Fanfare" projectType="guiapp" useAppConfig="1"
+              addUsingNamespaceToJuceHeader="0" jucerFormatVersion="1" bundleIdentifier="com.fanfare.app">
+  <MAINGROUP id="kDqy99" name="Fanfare">
     <GROUP id="{7F03F339-D8EE-9CEA-49B0-ACBF8ABA11C0}" name="Source">
-      <FILE id="engineH" name="DaveCoreEngine.h" compile="0" resource="0"
-            file="Source/DaveCoreEngine.h"/>
+      <FILE id="engineH" name="FanfareEngine.h" compile="0" resource="0"
+            file="Source/FanfareEngine.h"/>
       <FILE id="rackSlotH" name="RackSlot.h" compile="0" resource="0" file="Source/RackSlot.h"/>
       <FILE id="sceneH" name="Scene.h" compile="0" resource="0" file="Source/Scene.h"/>
       <FILE id="rackSlotCompH" name="RackSlotComponent.h" compile="0" resource="0"
@@ -67,6 +67,8 @@
             resource="0" file="Source/Mp3PlayerProcessor.h"/>
       <FILE id="mp3PlayerComponentH" name="Mp3PlayerComponent.h" compile="0"
             resource="0" file="Source/Mp3PlayerComponent.h"/>
+      <FILE id="juceDspCpp" name="include_juce_dsp.cpp" compile="1" resource="0"
+            file="JuceLibraryCode/include_juce_dsp.cpp"/>
     </GROUP>
   </MAINGROUP>
   <MODULES>
@@ -90,8 +92,8 @@
   <EXPORTFORMATS>
     <VS2026 targetFolder="Builds/VisualStudio2026">
       <CONFIGURATIONS>
-        <CONFIGURATION isDebug="1" name="Debug" targetName="OpenRig"/>
-        <CONFIGURATION isDebug="0" name="Release" targetName="OpenRig"/>
+        <CONFIGURATION isDebug="1" name="Debug" targetName="Fanfare"/>
+        <CONFIGURATION isDebug="0" name="Release" targetName="Fanfare"/>
       </CONFIGURATIONS>
       <MODULEPATHS>
         <MODULEPATH id="juce_audio_basics" path="C:/JUCE/modules"/>

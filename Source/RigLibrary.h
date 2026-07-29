@@ -1,9 +1,9 @@
 #pragma once
 
 #include <JuceHeader.h>
-#include "OpenRigConstants.h"
+#include "FanfareConstants.h"
 
-namespace OpenRig {
+namespace Fanfare {
 
 /**
     RigLibrary
@@ -16,43 +16,43 @@ namespace OpenRig {
 class RigLibrary {
 public:
     static juce::File legacyBackupDir() {
-        return OpenRigConstants::getBackupsDirectory().getChildFile("legacy");
+        return FanfareConstants::getBackupsDirectory().getChildFile("legacy");
     }
 
     static juce::File migrationFlagFile() {
-        return OpenRigConstants::getSettingsDirectory().getChildFile("library_migrated.flag");
+        return FanfareConstants::getSettingsDirectory().getChildFile("library_migrated.flag");
     }
 
     /** Returns the default location for the current full rig (the working copy). */
     static juce::File defaultRigFile() {
-        return OpenRigConstants::getAppDirectory().getChildFile("current_rig.json");
+        return FanfareConstants::getAppDirectory().getChildFile("current_rig.json");
     }
 
     /** Songs directory (individual song rigs). */
     static juce::File getSongsDirectory() {
-        return OpenRigConstants::getSongsDirectory();
+        return FanfareConstants::getSongsDirectory();
     }
 
     /** Setlists directory (.set files). */
     static juce::File getSetsDirectory() {
-        return OpenRigConstants::getSetsDirectory();
+        return FanfareConstants::getSetsDirectory();
     }
 
     /** Channel-strip presets directory (.orstrip files). */
     static juce::File getPresetsDirectory() {
-        return OpenRigConstants::getAppDirectory().getChildFile("strips");
+        return FanfareConstants::getAppDirectory().getChildFile("strips");
     }
 
     static juce::File defaultSetsFile() {
-        return OpenRigConstants::getSetsDirectory().getChildFile("default.set");
+        return FanfareConstants::getSetsDirectory().getChildFile("default.set");
     }
 
     static juce::File buttonMappingsFile() {
-        return OpenRigConstants::getSettingsDirectory().getChildFile("button_mappings.json");
+        return FanfareConstants::getSettingsDirectory().getChildFile("button_mappings.json");
     }
 
     static juce::File knownPluginsFile() {
-        return OpenRigConstants::getAppDirectory().getChildFile("known_plugins.json");
+        return FanfareConstants::getAppDirectory().getChildFile("known_plugins.json");
     }
 
     /**
@@ -61,24 +61,24 @@ public:
         Safe to call repeatedly: it is a no-op after the first success.
     */
     static void migrateLegacyLibraryIfNeeded() {
-        OpenRigConstants::getAppDirectory().createDirectory();
-        OpenRigConstants::getSettingsDirectory().createDirectory();
+        FanfareConstants::getAppDirectory().createDirectory();
+        FanfareConstants::getSettingsDirectory().createDirectory();
         legacyBackupDir().createDirectory();
 
         if (migrationFlagFile().existsAsFile())
             return;
 
         auto appData = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
-                           .getChildFile("OpenRig");
+                           .getChildFile("Fanfare");
         auto docs = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
-                        .getChildFile("OpenRig");
+                        .getChildFile("Fanfare");
         auto desktop = juce::File::getSpecialLocation(juce::File::userDesktopDirectory);
 
         // Legacy scattered sources to preserve (source -> relative name under backups/legacy).
         struct LegacyEntry { juce::File source; juce::String destName; };
         juce::Array<LegacyEntry> entries;
 
-        entries.add({ desktop.getChildFile("OpenRigFullRig.json"), "OpenRigFullRig.json" });
+        entries.add({ desktop.getChildFile("FanfareFullRig.json"), "FanfareFullRig.json" });
         entries.add({ docs.getChildFile("Setups"), "Setups" });
         entries.add({ docs.getChildFile("Sets"), "Sets" });
         entries.add({ appData.getChildFile("button_mappings.json"), "button_mappings.json" });
@@ -108,4 +108,4 @@ private:
     }
 };
 
-} // namespace OpenRig
+} // namespace Fanfare

@@ -7,7 +7,7 @@
 #include "Version.h"
 #include "RigSerializer.h"
 #include <JuceHeader.h>
-#include "OpenRigConstants.h"
+#include "FanfareConstants.h"
 #include <algorithm>
 #include <fstream>
 #include <functional>
@@ -32,7 +32,7 @@ inline void pinDllInMemory(const juce::String &path) {
 }
 #endif
 
-class OpenRigEngine {
+class FanfareEngine {
 public:
   // ========== KNOWN PLUGINS REGISTRY ==========
   // These are the VST3 plugins available for loading into slots.
@@ -42,7 +42,7 @@ public:
     juce::String path;
   };
 
-  OpenRigEngine() {
+  FanfareEngine() {
 #ifdef _WIN32
     avrtModule = LoadLibraryA("avrt.dll");
     if (avrtModule != nullptr) {
@@ -56,14 +56,14 @@ public:
     std::fill(std::begin(stressTestLastNote), std::end(stressTestLastNote), -1);
 
     slots.clear();
-    for (int i = 0; i < OpenRigConstants::kNumSlots; ++i) {
+    for (int i = 0; i < FanfareConstants::kNumSlots; ++i) {
       if (i == 0) {
         slots.push_back(std::make_unique<RackSlot>("Monitor In"));
         slots.back()->setInputChannelIndex(0); // Hardware In 1
       } else if (i == 1) {
         slots.push_back(std::make_unique<RackSlot>("CK88"));
-        slots.back()->setInputChannelIndex(OpenRigConstants::kKeyboardInputChannel); // Hardware In 11 (CK88)
-      } else if (i == OpenRigConstants::kNumSlots - 1) {
+        slots.back()->setInputChannelIndex(FanfareConstants::kKeyboardInputChannel); // Hardware In 11 (CK88)
+      } else if (i == FanfareConstants::kNumSlots - 1) {
         slots.push_back(std::make_unique<RackSlot>("Accordion"));
         slots.back()->setInputChannelIndex(12); // Hardware In 13 (Accordion)
       } else {
@@ -97,7 +97,7 @@ public:
     loadPluginList();
   }
 
-  ~OpenRigEngine() {
+  ~FanfareEngine() {
     if (engineAlive) engineAlive->store(false);
     // 1. Stop any pending jobs and wait for worker threads to finish FIRST
     threadPool.removeAllJobs(true, 5000); // 5s timeout to guarantee worker threads finish
@@ -409,10 +409,10 @@ public:
   }
 
   struct SlotProcessJob : public juce::ThreadPoolJob {
-    OpenRigEngine &engine;
+    FanfareEngine &engine;
     int slotIdx;
 
-    SlotProcessJob(OpenRigEngine &e, int idx)
+    SlotProcessJob(FanfareEngine &e, int idx)
         : ThreadPoolJob("SlotProcess"), engine(e), slotIdx(idx) {}
 
     // Fork-join completion tokens (lock-free). setup() bumps setupToken to mark
@@ -548,7 +548,7 @@ public:
   std::function<void(ScanResults)> onScanFinished;
 
   void scanForPlugins() {
-    juce::File vstFolder = OpenRigConstants::getVst3Directory();
+    juce::File vstFolder = FanfareConstants::getVst3Directory();
     if (!vstFolder.exists() || !vstFolder.isDirectory()) {
       juce::AlertWindow::showMessageBoxAsync(
           juce::MessageBoxIconType::WarningIcon, "Scan Error",
@@ -658,7 +658,7 @@ public:
   void savePluginList() {
     juce::File file =
         juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
-            .getChildFile("OpenRig")
+            .getChildFile("Fanfare")
             .getChildFile("known_plugins.json");
 
     if (!file.getParentDirectory().exists())
@@ -682,7 +682,7 @@ public:
   void loadPluginList() {
     juce::File file =
         juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
-            .getChildFile("OpenRig")
+            .getChildFile("Fanfare")
             .getChildFile("known_plugins.json");
 
     if (file.existsAsFile()) {
@@ -711,7 +711,7 @@ public:
                     float *const *outputData, int numOutputs, int numSamples,
                     juce::MidiBuffer &midi) {
     juce::ScopedNoDenormals noDenormals;
-    OpenRigLog::g_audioThreadId.store((uint32_t)::GetCurrentThreadId());
+    FanfareLog::g_audioThreadId.store((uint32_t)::GetCurrentThreadId());
     // Inject stress test MIDI if active
     if (stressTestActive.load()) {
         double sr = currentSampleRate;
@@ -720,7 +720,7 @@ public:
             stressTestPhase += numSamples;
             if (stressTestPhase >= samplesPerTrigger) {
                 stressTestPhase = std::fmod(stressTestPhase, samplesPerTrigger);
-                for (int c = 0; c < OpenRigConstants::kNumSlots; ++c) {
+                for (int c = 0; c < FanfareConstants::kNumSlots; ++c) {
                     if (stressTestLastNote[c] >= 0) {
                         midi.addEvent(juce::MidiMessage::noteOff(1, stressTestLastNote[c]), 0);
                         stressTestLastNote[c] = -1;
@@ -1085,14 +1085,14 @@ public:
       if (mfl.isLocked()) {
         for (auto &plugin : fohPluginChain) {
           if (plugin) {
-            OpenRigLog::safeExecutePluginCall([&]() {
+            FanfareLog::safeExecutePluginCall([&]() {
               plugin->processBlock(fohBus, emptyMidiBuf);
             }, "fohBus processBlock (" + plugin->getName() + ")");
           }
         }
         for (auto &plugin : iemPluginChain) {
           if (plugin) {
-            OpenRigLog::safeExecutePluginCall([&]() {
+            FanfareLog::safeExecutePluginCall([&]() {
               plugin->processBlock(iemBus, emptyMidiBuf);
             }, "iemBus processBlock (" + plugin->getName() + ")");
           }
@@ -1483,7 +1483,7 @@ public:
     fohOutputOffset = rig.getProperty("fohOutputOffset", 0);
     iemOutputOffset = rig.getProperty("iemOutputOffset", 2);
     defaultMidiChannel.store(
-        (int)rig.getProperty("defaultMidiChannel", OpenRigConstants::kDefaultMidiChannel));
+        (int)rig.getProperty("defaultMidiChannel", FanfareConstants::kDefaultMidiChannel));
 
     // Master FX
     // Master FX - Smart Loading
@@ -1822,8 +1822,8 @@ public:
   }
 
   void performLegacyMigration() {
-    auto appDir = OpenRigConstants::getAppDirectory();
-    auto backupLegacyDir = OpenRigConstants::getBackupsDirectory().getChildFile("legacy");
+    auto appDir = FanfareConstants::getAppDirectory();
+    auto backupLegacyDir = FanfareConstants::getBackupsDirectory().getChildFile("legacy");
 
     juce::File migrationFlag = appDir.getChildFile(".migrated");
     if (migrationFlag.existsAsFile())
@@ -1831,17 +1831,17 @@ public:
 
     backupLegacyDir.createDirectory();
 
-    // 1. Migrate OpenRigFullRig.json from Desktop
-    juce::File desktopRig = juce::File::getSpecialLocation(juce::File::userDesktopDirectory).getChildFile("OpenRigFullRig.json");
+    // 1. Migrate FanfareFullRig.json from Desktop
+    juce::File desktopRig = juce::File::getSpecialLocation(juce::File::userDesktopDirectory).getChildFile("FanfareFullRig.json");
     if (desktopRig.existsAsFile()) {
-      desktopRig.copyFileTo(backupLegacyDir.getChildFile("OpenRigFullRig.json"));
-      desktopRig.copyFileTo(appDir.getChildFile("OpenRigFullRig.json"));
+      desktopRig.copyFileTo(backupLegacyDir.getChildFile("FanfareFullRig.json"));
+      desktopRig.copyFileTo(appDir.getChildFile("FanfareFullRig.json"));
     }
 
     // 2. Migrate Setups from Documents (copy each file; JUCE has no recursive dir copy)
-    juce::File docSetups = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory).getChildFile("OpenRig").getChildFile("Setups");
+    juce::File docSetups = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory).getChildFile("Fanfare").getChildFile("Setups");
     if (docSetups.isDirectory()) {
-      juce::File newSetups = OpenRigConstants::getSongsDirectory();
+      juce::File newSetups = FanfareConstants::getSongsDirectory();
       newSetups.createDirectory();
       juce::File backupSetups = backupLegacyDir.getChildFile("Setups");
       backupSetups.createDirectory();
@@ -1855,7 +1855,7 @@ public:
     }
 
     // 3. Migrate button_mappings.json if exists
-    juce::File appDataMappings = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory).getChildFile("OpenRig").getChildFile("button_mappings.json");
+    juce::File appDataMappings = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory).getChildFile("Fanfare").getChildFile("button_mappings.json");
     if (appDataMappings.existsAsFile()) {
       appDataMappings.copyFileTo(backupLegacyDir.getChildFile("button_mappings.json"));
     }
@@ -1863,9 +1863,9 @@ public:
     migrationFlag.replaceWithText("migrated");
   }
 
-  OpenRig::Song getSongRepresentation(const juce::String& songName = "Current Rig") {
+  Fanfare::Song getSongRepresentation(const juce::String& songName = "Current Rig") {
     juce::ScopedLock sl(lock);
-    OpenRig::Song song;
+    Fanfare::Song song;
     song.name = songName;
     song.fohMasterLevel = fohMasterLevel;
     song.iemMasterLevel = iemMasterLevel;
@@ -1874,7 +1874,7 @@ public:
 
     // FOH FX
     for (auto& p : fohPluginChain) {
-        OpenRig::PluginState ps;
+        Fanfare::PluginState ps;
         if (p) {
             ps.name = p->getName();
             ps.path = p->getPluginDescription().fileOrIdentifier;
@@ -1888,7 +1888,7 @@ public:
 
     // IEM FX
     for (auto& p : iemPluginChain) {
-        OpenRig::PluginState ps;
+        Fanfare::PluginState ps;
         if (p) {
             ps.name = p->getName();
             ps.path = p->getPluginDescription().fileOrIdentifier;
@@ -1903,7 +1903,7 @@ public:
     // Channels/Slots
     for (int i = 0; i < (int)slots.size(); ++i) {
         auto* s = slots[i].get();
-        OpenRig::SongSlot slot;
+        Fanfare::SongSlot slot;
         slot.name = s->getName();
         slot.iconIndex = s->getIconIndex();
         slot.channelColor = s->getChannelColor();
@@ -1964,7 +1964,7 @@ public:
         }
 
         for (const auto& pair : s->getCCMappings()) {
-            OpenRig::CCMapping map;
+            Fanfare::CCMapping map;
             map.cc = pair.first;
             map.chainIndex = pair.second.chainIndex;
             map.paramId = pair.second.paramId;
@@ -1976,7 +1976,7 @@ public:
         }
 
         for (const auto& pair : s->getCCPassthroughMap()) {
-            OpenRig::CCPassthrough pt;
+            Fanfare::CCPassthrough pt;
             pt.incomingCC = pair.first;
             pt.outgoingCC = pair.second;
             slot.ccPassthroughs.push_back(pt);
@@ -1984,7 +1984,7 @@ public:
 
         for (int pIdx = 0; pIdx < s->getChainSize(); ++pIdx) {
             auto plugin = s->getPluginInstance(pIdx);
-            OpenRig::PluginState ps;
+            Fanfare::PluginState ps;
             if (plugin) {
                 ps.name = plugin->getName();
                 ps.path = plugin->getPluginDescription().fileOrIdentifier;
@@ -2011,10 +2011,10 @@ public:
 
     // Scenes
     for (const auto& scene : scenes) {
-        OpenRig::Scene sc;
+        Fanfare::Scene sc;
         sc.name = scene.name;
         for (const auto& st : scene.slotStates) {
-            OpenRig::SlotState slotState;
+            Fanfare::SlotState slotState;
             slotState.bypassed = st.bypassed;
             slotState.channelLevel = st.fohLevel;
             slotState.fohEnabled = st.fohEnabled;
@@ -2028,13 +2028,13 @@ public:
     return song;
   }
 
-  void importRigFromSong(const OpenRig::Song& song) {
-    juce::String json = OpenRig::RigSerializer::serializeSong(song);
+  void importRigFromSong(const Fanfare::Song& song) {
+    juce::String json = Fanfare::RigSerializer::serializeSong(song);
     importRigFromJson(json);
   }
 
-  OpenRig::SongSlot exportSlot(int slotIdx) {
-    OpenRig::SongSlot songSlot;
+  Fanfare::SongSlot exportSlot(int slotIdx) {
+    Fanfare::SongSlot songSlot;
     if (slotIdx < 0 || slotIdx >= (int)slots.size())
       return songSlot;
     juce::ScopedLock sl(lock);
@@ -2116,7 +2116,7 @@ public:
     songSlot.mp3Player.gain = mp3Live.getGain();
     songSlot.mp3Player.tracks.clear();
     for (const auto& t : mp3Live.getPlaylist()) {
-      OpenRig::Mp3TrackSettings ts;
+      Fanfare::Mp3TrackSettings ts;
       ts.path = t.file.getFullPathName();
       ts.title = t.title;
       ts.duration = t.durationSeconds;
@@ -2124,7 +2124,7 @@ public:
     }
 
     for (const auto& pair : s->getCCMappings()) {
-      OpenRig::CCMapping map;
+      Fanfare::CCMapping map;
       map.cc = pair.first;
       map.chainIndex = pair.second.chainIndex;
       map.paramId = pair.second.paramId;
@@ -2136,7 +2136,7 @@ public:
     }
 
     for (const auto& pair : s->getCCPassthroughMap()) {
-      OpenRig::CCPassthrough pt;
+      Fanfare::CCPassthrough pt;
       pt.incomingCC = pair.first;
       pt.outgoingCC = pair.second;
       songSlot.ccPassthroughs.push_back(pt);
@@ -2144,7 +2144,7 @@ public:
 
     for (int pIdx = 0; pIdx < s->getChainSize(); ++pIdx) {
       auto plugin = s->getPluginInstance(pIdx);
-      OpenRig::PluginState ps;
+      Fanfare::PluginState ps;
       if (plugin) {
         ps.name = plugin->getName();
         ps.path = plugin->getPluginDescription().fileOrIdentifier;
@@ -2169,7 +2169,7 @@ public:
     return songSlot;
   }
 
-  void importSlot(int slotIdx, const OpenRig::SongSlot& songSlot) {
+  void importSlot(int slotIdx, const Fanfare::SongSlot& songSlot) {
     if (slotIdx < 0 || slotIdx >= (int)slots.size())
       return;
     juce::ScopedLock sl(lock);
@@ -2304,35 +2304,35 @@ public:
 
   // Apply a SongSlot preset directly (e.g. from drag-and-drop). Thread-safe:
   // takes the engine lock.
-  void loadSlotPreset(int slotIdx, const OpenRig::SongSlot &songSlot) {
+  void loadSlotPreset(int slotIdx, const Fanfare::SongSlot &songSlot) {
     importSlot(slotIdx, songSlot);
   }
 
   void saveStripToFile(int slotIdx, const juce::File& file) {
     auto songSlot = exportSlot(slotIdx);
-    auto json = OpenRig::RigSerializer::serializeStrip(songSlot);
-    OpenRig::RigSerializer::save(file, json);
+    auto json = Fanfare::RigSerializer::serializeStrip(songSlot);
+    Fanfare::RigSerializer::save(file, json);
   }
 
   bool loadStripFromFile(int slotIdx, const juce::File& file) {
-    OpenRig::SongSlot songSlot;
-    if (!OpenRig::RigSerializer::readStripFromFile(file, songSlot))
+    Fanfare::SongSlot songSlot;
+    if (!Fanfare::RigSerializer::readStripFromFile(file, songSlot))
       return false;
     importSlot(slotIdx, songSlot);
     return true;
   }
 
   void saveRigToFile() {
-    juce::File f = OpenRigConstants::getAppDirectory().getChildFile("OpenRigFullRig.json");
-    OpenRig::Song song = getSongRepresentation("Current Rig");
-    OpenRig::RigSerializer::writeSongToFile(f, song);
+    juce::File f = FanfareConstants::getAppDirectory().getChildFile("FanfareFullRig.json");
+    Fanfare::Song song = getSongRepresentation("Current Rig");
+    Fanfare::RigSerializer::writeSongToFile(f, song);
   }
 
   void loadRigFromFile() {
-    juce::File f = OpenRigConstants::getAppDirectory().getChildFile("OpenRigFullRig.json");
+    juce::File f = FanfareConstants::getAppDirectory().getChildFile("FanfareFullRig.json");
     if (f.existsAsFile()) {
-      OpenRig::Song song;
-      if (OpenRig::RigSerializer::readSongFromFile(f, song)) {
+      Fanfare::Song song;
+      if (Fanfare::RigSerializer::readSongFromFile(f, song)) {
         importRigFromSong(song);
       }
     }
@@ -2363,7 +2363,7 @@ public:
     return p;
   }
 
-  juce::var songSlotToPluginVar(const OpenRig::PluginState& ps) {
+  juce::var songSlotToPluginVar(const Fanfare::PluginState& ps) {
     auto *obj = new juce::DynamicObject();
     obj->setProperty("name", ps.name);
     obj->setProperty("path", ps.path);
@@ -2773,7 +2773,7 @@ private:
   std::atomic<float> fohMasterLevel{1.0f};
   std::atomic<float> iemMasterLevel{1.0f};
 
-  std::atomic<int> defaultMidiChannel{OpenRigConstants::kDefaultMidiChannel}; // 1 = legacy behaviour
+  std::atomic<int> defaultMidiChannel{FanfareConstants::kDefaultMidiChannel}; // 1 = legacy behaviour
 
   std::atomic<int> fohOutputOffset{0}; // Hardware channels 1+2
   std::atomic<int> iemOutputOffset{2}; // Hardware channels 3+4
@@ -2795,7 +2795,7 @@ private:
 #endif
 
   double stressTestPhase = 0.0;
-  int stressTestLastNote[OpenRigConstants::kNumSlots];
+  int stressTestLastNote[FanfareConstants::kNumSlots];
 
 public:
   std::atomic<bool> stressTestActive{false};
@@ -2923,7 +2923,7 @@ public:
     // Create instance synchronously
     juce::String errorMessage;
     pinDllInMemory(pluginPath);
-    size_t ramBefore = OpenRigLog::getMemoryStats().workingSetBytes;
+    size_t ramBefore = FanfareLog::getMemoryStats().workingSetBytes;
     auto instance = formatManager.createPluginInstance(
         desc, currentSampleRate, currentBlockSize, errorMessage);
 
@@ -2931,7 +2931,7 @@ public:
       logToFile("Plugin loaded successfully!");
       configureStereoLayout(instance.get());
       instance->prepareToPlay(currentSampleRate, currentBlockSize);
-      size_t ramAfter = OpenRigLog::getMemoryStats().workingSetBytes;
+      size_t ramAfter = FanfareLog::getMemoryStats().workingSetBytes;
       if (ramAfter > ramBefore) {
         slotVec[realIdx]->setEstimatedRamBytes(ramAfter - ramBefore);
       }
@@ -3111,7 +3111,7 @@ public:
       configureStereoLayout(instance.get());
 
       logToFile("TRACE: buildPluginFromVar calling prepareToPlay for " + instance->getName());
-      bool prepOk = OpenRigLog::safeExecutePluginCall([&]() {
+      bool prepOk = FanfareLog::safeExecutePluginCall([&]() {
         instance->prepareToPlay(currentSampleRate,
                                 currentBlockSize > 0 ? currentBlockSize : 512);
       }, "prepareToPlay (" + instance->getName() + ")");
@@ -3125,7 +3125,7 @@ public:
       blob.fromBase64Encoding(stateBase64);
       if (blob.getSize() > 0) {
         logToFile("TRACE: buildPluginFromVar setting state information (" + juce::String(blob.getSize()) + " bytes) for " + instance->getName());
-        bool stateOk = OpenRigLog::safeExecutePluginCall([&]() {
+        bool stateOk = FanfareLog::safeExecutePluginCall([&]() {
           instance->setStateInformation(blob.getData(), (int)blob.getSize());
         }, "setStateInformation (" + instance->getName() + ")");
         if (!stateOk) {
@@ -3209,5 +3209,5 @@ public:
 
   juce::CriticalSection &getCallbackLock() { return lock; }
 
-  JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(OpenRigEngine)
+  JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(FanfareEngine)
 };

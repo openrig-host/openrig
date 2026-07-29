@@ -1,16 +1,16 @@
 #pragma once
 
 #include <JuceHeader.h>
-#include "OpenRigEngine.h"
+#include "FanfareEngine.h"
 #include "RigLibrary.h"
 #include "RigBuilder.h"
 #include "RigSerializer.h"
 
-namespace OpenRig {
+namespace Fanfare {
 
 class SetlistPreloaderThread : public juce::Thread {
 public:
-    SetlistPreloaderThread(OpenRigEngine* e)
+    SetlistPreloaderThread(FanfareEngine* e)
         : juce::Thread("Setlist Preloader"), engine(e) {}
 
     ~SetlistPreloaderThread() override {
@@ -126,7 +126,7 @@ private:
         }
     }
 
-    OpenRigEngine* engine;
+    FanfareEngine* engine;
     mutable juce::CriticalSection targetLock;
     juce::File pendingTarget;
     bool hasPendingTarget = false;
@@ -147,7 +147,7 @@ public:
         return instance;
     }
 
-    void setEngine(OpenRigEngine* newEngine) {
+    void setEngine(FanfareEngine* newEngine) {
         if (preloaderThread)
             preloaderThread->stopPreloading(); // cancel any in-flight build first
         engine = newEngine;
@@ -364,7 +364,7 @@ private:
             preloaderThread->stopPreloading();
     }
 
-    OpenRigEngine* engine = nullptr;
+    FanfareEngine* engine = nullptr;
     std::unique_ptr<SetlistPreloaderThread> preloaderThread;
     juce::Array<juce::File> setups;
     int activeIndex = -1;
@@ -373,4 +373,4 @@ private:
     JUCE_DECLARE_NON_COPYABLE(SetlistManager)
 };
 
-} // namespace OpenRig
+} // namespace Fanfare

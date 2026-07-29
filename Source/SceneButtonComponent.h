@@ -3,7 +3,7 @@
 #include <JuceHeader.h>
 #include "ThemeManager.h"
 
-namespace OpenRig {
+namespace Fanfare {
 
 class SceneButtonComponent : public juce::Button,
                              public juce::DragAndDropTarget {
@@ -49,4 +49,4 @@ private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SceneButtonComponent)
 };
 
-} // namespace OpenRig
+} // namespace Fanfare

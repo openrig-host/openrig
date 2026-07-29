@@ -12,7 +12,7 @@ LibraryList::LibraryList(Kind k) : kind(k) {
 
 void LibraryList::loadFavorites() {
   favorites.clear();
-  auto appData = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory).getChildFile("OpenRig");
+  auto appData = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory).getChildFile("Fanfare");
   auto favFile = appData.getChildFile("library_favorites.txt");
   if (favFile.existsAsFile()) {
     juce::StringArray lines;
@@ -25,7 +25,7 @@ void LibraryList::loadFavorites() {
 }
 
 void LibraryList::saveFavorites() {
-  auto appData = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory).getChildFile("OpenRig");
+  auto appData = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory).getChildFile("Fanfare");
   if (!appData.exists()) appData.createDirectory();
   auto favFile = appData.getChildFile("library_favorites.txt");
   juce::String text;
@@ -404,7 +404,7 @@ void LibraryList::listBoxItemClicked(int row, const juce::MouseEvent &e) {
               }
             }));
       } else if (result == 5) {
-        OpenRig::SetlistManager::getInstance().addSetup(file);
+        Fanfare::SetlistManager::getInstance().addSetup(file);
       } else if (result == 6) {
         file.revealToUser();
       }
@@ -472,7 +472,7 @@ LibraryPanel::LibraryPanel() {
   tabs->setTabBarDepth(28);
 
   setsList = std::make_unique<LibraryList>(LibraryList::Kind::Sets);
-  setsList->setDirectory(OpenRig::RigLibrary::getSetsDirectory(), "*.orset");
+  setsList->setDirectory(Fanfare::RigLibrary::getSetsDirectory(), "*.orset");
   setsList->onDoubleClicked = [this](const juce::File &f) {
     if (onSetDoubleClicked)
       onSetDoubleClicked(f);
@@ -480,7 +480,7 @@ LibraryPanel::LibraryPanel() {
   tabs->addTab("Btn Maps", juce::Colour(0xFF1D2023), setsList.get(), false);
 
   setupsList = std::make_unique<LibraryList>(LibraryList::Kind::Setups);
-  setupsList->setDirectory(OpenRig::RigLibrary::getSongsDirectory(), "*.json");
+  setupsList->setDirectory(Fanfare::RigLibrary::getSongsDirectory(), "*.json");
   setupsList->onDoubleClicked = [this](const juce::File &f) {
     if (onSetupDoubleClicked)
       onSetupDoubleClicked(f);
@@ -488,10 +488,10 @@ LibraryPanel::LibraryPanel() {
   tabs->addTab("Songs", juce::Colour(0xFF1D2023), setupsList.get(), false);
 
   stripsList = std::make_unique<LibraryList>(LibraryList::Kind::Strips);
-  stripsList->setDirectory(OpenRig::RigLibrary::getPresetsDirectory(), "*.orstrip");
+  stripsList->setDirectory(Fanfare::RigLibrary::getPresetsDirectory(), "*.orstrip");
   tabs->addTab("Strips", juce::Colour(0xFF1D2023), stripsList.get(), false);
 
-  setlistPanel = std::make_unique<OpenRig::SetlistPanel>();
+  setlistPanel = std::make_unique<Fanfare::SetlistPanel>();
   tabs->addTab("Setlist", juce::Colour(0xFF1D2023), setlistPanel.get(), false);
 
   addAndMakeVisible(tabs.get());

@@ -41,7 +41,7 @@ class CCMappingComponent : public juce::Component,
                            public juce::Button::Listener,
                            public juce::ListBoxModel {
 public:
-  using LearnBus = OpenRig::MidiLearnBus;
+  using LearnBus = Fanfare::MidiLearnBus;
 
   CCMappingComponent(RackSlot &s) : slot(s) {
     // --- Fader CC row ---
@@ -301,7 +301,7 @@ public:
   void armFaderLearn(bool isFoh) {
     RackSlot *s = &slot;
     bool foh = isFoh;
-    OpenRig::LearnTarget t;
+    Fanfare::LearnTarget t;
     t.isFader = true;
     t.isFohFader = isFoh;
 
@@ -343,7 +343,7 @@ public:
     juce::String pname = slot.getParameterNames(chainIdx)[paramIdx];
 
     RackSlot *s = &slot;
-    OpenRig::LearnTarget t;
+    Fanfare::LearnTarget t;
     t.isFader = false;
     t.chainIndex = chainIdx;
     t.paramId = paramId;
@@ -410,7 +410,7 @@ public:
     }
 
     // Arm the learn bus to capture CC (without auto-binding)
-    OpenRig::LearnTarget t;
+    Fanfare::LearnTarget t;
     t.isFader = false;
     t.label = "QUICK LEARN";
     juce::Component::SafePointer<CCMappingComponent> safe(this);
@@ -451,7 +451,7 @@ public:
                           " captured. Now move a plugin knob.",
                           juce::dontSendNotification);
       // Re-arm the bus to stay in learn mode
-      OpenRig::LearnTarget t;
+      Fanfare::LearnTarget t;
       t.isFader = false;
       t.label = "QUICK LEARN";
       juce::Component::SafePointer<CCMappingComponent> safe(this);
@@ -646,7 +646,7 @@ public:
   }
 
   void applyCK88Preset() {
-    using namespace OpenRigConstants;
+    using namespace FanfareConstants;
     slot.allowCC(kCk88ModWheelCC);
     slot.allowCC(kCk88SustainCC);
     slot.allowCC(kCk88ChorusCC);

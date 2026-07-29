@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 // OpenRig versioning
 #define OPENRIG_VERSION_MAJOR 0
