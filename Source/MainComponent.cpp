@@ -9,6 +9,7 @@
 #include "NoteRangeComponent.h"
 #include "RackSlotComponent.h"
 #include "ThemeManager.h"
+#include "FanfareLogoData.h"
 
 namespace {
 // Procedurally renders a gear icon for the settings ImageButton (no asset dep).
@@ -862,19 +863,11 @@ void MainComponent::setupHeaderButtons() {
   setupNameLabel.setColour(juce::Label::textColourId, ThemeManager::get(Theme::Role::accent));
   setupNameLabel.setJustificationType(juce::Justification::centredLeft);
 
-  // Load Fanfare logo
-  juce::File logoFile = juce::File::getSpecialLocation(juce::File::currentExecutableFile)
-                            .getParentDirectory().getParentDirectory().getParentDirectory()
-                            .getChildFile("Source").getChildFile("Resources").getChildFile("fanfare_logo_transparent.png");
-  if (!logoFile.existsAsFile()) {
-    logoFile = juce::File::getCurrentWorkingDirectory().getChildFile("Source").getChildFile("Resources").getChildFile("fanfare_logo_transparent.png");
-  }
-  if (logoFile.existsAsFile()) {
-    logoImage = juce::ImageFileFormat::loadFrom(logoFile);
-    if (logoImage.isValid()) {
-      logoComponent.setImage(logoImage, juce::RectanglePlacement::onlyReduceInSize | juce::RectanglePlacement::xLeft | juce::RectanglePlacement::yMid);
-      addAndMakeVisible(logoComponent);
-    }
+  // Load embedded Fanfare white logo (for dark stage UI)
+  logoImage = juce::ImageFileFormat::loadFrom(fanfare_logo_png, fanfare_logo_png_size);
+  if (logoImage.isValid()) {
+    logoComponent.setImage(logoImage, juce::RectanglePlacement::onlyReduceInSize | juce::RectanglePlacement::xLeft | juce::RectanglePlacement::yMid);
+    addAndMakeVisible(logoComponent);
   }
 
   addAndMakeVisible(clockLabel);
@@ -1598,9 +1591,9 @@ void MainComponent::resized() {
   // Header area - Row 1: Stage View (Logo + setup name + setlist nav)
   auto stageHeader = r.removeFromTop(38);
   if (logoComponent.isVisible()) {
-    logoComponent.setBounds(stageHeader.removeFromLeft(125).reduced(2, 4));
+    logoComponent.setBounds(stageHeader.removeFromLeft(140).reduced(2, 2));
   }
-  setupNameLabel.setBounds(stageHeader.removeFromLeft(320).reduced(4));
+  setupNameLabel.setBounds(stageHeader.removeFromLeft(350).reduced(4));
 
   // Right side: Setlist Navigation
   nextSetlistBtn.setBounds(stageHeader.removeFromRight(55).reduced(3));
