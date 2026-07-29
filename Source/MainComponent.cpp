@@ -702,18 +702,9 @@ void MainComponent::setupHeaderButtons() {
     resized();
   };
 
-  // Header: About Button (Icon)
-  addAndMakeVisible(aboutBtn);
-  auto iconFile = juce::File(__FILE__)
-                      .getSiblingFile("Resources")
-                      .getChildFile("OpenRig_Icon.png");
-  auto openRigIcon = juce::ImageCache::getFromFile(iconFile);
-  aboutBtn.setImages(false, true, true, openRigIcon, 1.0f,
-                     juce::Colours::transparentBlack, openRigIcon, 1.0f,
-                     juce::Colours::white.withAlpha(0.2f), openRigIcon, 1.0f,
-                     juce::Colours::white.withAlpha(0.5f));
+  // Legacy aboutBtn replaced by clickable Fanfare logo
+  aboutBtn.setVisible(false);
   aboutBtn.onClick = [this] { showAboutDialog(); };
-  aboutBtn.setTooltip("About OpenRig");
 
   // Settings gear button — centralizes the settings buttons into one overlay
   addAndMakeVisible(settingsGearBtn);
@@ -867,6 +858,9 @@ void MainComponent::setupHeaderButtons() {
   logoImage = juce::ImageFileFormat::loadFrom(fanfare_logo_png, fanfare_logo_png_size);
   if (logoImage.isValid()) {
     logoComponent.setImage(logoImage, juce::RectanglePlacement::onlyReduceInSize | juce::RectanglePlacement::xLeft | juce::RectanglePlacement::yMid);
+    logoComponent.setMouseCursor(juce::MouseCursor::PointingHandCursor);
+    logoComponent.setTooltip("About Fanfare");
+    logoComponent.addMouseListener(this, false);
     addAndMakeVisible(logoComponent);
   }
 
@@ -1606,7 +1600,6 @@ void MainComponent::resized() {
 
   // Left Controls
   toggleLibraryBtn.setBounds(controlBar.removeFromLeft(30).reduced(3));
-  aboutBtn.setBounds(controlBar.removeFromLeft(40).reduced(4));
   settingsGearBtn.setBounds(controlBar.removeFromLeft(44).reduced(4));
   midiMonitorLabel.setBounds(controlBar.removeFromLeft(130).reduced(4));
   midiMonitorToggle.setBounds(controlBar.removeFromLeft(75).reduced(4));
@@ -2193,6 +2186,10 @@ void MainComponent::setLoadingMessage(const juce::String &message) {
 }
 
 void MainComponent::mouseDown(const juce::MouseEvent &e) {
+  if (e.originalComponent == &logoComponent) {
+    showAboutDialog();
+    return;
+  }
   if (e.originalComponent == &ramLabel || e.originalComponent == &cpuLabel) {
     showResourceInspectorModal();
     return;
