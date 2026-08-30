@@ -300,9 +300,22 @@ Located in [Mp3PlayerProcessor.h](file:///z:/davecore/Source/Mp3PlayerProcessor.
 - **Intro Shaving (Cue-In)**: Set a custom start offset (`cueInSeconds`) to skip talking preambles, click-counts, or slow build-ups and start playing directly on the main beat.
 - **Fadeout / Outro Trimming (Cue-Out)**: Set an early crossfade trigger (`cueOutSeconds`) to bypass trailing silence or 30-second acoustic fadeouts, immediately transitioning to the next deck with zero energy loss.
 - **On-Deck Quick Capture**: One-click `[SET IN]`, `[SET OUT]`, and `[CLR]` buttons on Deck A and Deck B to capture playhead positions live during playback.
-- **Persistent Caching**: Cue points and detected BPMs are cached per-file in `%APPDATA%/Fanfare/Playlists/bpm_cache.json` and JSON playlist files, preserving trimming across sessions without altering original MP3 audio files on disk.
 
-### 8.5 Intelligent BPM-Aware Playlist Arranger (Smart Set Flow)
+### 8.5 Embedded SQLite Library Database & Multi-Format Exporter
+- **Zero-Install Serverless Engine**: Powered by [Database/LibraryDatabase.h](file:///z:/davecore/Source/Database/LibraryDatabase.h) utilizing Windows native `winsqlite3`.
+- **High-Performance Storage (`%APPDATA%/Fanfare/fanfare_library.db`)**:
+  - Write-Ahead Logging (`WAL`) mode for multi-threaded safety and crash resilience on stage.
+  - Sub-millisecond single-row updates for In/Out cue offsets, analyzed BPMs, gain trims, and play counts.
+  - Indexed queries on `bpm` and `title` for instant filtering.
+- **Automatic JSON Cache Migration**: Automatically migrates legacy `bpm_cache.json` into SQLite on startup with zero data loss.
+- **1-Click Multi-Format Export Menu (`[EXPORT 💾]`)**:
+  - *📊 Export to CSV (Excel / Spreadsheet)*: Generates clean, RFC-compliant CSV containing file paths, titles, artists, durations, BPMs, In/Out points, effective runtimes, play counts, and timestamps.
+  - *📄 Export to JSON (Portable Backup)*: Structured JSON archive of all analyzed library metadata.
+  - *🎵 Export Extended M3U Playlist*: Standard `#EXTINF` and custom `#EXT-FANFARE:bpm=...,cue_in=...,cue_out=...` tags.
+  - *🗄️ Backup SQLite Database (.db Snapshot)*: Live snapshot copy generated via the SQLite Online Backup API.
+  - *📥 Import Library Metadata from CSV*: Bulk restore or update metadata and cue points from spreadsheet edits.
+
+### 8.6 Intelligent BPM-Aware Playlist Arranger (Smart Set Flow)
 - **1-Click Smart Arranger Menu (`[SMART ARRANGE ⚡]`)**:
   - *Smooth BPM Ramp (Ascending / Descending)*: Sorts tracks gradually by tempo (e.g. 95 $\rightarrow$ 128 BPM) for dinner-to-dance warm-up arcs.
   - *Minimal Tempo Step (Nearest-Neighbor TSP)*: Reorders the playlist to minimize tempo jumps between consecutive songs ($|\Delta\text{BPM}| \le 3-5\text{ BPM}$) with half-time/double-time harmonic matching ($70 \times 2 = 140\text{ BPM}$).
@@ -311,13 +324,13 @@ Located in [Mp3PlayerProcessor.h](file:///z:/davecore/Source/Mp3PlayerProcessor.
     $$\text{Set Duration} = \sum (\text{CueOut}_i - \text{CueIn}_i) - (N-1) \times \text{CrossfadeDuration}$$
     and automatically selects the optimal track sequence to fill a 30, 45, or 60-minute break without cutting off tracks mid-song.
 
-### 8.6 YouTube-to-MP3 Background Grabber
+### 8.7 YouTube-to-MP3 Background Grabber
 - **Integrated Download Manager**: Powered by [YoutubeDownloadManager.h](file:///z:/davecore/Source/YoutubeDownloadManager.h) utilizing `yt-dlp` and `ffmpeg`.
 - **Direct 192kbps Audio Extraction**: Paste any YouTube / web music URL to extract high-quality stereo 192k MP3 audio directly into the stage music library.
 - **Instant Metadata Extraction**: Pre-fetches video titles in the background to name tracks immediately.
 - **Grab & Play**: One-click action to download a requested song and immediately begin playback on stage.
 
-### 8.7 6 Persistent Playlist Preset Banks
+### 8.8 6 Persistent Playlist Preset Banks
 - **Instant Bank Switching**: 6 tactile bank buttons (e.g. *Hits*, *Oldies*, *Dinner*, *Dance*, *Ballads*, *Break*).
 - **Right-Click Context Menu**: Right-click any bank button to assign a music folder, rename the bank, or refresh directory contents.
 

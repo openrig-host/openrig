@@ -410,6 +410,12 @@ public:
         loadPlaylistBtn.onClick = [this] { loadPlaylist(); };
         addAndMakeVisible(loadPlaylistBtn);
 
+        exportBtn.setButtonText("EXPORT 💾");
+        exportBtn.setTooltip("Export library metadata (CSV, JSON, Extended M3U, SQLite DB Backup)");
+        exportBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::teal.darker(0.5f));
+        exportBtn.onClick = [this] { showExportMenu(); };
+        addAndMakeVisible(exportBtn);
+
         updateBankButtonsState();
         updateTrackUI();
         startTimerHz(20);
@@ -518,6 +524,125 @@ public:
             }
             listBox.updateContent();
             updateTrackUI();
+        });
+    }
+
+    void showExportMenu() {
+        juce::PopupMenu menu;
+        menu.addSectionHeader("EXPORT LIBRARY & BACKUP");
+        menu.addItem(1, "📊 Export to CSV (Excel / Spreadsheet)");
+        menu.addItem(2, "📄 Export to JSON (Portable Backup)");
+        menu.addItem(3, "🎵 Export Extended M3U Playlist (With Cue Points)");
+        menu.addItem(4, "🗄️ Backup SQLite Database (.db Snapshot)");
+        menu.addSeparator();
+        menu.addSectionHeader("IMPORT DATA");
+        menu.addItem(5, "📥 Import Library Metadata from CSV...");
+
+        menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&exportBtn), [this](int result) {
+            if (result == 1) {
+                // Export CSV
+                fileChooser = std::make_unique<juce::FileChooser>(
+                    "Export Fanfare Library to CSV...",
+                    processor.getLastFolder().getChildFile("fanfare_library_export.csv"),
+                    "*.csv"
+                );
+                fileChooser->launchAsync(
+                    juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::warnAboutOverwriting,
+                    [this](const juce::FileChooser& fc) {
+                        auto file = fc.getResult();
+                        if (file != juce::File()) {
+                            if (Fanfare::LibraryDatabase::getInstance().exportToCsv(file)) {
+                                auto* alert = new juce::AlertWindow("CSV Export Successful", "Exported " + juce::String(Fanfare::LibraryDatabase::getInstance().getTrackCount()) + " tracks to:\n" + file.getFullPathName(), juce::AlertWindow::InfoIcon);
+                                alert->addButton("OK", 1);
+                                alert->enterModalState(true, nullptr, true);
+                            }
+                        }
+                    }
+                );
+            } else if (result == 2) {
+                // Export JSON
+                fileChooser = std::make_unique<juce::FileChooser>(
+                    "Export Fanfare Library to JSON...",
+                    processor.getLastFolder().getChildFile("fanfare_library_export.json"),
+                    "*.json"
+                );
+                fileChooser->launchAsync(
+                    juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::warnAboutOverwriting,
+                    [this](const juce::FileChooser& fc) {
+                        auto file = fc.getResult();
+                        if (file != juce::File()) {
+                            if (Fanfare::LibraryDatabase::getInstance().exportToJson(file)) {
+                                auto* alert = new juce::AlertWindow("JSON Export Successful", "Exported JSON backup to:\n" + file.getFullPathName(), juce::AlertWindow::InfoIcon);
+                                alert->addButton("OK", 1);
+                                alert->enterModalState(true, nullptr, true);
+                            }
+                        }
+                    }
+                );
+            } else if (result == 3) {
+                // Export Extended M3U
+                fileChooser = std::make_unique<juce::FileChooser>(
+                    "Export Extended M3U Playlist...",
+                    processor.getLastFolder().getChildFile("fanfare_playlist_export.m3u"),
+                    "*.m3u"
+                );
+                fileChooser->launchAsync(
+                    juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::warnAboutOverwriting,
+                    [this](const juce::FileChooser& fc) {
+                        auto file = fc.getResult();
+                        if (file != juce::File()) {
+                            if (Fanfare::LibraryDatabase::getInstance().exportToM3u(file)) {
+                                auto* alert = new juce::AlertWindow("M3U Export Successful", "Exported Extended M3U playlist to:\n" + file.getFullPathName(), juce::AlertWindow::InfoIcon);
+                                alert->addButton("OK", 1);
+                                alert->enterModalState(true, nullptr, true);
+                            }
+                        }
+                    }
+                );
+            } else if (result == 4) {
+                // Backup SQLite Database
+                fileChooser = std::make_unique<juce::FileChooser>(
+                    "Backup SQLite Library Database...",
+                    processor.getLastFolder().getChildFile("fanfare_library_backup.db"),
+                    "*.db"
+                );
+                fileChooser->launchAsync(
+                    juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::warnAboutOverwriting,
+                    [this](const juce::FileChooser& fc) {
+                        auto file = fc.getResult();
+                        if (file != juce::File()) {
+                            if (Fanfare::LibraryDatabase::getInstance().backupDatabase(file)) {
+                                auto* alert = new juce::AlertWindow("Database Backup Successful", "Live SQLite database backup created at:\n" + file.getFullPathName(), juce::AlertWindow::InfoIcon);
+                                alert->addButton("OK", 1);
+                                alert->enterModalState(true, nullptr, true);
+                            }
+                        }
+                    }
+                );
+            } else if (result == 5) {
+                // Import CSV
+                fileChooser = std::make_unique<juce::FileChooser>(
+                    "Import Library Metadata from CSV...",
+                    processor.getLastFolder(),
+                    "*.csv"
+                );
+                fileChooser->launchAsync(
+                    juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+                    [this](const juce::FileChooser& fc) {
+                        auto file = fc.getResult();
+                        if (file.existsAsFile()) {
+                            if (Fanfare::LibraryDatabase::getInstance().importFromCsv(file)) {
+                                processor.loadBpmCache();
+                                listBox.updateContent();
+                                updateTrackUI();
+                                auto* alert = new juce::AlertWindow("CSV Import Successful", "Successfully imported library metadata from:\n" + file.getFullPathName(), juce::AlertWindow::InfoIcon);
+                                alert->addButton("OK", 1);
+                                alert->enterModalState(true, nullptr, true);
+                            }
+                        }
+                    }
+                );
+            }
         });
     }
 
@@ -873,21 +998,22 @@ public:
 
         area.removeFromRight(8);
 
-        // Bottom Playlist Action Buttons Row (12 buttons)
+        // Bottom Playlist Action Buttons Row (13 buttons)
         auto btnRow = area.removeFromBottom(26);
-        int bw = btnRow.getWidth() / 12;
+        int bw = btnRow.getWidth() / 13;
         addFilesBtn.setBounds(btnRow.removeFromLeft(bw).reduced(2));
         addFolderBtn.setBounds(btnRow.removeFromLeft(bw).reduced(2));
         moveUpBtn.setBounds(btnRow.removeFromLeft(bw - 4).reduced(2));
         moveDownBtn.setBounds(btnRow.removeFromLeft(bw - 4).reduced(2));
-        smartArrangeBtn.setBounds(btnRow.removeFromLeft(bw + 18).reduced(2));
-        grabYoutubeBtn.setBounds(btnRow.removeFromLeft(bw + 10).reduced(2));
+        smartArrangeBtn.setBounds(btnRow.removeFromLeft(bw + 12).reduced(2));
+        grabYoutubeBtn.setBounds(btnRow.removeFromLeft(bw + 8).reduced(2));
         loadToDeckABtn.setBounds(btnRow.removeFromLeft(bw).reduced(2));
         loadToDeckBBtn.setBounds(btnRow.removeFromLeft(bw).reduced(2));
-        removeBtn.setBounds(btnRow.removeFromLeft(bw - 6).reduced(2));
-        clearBtn.setBounds(btnRow.removeFromLeft(bw - 6).reduced(2));
-        savePlaylistBtn.setBounds(btnRow.removeFromLeft(bw).reduced(2));
-        loadPlaylistBtn.setBounds(btnRow.reduced(2));
+        removeBtn.setBounds(btnRow.removeFromLeft(bw - 8).reduced(2));
+        clearBtn.setBounds(btnRow.removeFromLeft(bw - 8).reduced(2));
+        savePlaylistBtn.setBounds(btnRow.removeFromLeft(bw - 4).reduced(2));
+        loadPlaylistBtn.setBounds(btnRow.removeFromLeft(bw - 4).reduced(2));
+        exportBtn.setBounds(btnRow.reduced(2));
 
         area.removeFromBottom(8);
 
@@ -1347,6 +1473,7 @@ public:
     juce::TextButton clearBtn;
     juce::TextButton savePlaylistBtn;
     juce::TextButton loadPlaylistBtn;
+    juce::TextButton exportBtn;
 
     bool isScrubbingA = false;
     bool isScrubbingB = false;

@@ -5,6 +5,7 @@
 #include "ChannelStripProcessor.h"
 #include "BpmDetector.h"
 #include "TimeStretcher.h"
+#include "Database/LibraryDatabase.h"
 #include <vector>
 #include <map>
 #include <random>
@@ -913,13 +914,14 @@ public:
         juce::ScopedLock sl(playlistLock);
         if (trackIdx >= 0 && trackIdx < (int)playlist.size()) {
             playlist[trackIdx].bpm = bpm;
+            auto path = playlist[trackIdx].file.getFullPathName();
             {
                 juce::ScopedLock bl(bpmCacheLock);
-                auto path = playlist[trackIdx].file.getFullPathName();
                 bpmCache[path].bpm = bpm;
                 bpmCache[path].firstBeatSeconds = playlist[trackIdx].firstBeatSeconds;
                 saveBpmCache();
             }
+            Fanfare::LibraryDatabase::getInstance().updateBpm(path, bpm, playlist[trackIdx].firstBeatSeconds);
             if (onPlaylistChanged) onPlaylistChanged();
         }
     }
@@ -928,12 +930,13 @@ public:
         juce::ScopedLock sl(playlistLock);
         if (trackIndex >= 0 && trackIndex < (int)playlist.size()) {
             playlist[trackIndex].cueInSeconds = juce::jmax(0.0, cueInSec);
+            auto fullPath = playlist[trackIndex].file.getFullPathName();
             {
                 juce::ScopedLock bl(bpmCacheLock);
-                auto fullPath = playlist[trackIndex].file.getFullPathName();
                 bpmCache[fullPath].cueInSeconds = playlist[trackIndex].cueInSeconds;
                 saveBpmCache();
             }
+            Fanfare::LibraryDatabase::getInstance().updateCues(fullPath, playlist[trackIndex].cueInSeconds, playlist[trackIndex].cueOutSeconds);
             if (currentTrackIndex == trackIndex) {
                 int activeIdx = activeDeckIndex.load();
                 Deck& curDeck = (activeIdx == 0) ? deckA : deckB;
@@ -948,12 +951,13 @@ public:
         juce::ScopedLock sl(playlistLock);
         if (trackIndex >= 0 && trackIndex < (int)playlist.size()) {
             playlist[trackIndex].cueOutSeconds = juce::jmax(0.0, cueOutSec);
+            auto fullPath = playlist[trackIndex].file.getFullPathName();
             {
                 juce::ScopedLock bl(bpmCacheLock);
-                auto fullPath = playlist[trackIndex].file.getFullPathName();
                 bpmCache[fullPath].cueOutSeconds = playlist[trackIndex].cueOutSeconds;
                 saveBpmCache();
             }
+            Fanfare::LibraryDatabase::getInstance().updateCues(fullPath, playlist[trackIndex].cueInSeconds, playlist[trackIndex].cueOutSeconds);
             if (currentTrackIndex == trackIndex) {
                 int activeIdx = activeDeckIndex.load();
                 Deck& curDeck = (activeIdx == 0) ? deckA : deckB;
@@ -969,13 +973,14 @@ public:
         if (trackIndex >= 0 && trackIndex < (int)playlist.size()) {
             playlist[trackIndex].cueInSeconds = 0.0;
             playlist[trackIndex].cueOutSeconds = 0.0;
+            auto fullPath = playlist[trackIndex].file.getFullPathName();
             {
                 juce::ScopedLock bl(bpmCacheLock);
-                auto fullPath = playlist[trackIndex].file.getFullPathName();
                 bpmCache[fullPath].cueInSeconds = 0.0;
                 bpmCache[fullPath].cueOutSeconds = 0.0;
                 saveBpmCache();
             }
+            Fanfare::LibraryDatabase::getInstance().updateCues(fullPath, 0.0, 0.0);
             if (currentTrackIndex == trackIndex) {
                 int activeIdx = activeDeckIndex.load();
                 Deck& curDeck = (activeIdx == 0) ? deckA : deckB;
@@ -998,6 +1003,7 @@ public:
                 bpmCache[path].cueInSeconds = curPos;
                 saveBpmCache();
             }
+            Fanfare::LibraryDatabase::getInstance().updateCues(path, curPos, d.trackInfo.cueOutSeconds);
             {
                 juce::ScopedLock pl(playlistLock);
                 for (auto& t : playlist) {
@@ -1022,6 +1028,7 @@ public:
                 bpmCache[path].cueOutSeconds = curPos;
                 saveBpmCache();
             }
+            Fanfare::LibraryDatabase::getInstance().updateCues(path, d.trackInfo.cueInSeconds, curPos);
             {
                 juce::ScopedLock pl(playlistLock);
                 for (auto& t : playlist) {
@@ -1047,6 +1054,7 @@ public:
                 bpmCache[path].cueOutSeconds = 0.0;
                 saveBpmCache();
             }
+            Fanfare::LibraryDatabase::getInstance().updateCues(path, 0.0, 0.0);
             {
                 juce::ScopedLock pl(playlistLock);
                 for (auto& t : playlist) {
@@ -1563,6 +1571,27 @@ public:
         }
     }
 
+    void loadBpmCache() {
+        Fanfare::LibraryDatabase::getInstance().open();
+
+        auto file = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory).getChildFile("Fanfare").getChildFile("Playlists").getChildFile("bpm_cache.json");
+        if (file.existsAsFile()) {
+            Fanfare::LibraryDatabase::getInstance().autoMigrateFromJson(file);
+        }
+
+        auto records = Fanfare::LibraryDatabase::getInstance().getAllTracks();
+        juce::ScopedLock sl(bpmCacheLock);
+        bpmCache.clear();
+        for (const auto& r : records) {
+            CachedBpm cb;
+            cb.bpm = r.bpm;
+            cb.firstBeatSeconds = r.firstBeatSeconds;
+            cb.cueInSeconds = r.cueInSeconds;
+            cb.cueOutSeconds = r.cueOutSeconds;
+            bpmCache[r.filePath] = cb;
+        }
+    }
+
 private:
     struct CachedBpm {
         float bpm = 0.0f;
@@ -1570,29 +1599,6 @@ private:
         double cueInSeconds = 0.0;
         double cueOutSeconds = 0.0;
     };
-
-    void loadBpmCache() {
-        auto file = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory).getChildFile("Fanfare").getChildFile("Playlists").getChildFile("bpm_cache.json");
-        if (!file.existsAsFile()) return;
-
-        auto parsed = juce::JSON::parse(file);
-        if (parsed.isObject()) {
-            if (auto* obj = parsed.getDynamicObject()) {
-                juce::ScopedLock sl(bpmCacheLock);
-                bpmCache.clear();
-                for (const auto& prop : obj->getProperties()) {
-                    if (auto* bo = prop.value.getDynamicObject()) {
-                        CachedBpm cb;
-                        cb.bpm = (float)bo->getProperty("bpm");
-                        cb.firstBeatSeconds = (double)bo->getProperty("firstBeat");
-                        cb.cueInSeconds = (double)bo->getProperty("cueIn");
-                        cb.cueOutSeconds = (double)bo->getProperty("cueOut");
-                        bpmCache[prop.name.toString()] = cb;
-                    }
-                }
-            }
-        }
-    }
 
     void saveBpmCache() {
         auto playlistsDir = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory).getChildFile("Fanfare").getChildFile("Playlists");
@@ -1618,7 +1624,7 @@ private:
         if (!file.existsAsFile()) return;
         juce::String fullPath = file.getFullPathName();
 
-        // Check cache first
+        // Check SQLite / memory cache first
         {
             juce::ScopedLock sl(bpmCacheLock);
             auto it = bpmCache.find(fullPath);
@@ -1644,6 +1650,7 @@ private:
                     bpmCache[fullPath].firstBeatSeconds = res.firstBeatSeconds;
                     saveBpmCache();
                 }
+                Fanfare::LibraryDatabase::getInstance().updateBpm(fullPath, res.bpm, res.firstBeatSeconds);
                 {
                     juce::ScopedLock pl(playlistLock);
                     if (trackIndex >= 0 && trackIndex < (int)playlist.size() && playlist[trackIndex].file.getFullPathName() == fullPath) {
