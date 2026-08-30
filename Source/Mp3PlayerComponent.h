@@ -104,6 +104,23 @@ public:
         deckAPosSlider.onDragEnd = [this] { isScrubbingA = false; };
         addAndMakeVisible(deckAPosSlider);
 
+        deckASetInBtn.setButtonText("SET IN");
+        deckASetInBtn.setTooltip("Set Cue-In point to current playhead (skips intro chatter/silence)");
+        deckASetInBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::teal.darker(0.5f));
+        deckASetInBtn.onClick = [this] { processor.setDeckCueIn(0); updateTrackUI(); };
+        addAndMakeVisible(deckASetInBtn);
+
+        deckASetOutBtn.setButtonText("SET OUT");
+        deckASetOutBtn.setTooltip("Set Cue-Out point to current playhead (triggers Auto-DJ early crossfade)");
+        deckASetOutBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::maroon);
+        deckASetOutBtn.onClick = [this] { processor.setDeckCueOut(0); updateTrackUI(); };
+        addAndMakeVisible(deckASetOutBtn);
+
+        deckAClrCueBtn.setButtonText("CLR");
+        deckAClrCueBtn.setTooltip("Clear In/Out Cue points for this track");
+        deckAClrCueBtn.onClick = [this] { processor.clearDeckCues(0); updateTrackUI(); };
+        addAndMakeVisible(deckAClrCueBtn);
+
         deckAPlayBtn.setButtonText("> PLAY");
         deckAPlayBtn.setColour(juce::TextButton::buttonColourId, ThemeManager::get(Theme::Role::ok));
         deckAPlayBtn.onClick = [this] { processor.playDeck(0); updateTrackUI(); };
@@ -164,6 +181,23 @@ public:
         deckBPosSlider.onDragStart = [this] { isScrubbingB = true; };
         deckBPosSlider.onDragEnd = [this] { isScrubbingB = false; };
         addAndMakeVisible(deckBPosSlider);
+
+        deckBSetInBtn.setButtonText("SET IN");
+        deckBSetInBtn.setTooltip("Set Cue-In point to current playhead (skips intro chatter/silence)");
+        deckBSetInBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::teal.darker(0.5f));
+        deckBSetInBtn.onClick = [this] { processor.setDeckCueIn(1); updateTrackUI(); };
+        addAndMakeVisible(deckBSetInBtn);
+
+        deckBSetOutBtn.setButtonText("SET OUT");
+        deckBSetOutBtn.setTooltip("Set Cue-Out point to current playhead (triggers Auto-DJ early crossfade)");
+        deckBSetOutBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::maroon);
+        deckBSetOutBtn.onClick = [this] { processor.setDeckCueOut(1); updateTrackUI(); };
+        addAndMakeVisible(deckBSetOutBtn);
+
+        deckBClrCueBtn.setButtonText("CLR");
+        deckBClrCueBtn.setTooltip("Clear In/Out Cue points for this track");
+        deckBClrCueBtn.onClick = [this] { processor.clearDeckCues(1); updateTrackUI(); };
+        addAndMakeVisible(deckBClrCueBtn);
 
         deckBPlayBtn.setButtonText("> PLAY");
         deckBPlayBtn.setColour(juce::TextButton::buttonColourId, ThemeManager::get(Theme::Role::ok));
@@ -315,6 +349,12 @@ public:
         moveDownBtn.onClick = [this] { moveSelectedDown(); };
         addAndMakeVisible(moveDownBtn);
 
+        smartArrangeBtn.setButtonText("SMART ARRANGE ⚡");
+        smartArrangeBtn.setTooltip("Intelligently arrange playlist sequence by BPM (Smooth Ramp, Minimal Jump, Energy Wave, Fit Duration)");
+        smartArrangeBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::deepskyblue.darker(0.5f));
+        smartArrangeBtn.onClick = [this] { showSmartArrangeMenu(); };
+        addAndMakeVisible(smartArrangeBtn);
+
         grabYoutubeBtn.setButtonText("Grab YouTube...");
         grabYoutubeBtn.setTooltip("Paste YouTube link, pick destination folder, and convert directly to MP3 192k");
         grabYoutubeBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::red.darker(0.3f));
@@ -449,6 +489,38 @@ public:
         }
     }
 
+    void showSmartArrangeMenu() {
+        juce::PopupMenu m;
+        m.addItem(1, "⚡ Smooth BPM Ramp (Low -> High)");
+        m.addItem(2, "⚡ Smooth BPM Ramp (High -> Low)");
+        m.addItem(3, "🎯 Minimal Tempo Step (Smooth Flow)");
+        m.addItem(4, "🌊 Energy Wave (Build & Peak)");
+        m.addSeparator();
+        m.addItem(5, "⏱️ Fit Playlist to 30 Minutes");
+        m.addItem(6, "⏱️ Fit Playlist to 45 Minutes");
+        m.addItem(7, "⏱️ Fit Playlist to 60 Minutes");
+
+        m.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&smartArrangeBtn), [this](int result) {
+            if (result == 1) {
+                processor.sortPlaylistByBpm(true);
+            } else if (result == 2) {
+                processor.sortPlaylistByBpm(false);
+            } else if (result == 3) {
+                processor.sortPlaylistMinimalDelta(0);
+            } else if (result == 4) {
+                processor.sortPlaylistEnergyWave();
+            } else if (result == 5) {
+                processor.fitPlaylistToDuration(30.0);
+            } else if (result == 6) {
+                processor.fitPlaylistToDuration(45.0);
+            } else if (result == 7) {
+                processor.fitPlaylistToDuration(60.0);
+            }
+            listBox.updateContent();
+            updateTrackUI();
+        });
+    }
+
     // ListBoxModel Callbacks
     int getNumRows() override {
         return (int)processor.getPlaylist().size();
@@ -457,7 +529,8 @@ public:
     void paintListBoxItem(int rowNumber, juce::Graphics& g, int width, int height, bool rowIsSelected) override {
         if (rowNumber < 0 || rowNumber >= (int)processor.getPlaylist().size()) return;
 
-        const auto& track = processor.getPlaylist()[rowNumber];
+        const auto& playlist = processor.getPlaylist();
+        const auto& track = playlist[rowNumber];
 
         if (rowIsSelected) {
             g.setColour(ThemeManager::get(Theme::Role::accent).withAlpha(0.25f));
@@ -485,22 +558,42 @@ public:
         if (isDeckB) deckTag += "[DECK B] ";
 
         juce::String text = juce::String(rowNumber + 1) + ". " + deckTag + track.title;
-        g.drawText(text, 8, 0, width - 150, height, juce::Justification::centredLeft, true);
+        g.drawText(text, 8, 0, width - 260, height, juce::Justification::centredLeft, true);
 
-        // BPM Text
-        juce::String bpmStr = (track.bpm > 0.0f) ? (juce::String((int)std::round(track.bpm)) + " BPM") : "-- BPM";
-        g.setColour(ThemeManager::get(Theme::Role::accent).withAlpha(0.8f));
+        // Cue Trim Indicator Tag
+        if (track.hasCues()) {
+            juce::String cueTag = "[TRIM: " + formatTime(track.cueInSeconds) + "->" + formatTime(track.getEffectiveEnd()) + "]";
+            g.setColour(juce::Colours::teal.brighter(0.4f));
+            g.setFont(juce::FontOptions(10.5f, juce::Font::bold));
+            g.drawText(cueTag, width - 255, 0, 105, height, juce::Justification::centredLeft, true);
+        }
+
+        // BPM Text & Delta from previous track
+        juce::String bpmStr;
+        if (track.bpm > 0.0f) {
+            bpmStr = juce::String((int)std::round(track.bpm)) + " BPM";
+            if (rowNumber > 0 && playlist[rowNumber - 1].bpm > 0.0f) {
+                float delta = track.bpm - playlist[rowNumber - 1].bpm;
+                if (std::abs(delta) >= 1.0f) {
+                    bpmStr += (delta > 0 ? " (+" : " (") + juce::String((int)std::round(delta)) + ")";
+                }
+            }
+        } else {
+            bpmStr = "-- BPM";
+        }
+        g.setColour(ThemeManager::get(Theme::Role::accent).withAlpha(0.85f));
         g.setFont(juce::FontOptions(11.0f, juce::Font::bold));
-        g.drawText(bpmStr, width - 145, 0, 65, height, juce::Justification::centredRight, true);
+        g.drawText(bpmStr, width - 145, 0, 75, height, juce::Justification::centredRight, true);
 
-        // Duration text
-        int mins = (int)(track.durationSeconds / 60);
-        int secs = (int)std::fmod(track.durationSeconds, 60.0);
+        // Effective Duration text
+        double effDur = track.getEffectiveDuration();
+        int mins = (int)(effDur / 60);
+        int secs = (int)std::fmod(effDur, 60.0);
         juce::String durStr = juce::String::formatted("%02d:%02d", mins, secs);
 
-        g.setColour(ThemeManager::get(Theme::Role::textDim));
+        g.setColour(track.hasCues() ? juce::Colours::lightgreen : ThemeManager::get(Theme::Role::textDim));
         g.setFont(juce::FontOptions(12.0f));
-        g.drawText(durStr, width - 70, 0, 60, height, juce::Justification::centredRight, true);
+        g.drawText(durStr, width - 65, 0, 55, height, juce::Justification::centredRight, true);
     }
 
     void listBoxItemDoubleClicked(int row, const juce::MouseEvent&) override {
@@ -533,6 +626,13 @@ public:
         m.addItem(7, "Move to Bottom");
         m.addSeparator();
         m.addItem(8, "Set / Edit Track BPM (" + (track.bpm > 0 ? juce::String((int)std::round(track.bpm)) : "None") + ")...");
+        m.addSeparator();
+        m.addItem(11, "Set Cue-In from Deck A (" + formatTime(processor.getDeckPosition(0)) + ")");
+        m.addItem(12, "Set Cue-Out from Deck A (" + formatTime(processor.getDeckPosition(0)) + ")");
+        m.addItem(13, "Set Cue-In from Deck B (" + formatTime(processor.getDeckPosition(1)) + ")");
+        m.addItem(14, "Set Cue-Out from Deck B (" + formatTime(processor.getDeckPosition(1)) + ")");
+        m.addItem(15, "Clear Cue Points");
+        m.addSeparator();
         m.addItem(9, "Reveal File in Windows Explorer");
         m.addItem(10, "Remove from Playlist");
 
@@ -559,6 +659,21 @@ public:
                 moveSelectedToBottom();
             } else if (result == 8) {
                 promptEditBpm(trackIdx);
+            } else if (result == 11) {
+                processor.setTrackCueIn(trackIdx, processor.getDeckPosition(0));
+                updateTrackUI();
+            } else if (result == 12) {
+                processor.setTrackCueOut(trackIdx, processor.getDeckPosition(0));
+                updateTrackUI();
+            } else if (result == 13) {
+                processor.setTrackCueIn(trackIdx, processor.getDeckPosition(1));
+                updateTrackUI();
+            } else if (result == 14) {
+                processor.setTrackCueOut(trackIdx, processor.getDeckPosition(1));
+                updateTrackUI();
+            } else if (result == 15) {
+                processor.clearTrackCues(trackIdx);
+                updateTrackUI();
             } else if (result == 9) {
                 YoutubeDownloadManager::openFolderInExplorer(track.file.getParentDirectory());
             } else if (result == 10) {
@@ -758,25 +873,26 @@ public:
 
         area.removeFromRight(8);
 
-        // Bottom Playlist Action Buttons Row (11 buttons)
+        // Bottom Playlist Action Buttons Row (12 buttons)
         auto btnRow = area.removeFromBottom(26);
-        int bw = btnRow.getWidth() / 11;
+        int bw = btnRow.getWidth() / 12;
         addFilesBtn.setBounds(btnRow.removeFromLeft(bw).reduced(2));
         addFolderBtn.setBounds(btnRow.removeFromLeft(bw).reduced(2));
-        moveUpBtn.setBounds(btnRow.removeFromLeft(bw).reduced(2));
-        moveDownBtn.setBounds(btnRow.removeFromLeft(bw).reduced(2));
+        moveUpBtn.setBounds(btnRow.removeFromLeft(bw - 4).reduced(2));
+        moveDownBtn.setBounds(btnRow.removeFromLeft(bw - 4).reduced(2));
+        smartArrangeBtn.setBounds(btnRow.removeFromLeft(bw + 18).reduced(2));
         grabYoutubeBtn.setBounds(btnRow.removeFromLeft(bw + 10).reduced(2));
         loadToDeckABtn.setBounds(btnRow.removeFromLeft(bw).reduced(2));
         loadToDeckBBtn.setBounds(btnRow.removeFromLeft(bw).reduced(2));
-        removeBtn.setBounds(btnRow.removeFromLeft(bw - 5).reduced(2));
-        clearBtn.setBounds(btnRow.removeFromLeft(bw - 5).reduced(2));
+        removeBtn.setBounds(btnRow.removeFromLeft(bw - 6).reduced(2));
+        clearBtn.setBounds(btnRow.removeFromLeft(bw - 6).reduced(2));
         savePlaylistBtn.setBounds(btnRow.removeFromLeft(bw).reduced(2));
         loadPlaylistBtn.setBounds(btnRow.reduced(2));
 
         area.removeFromBottom(8);
 
         // Dual Deck Area (Top half: Deck A on Left, Deck B on Right)
-        auto decksArea = area.removeFromTop(160);
+        auto decksArea = area.removeFromTop(188);
         int deckWidth = (decksArea.getWidth() - 10) / 2;
 
         deckABounds = decksArea.removeFromLeft(deckWidth);
@@ -790,9 +906,16 @@ public:
         deckABpmLabel.setBounds(aHeader.removeFromRight(80).reduced(4, 0));
         deckALabel.setBounds(aHeader);
 
-        deckATrackLabel.setBounds(aInner.removeFromTop(20));
+        deckATrackLabel.setBounds(aInner.removeFromTop(18));
         deckATimeLabel.setBounds(aInner.removeFromTop(16));
-        deckAPosSlider.setBounds(aInner.removeFromTop(18));
+        deckAPosSlider.setBounds(aInner.removeFromTop(16));
+        aInner.removeFromTop(2);
+
+        auto aCueRow = aInner.removeFromTop(20);
+        int aCueW = aCueRow.getWidth() / 3;
+        deckASetInBtn.setBounds(aCueRow.removeFromLeft(aCueW).reduced(2, 0));
+        deckASetOutBtn.setBounds(aCueRow.removeFromLeft(aCueW).reduced(2, 0));
+        deckAClrCueBtn.setBounds(aCueRow.reduced(2, 0));
         aInner.removeFromTop(4);
 
         auto aTransport = aInner.removeFromTop(24);
@@ -809,9 +932,16 @@ public:
         deckBBpmLabel.setBounds(bHeader.removeFromRight(80).reduced(4, 0));
         deckBLabel.setBounds(bHeader);
 
-        deckBTrackLabel.setBounds(bInner.removeFromTop(20));
+        deckBTrackLabel.setBounds(bInner.removeFromTop(18));
         deckBTimeLabel.setBounds(bInner.removeFromTop(16));
-        deckBPosSlider.setBounds(bInner.removeFromTop(18));
+        deckBPosSlider.setBounds(bInner.removeFromTop(16));
+        bInner.removeFromTop(2);
+
+        auto bCueRow = bInner.removeFromTop(20);
+        int bCueW = bCueRow.getWidth() / 3;
+        deckBSetInBtn.setBounds(bCueRow.removeFromLeft(bCueW).reduced(2, 0));
+        deckBSetOutBtn.setBounds(bCueRow.removeFromLeft(bCueW).reduced(2, 0));
+        deckBClrCueBtn.setBounds(bCueRow.reduced(2, 0));
         bInner.removeFromTop(4);
 
         auto bTransport = bInner.removeFromTop(24);
@@ -840,6 +970,9 @@ public:
     }
 
     void timerCallback() override {
+        // Update Title with total effective time
+        titleLabel.setText("FANFARE DUAL-DECK DJ & BREAK MUSIC   |   " + juce::String((int)processor.getPlaylist().size()) + " Tracks (" + formatTime(processor.getTotalPlaylistEffectiveDuration()) + ")", juce::dontSendNotification);
+
         // 1. Deck A Updates
         bool isDeckAPlaying = processor.isDeckPlaying(0);
         bool isDeckALoaded = processor.isDeckLoaded(0);
@@ -876,7 +1009,12 @@ public:
             deckATrackLabel.setText(processor.getDeckATrack().title, juce::dontSendNotification);
             double posA = processor.getDeckPosition(0);
             double lenA = processor.getDeckLength(0);
-            deckATimeLabel.setText(formatTime(posA) + " / " + formatTime(lenA) + " (-" + formatTime(juce::jmax(0.0, lenA - posA)) + ")", juce::dontSendNotification);
+            const auto& trkA = processor.getDeckATrack();
+            juce::String timeStr = formatTime(posA) + " / " + formatTime(lenA) + " (-" + formatTime(juce::jmax(0.0, lenA - posA)) + ")";
+            if (trkA.hasCues()) {
+                timeStr += " [IN: " + formatTime(trkA.cueInSeconds) + " | OUT: " + formatTime(trkA.getEffectiveEnd()) + "]";
+            }
+            deckATimeLabel.setText(timeStr, juce::dontSendNotification);
             if (!isScrubbingA && lenA > 0.0) {
                 deckAPosSlider.setValue(posA / lenA, juce::dontSendNotification);
             }
@@ -922,7 +1060,12 @@ public:
             deckBTrackLabel.setText(processor.getDeckBTrack().title, juce::dontSendNotification);
             double posB = processor.getDeckPosition(1);
             double lenB = processor.getDeckLength(1);
-            deckBTimeLabel.setText(formatTime(posB) + " / " + formatTime(lenB) + " (-" + formatTime(juce::jmax(0.0, lenB - posB)) + ")", juce::dontSendNotification);
+            const auto& trkB = processor.getDeckBTrack();
+            juce::String timeStr = formatTime(posB) + " / " + formatTime(lenB) + " (-" + formatTime(juce::jmax(0.0, lenB - posB)) + ")";
+            if (trkB.hasCues()) {
+                timeStr += " [IN: " + formatTime(trkB.cueInSeconds) + " | OUT: " + formatTime(trkB.getEffectiveEnd()) + "]";
+            }
+            deckBTimeLabel.setText(timeStr, juce::dontSendNotification);
             if (!isScrubbingB && lenB > 0.0) {
                 deckBPosSlider.setValue(posB / lenB, juce::dontSendNotification);
             }
@@ -1151,6 +1294,9 @@ public:
     juce::Label deckATrackLabel;
     juce::Label deckATimeLabel;
     juce::Slider deckAPosSlider;
+    juce::TextButton deckASetInBtn;
+    juce::TextButton deckASetOutBtn;
+    juce::TextButton deckAClrCueBtn;
     juce::TextButton deckAPlayBtn;
     juce::TextButton deckAPauseBtn;
     juce::TextButton deckAStopBtn;
@@ -1164,6 +1310,9 @@ public:
     juce::Label deckBTrackLabel;
     juce::Label deckBTimeLabel;
     juce::Slider deckBPosSlider;
+    juce::TextButton deckBSetInBtn;
+    juce::TextButton deckBSetOutBtn;
+    juce::TextButton deckBClrCueBtn;
     juce::TextButton deckBPlayBtn;
     juce::TextButton deckBPauseBtn;
     juce::TextButton deckBStopBtn;
@@ -1190,6 +1339,7 @@ public:
     juce::TextButton addFolderBtn;
     juce::TextButton moveUpBtn;
     juce::TextButton moveDownBtn;
+    juce::TextButton smartArrangeBtn;
     juce::TextButton grabYoutubeBtn;
     juce::TextButton loadToDeckABtn;
     juce::TextButton loadToDeckBBtn;

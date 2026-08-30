@@ -292,19 +292,32 @@ Located in [Mp3PlayerProcessor.h](file:///z:/davecore/Source/Mp3PlayerProcessor.
 - **Constant Power Curve**: $3\text{ dB}$ equal-power sine/cosine crossfade curve ($\sin^2(\theta) + \cos^2(\theta) = 1.0$) ensuring constant acoustic loudness throughout transitions.
 - **Automated Crossfade Buttons**: One-click smooth transitions: `<< FADE A` and `FADE B >>`.
 - **Configurable Transition Times**: 2s, 4s, 6s, 8s, or 10s fade durations.
-- **Manual Crossfader Slider**: Tactile slider for manual DJ blending between Deck A and Deck B.
-
 ### 8.3 Auto-DJ Continuous Stage Mixing
-- **Zero Dead-Air Playback**: When active song approaches its final 5 seconds, Auto-DJ automatically cues, starts, and crossfades into the next track in the playlist.
+- **Zero Dead-Air Playback**: When active song approaches its final seconds (or designated Cue-Out trigger point), Auto-DJ automatically cues, starts, and crossfades into the next track in the playlist.
 - **Shuffle & Loop Modes**: Repeat Track, Repeat All, or pseudo-random playlist shuffling.
 
-### 8.4 YouTube-to-MP3 Background Grabber
+### 8.4 Per-Track In/Out Cue Points & Auto-Trimming
+- **Intro Shaving (Cue-In)**: Set a custom start offset (`cueInSeconds`) to skip talking preambles, click-counts, or slow build-ups and start playing directly on the main beat.
+- **Fadeout / Outro Trimming (Cue-Out)**: Set an early crossfade trigger (`cueOutSeconds`) to bypass trailing silence or 30-second acoustic fadeouts, immediately transitioning to the next deck with zero energy loss.
+- **On-Deck Quick Capture**: One-click `[SET IN]`, `[SET OUT]`, and `[CLR]` buttons on Deck A and Deck B to capture playhead positions live during playback.
+- **Persistent Caching**: Cue points and detected BPMs are cached per-file in `%APPDATA%/Fanfare/Playlists/bpm_cache.json` and JSON playlist files, preserving trimming across sessions without altering original MP3 audio files on disk.
+
+### 8.5 Intelligent BPM-Aware Playlist Arranger (Smart Set Flow)
+- **1-Click Smart Arranger Menu (`[SMART ARRANGE ⚡]`)**:
+  - *Smooth BPM Ramp (Ascending / Descending)*: Sorts tracks gradually by tempo (e.g. 95 $\rightarrow$ 128 BPM) for dinner-to-dance warm-up arcs.
+  - *Minimal Tempo Step (Nearest-Neighbor TSP)*: Reorders the playlist to minimize tempo jumps between consecutive songs ($|\Delta\text{BPM}| \le 3-5\text{ BPM}$) with half-time/double-time harmonic matching ($70 \times 2 = 140\text{ BPM}$).
+  - *Energy Wave (Build & Peak)*: Groups tracks into dynamic tiers (Warmup $\rightarrow$ Mid-Groove $\rightarrow$ Peak 1 $\rightarrow$ Groove $\rightarrow$ Peak Crescendo) mimicking a professional DJ set curve.
+  - *Target Duration Fitting (30m / 45m / 60m)*: Calculates exact effective playtime:
+    $$\text{Set Duration} = \sum (\text{CueOut}_i - \text{CueIn}_i) - (N-1) \times \text{CrossfadeDuration}$$
+    and automatically selects the optimal track sequence to fill a 30, 45, or 60-minute break without cutting off tracks mid-song.
+
+### 8.6 YouTube-to-MP3 Background Grabber
 - **Integrated Download Manager**: Powered by [YoutubeDownloadManager.h](file:///z:/davecore/Source/YoutubeDownloadManager.h) utilizing `yt-dlp` and `ffmpeg`.
 - **Direct 192kbps Audio Extraction**: Paste any YouTube / web music URL to extract high-quality stereo 192k MP3 audio directly into the stage music library.
 - **Instant Metadata Extraction**: Pre-fetches video titles in the background to name tracks immediately.
 - **Grab & Play**: One-click action to download a requested song and immediately begin playback on stage.
 
-### 8.5 6 Persistent Playlist Preset Banks
+### 8.7 6 Persistent Playlist Preset Banks
 - **Instant Bank Switching**: 6 tactile bank buttons (e.g. *Hits*, *Oldies*, *Dinner*, *Dance*, *Ballads*, *Break*).
 - **Right-Click Context Menu**: Right-click any bank button to assign a music folder, rename the bank, or refresh directory contents.
 

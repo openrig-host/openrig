@@ -26,6 +26,21 @@ public:
         double durationSeconds = 0.0;
         float bpm = 0.0f;
         double firstBeatSeconds = 0.0;
+        double cueInSeconds = 0.0;
+        double cueOutSeconds = 0.0;
+
+        double getEffectiveStart() const { return juce::jmax(0.0, cueInSeconds); }
+        double getEffectiveEnd() const {
+            return (cueOutSeconds > cueInSeconds && cueOutSeconds <= durationSeconds) ? cueOutSeconds : durationSeconds;
+        }
+        double getEffectiveDuration() const {
+            double s = getEffectiveStart();
+            double e = getEffectiveEnd();
+            return (e > s) ? (e - s) : (durationSeconds > s ? (durationSeconds - s) : durationSeconds);
+        }
+        bool hasCues() const {
+            return cueInSeconds > 0.0 || (cueOutSeconds > 0.0 && cueOutSeconds < durationSeconds);
+        }
     };
 
     struct PlaylistBank {
@@ -346,8 +361,13 @@ public:
             double curPos = (currentSampleRate > 0.0) ? ((double)curDeck.currentSamplePos.load() / currentSampleRate) : 0.0;
             double curLen = (currentSampleRate > 0.0) ? ((double)curDeck.totalSampleLength.load() / currentSampleRate) : 0.0;
 
-            if (curLen > 10.0) {
-                double remaining = curLen - curPos;
+            double effectiveEnd = curLen;
+            if (curDeck.trackInfo.cueOutSeconds > curDeck.trackInfo.cueInSeconds && curDeck.trackInfo.cueOutSeconds < curLen) {
+                effectiveEnd = curDeck.trackInfo.cueOutSeconds;
+            }
+
+            if (curLen > 5.0) {
+                double remaining = effectiveEnd - curPos;
                 float xfadeSec = crossfadeDurationSec.load();
                 if (autoDjEnabled.load() && remaining <= (double)xfadeSec && remaining > 0.1) {
                     // Trigger seamless Auto-DJ crossfade to next song
@@ -528,7 +548,15 @@ public:
                 juce::SpinLock::ScopedLockType al(audioLock);
                 targetDeck.trackInfo = info;
                 targetDeck.isLoaded.store(true);
-                targetDeck.currentSamplePos.store(0);
+
+                juce::int64 startSample = 0;
+                if (info.cueInSeconds > 0.0 && currentSampleRate > 0.0) {
+                    startSample = (juce::int64)(info.cueInSeconds * currentSampleRate);
+                    startSample = juce::jlimit((juce::int64)0, targetDeck.bufferedSource->getTotalLength(), startSample);
+                    targetDeck.bufferedSource->setNextReadPosition(startSample);
+                }
+
+                targetDeck.currentSamplePos.store(startSample);
                 targetDeck.totalSampleLength.store(targetDeck.bufferedSource->getTotalLength());
                 targetDeck.setTempoRatio(1.0f);
                 return true;
@@ -550,13 +578,15 @@ public:
         info.file = file;
         info.title = file.getFileNameWithoutExtension();
 
-        // Check BPM from cache
+        // Check BPM & Cues from cache
         {
             juce::ScopedLock sl(bpmCacheLock);
             auto it = bpmCache.find(file.getFullPathName());
             if (it != bpmCache.end()) {
                 info.bpm = it->second.bpm;
                 info.firstBeatSeconds = it->second.firstBeatSeconds;
+                info.cueInSeconds = it->second.cueInSeconds;
+                info.cueOutSeconds = it->second.cueOutSeconds;
             }
         }
 
@@ -885,8 +915,337 @@ public:
             playlist[trackIdx].bpm = bpm;
             {
                 juce::ScopedLock bl(bpmCacheLock);
-                bpmCache[playlist[trackIdx].file.getFullPathName()] = { bpm, playlist[trackIdx].firstBeatSeconds };
+                auto path = playlist[trackIdx].file.getFullPathName();
+                bpmCache[path].bpm = bpm;
+                bpmCache[path].firstBeatSeconds = playlist[trackIdx].firstBeatSeconds;
                 saveBpmCache();
+            }
+            if (onPlaylistChanged) onPlaylistChanged();
+        }
+    }
+
+    void setTrackCueIn(int trackIndex, double cueInSec) {
+        juce::ScopedLock sl(playlistLock);
+        if (trackIndex >= 0 && trackIndex < (int)playlist.size()) {
+            playlist[trackIndex].cueInSeconds = juce::jmax(0.0, cueInSec);
+            {
+                juce::ScopedLock bl(bpmCacheLock);
+                auto fullPath = playlist[trackIndex].file.getFullPathName();
+                bpmCache[fullPath].cueInSeconds = playlist[trackIndex].cueInSeconds;
+                saveBpmCache();
+            }
+            if (currentTrackIndex == trackIndex) {
+                int activeIdx = activeDeckIndex.load();
+                Deck& curDeck = (activeIdx == 0) ? deckA : deckB;
+                curDeck.trackInfo.cueInSeconds = playlist[trackIndex].cueInSeconds;
+            }
+            if (onPlaylistChanged) onPlaylistChanged();
+            if (onTrackChanged) onTrackChanged();
+        }
+    }
+
+    void setTrackCueOut(int trackIndex, double cueOutSec) {
+        juce::ScopedLock sl(playlistLock);
+        if (trackIndex >= 0 && trackIndex < (int)playlist.size()) {
+            playlist[trackIndex].cueOutSeconds = juce::jmax(0.0, cueOutSec);
+            {
+                juce::ScopedLock bl(bpmCacheLock);
+                auto fullPath = playlist[trackIndex].file.getFullPathName();
+                bpmCache[fullPath].cueOutSeconds = playlist[trackIndex].cueOutSeconds;
+                saveBpmCache();
+            }
+            if (currentTrackIndex == trackIndex) {
+                int activeIdx = activeDeckIndex.load();
+                Deck& curDeck = (activeIdx == 0) ? deckA : deckB;
+                curDeck.trackInfo.cueOutSeconds = playlist[trackIndex].cueOutSeconds;
+            }
+            if (onPlaylistChanged) onPlaylistChanged();
+            if (onTrackChanged) onTrackChanged();
+        }
+    }
+
+    void clearTrackCues(int trackIndex) {
+        juce::ScopedLock sl(playlistLock);
+        if (trackIndex >= 0 && trackIndex < (int)playlist.size()) {
+            playlist[trackIndex].cueInSeconds = 0.0;
+            playlist[trackIndex].cueOutSeconds = 0.0;
+            {
+                juce::ScopedLock bl(bpmCacheLock);
+                auto fullPath = playlist[trackIndex].file.getFullPathName();
+                bpmCache[fullPath].cueInSeconds = 0.0;
+                bpmCache[fullPath].cueOutSeconds = 0.0;
+                saveBpmCache();
+            }
+            if (currentTrackIndex == trackIndex) {
+                int activeIdx = activeDeckIndex.load();
+                Deck& curDeck = (activeIdx == 0) ? deckA : deckB;
+                curDeck.trackInfo.cueInSeconds = 0.0;
+                curDeck.trackInfo.cueOutSeconds = 0.0;
+            }
+            if (onPlaylistChanged) onPlaylistChanged();
+            if (onTrackChanged) onTrackChanged();
+        }
+    }
+
+    void setDeckCueIn(int deckId) {
+        Deck& d = (deckId == 0) ? deckA : deckB;
+        if (d.isLoaded.load() && currentSampleRate > 0.0) {
+            double curPos = (double)d.currentSamplePos.load() / currentSampleRate;
+            d.trackInfo.cueInSeconds = curPos;
+            juce::String path = d.trackInfo.file.getFullPathName();
+            {
+                juce::ScopedLock bl(bpmCacheLock);
+                bpmCache[path].cueInSeconds = curPos;
+                saveBpmCache();
+            }
+            {
+                juce::ScopedLock pl(playlistLock);
+                for (auto& t : playlist) {
+                    if (t.file.getFullPathName() == path) {
+                        t.cueInSeconds = curPos;
+                    }
+                }
+            }
+            if (onPlaylistChanged) onPlaylistChanged();
+            if (onTrackChanged) onTrackChanged();
+        }
+    }
+
+    void setDeckCueOut(int deckId) {
+        Deck& d = (deckId == 0) ? deckA : deckB;
+        if (d.isLoaded.load() && currentSampleRate > 0.0) {
+            double curPos = (double)d.currentSamplePos.load() / currentSampleRate;
+            d.trackInfo.cueOutSeconds = curPos;
+            juce::String path = d.trackInfo.file.getFullPathName();
+            {
+                juce::ScopedLock bl(bpmCacheLock);
+                bpmCache[path].cueOutSeconds = curPos;
+                saveBpmCache();
+            }
+            {
+                juce::ScopedLock pl(playlistLock);
+                for (auto& t : playlist) {
+                    if (t.file.getFullPathName() == path) {
+                        t.cueOutSeconds = curPos;
+                    }
+                }
+            }
+            if (onPlaylistChanged) onPlaylistChanged();
+            if (onTrackChanged) onTrackChanged();
+        }
+    }
+
+    void clearDeckCues(int deckId) {
+        Deck& d = (deckId == 0) ? deckA : deckB;
+        if (d.isLoaded.load()) {
+            d.trackInfo.cueInSeconds = 0.0;
+            d.trackInfo.cueOutSeconds = 0.0;
+            juce::String path = d.trackInfo.file.getFullPathName();
+            {
+                juce::ScopedLock bl(bpmCacheLock);
+                bpmCache[path].cueInSeconds = 0.0;
+                bpmCache[path].cueOutSeconds = 0.0;
+                saveBpmCache();
+            }
+            {
+                juce::ScopedLock pl(playlistLock);
+                for (auto& t : playlist) {
+                    if (t.file.getFullPathName() == path) {
+                        t.cueInSeconds = 0.0;
+                        t.cueOutSeconds = 0.0;
+                    }
+                }
+            }
+            if (onPlaylistChanged) onPlaylistChanged();
+            if (onTrackChanged) onTrackChanged();
+        }
+    }
+
+    double getTotalPlaylistEffectiveDuration() const {
+        juce::ScopedLock sl(playlistLock);
+        double total = 0.0;
+        float xfade = crossfadeDurationSec.load();
+        for (size_t i = 0; i < playlist.size(); ++i) {
+            double dur = playlist[i].getEffectiveDuration();
+            if (i > 0) dur = juce::jmax(0.0, dur - (double)xfade);
+            total += dur;
+        }
+        return total;
+    }
+
+    // --- Smart Sequence & Playlist Arranging Algorithms ---
+    void sortPlaylistByBpm(bool ascending) {
+        juce::ScopedLock sl(playlistLock);
+        if (playlist.size() <= 1) return;
+
+        juce::String currentPath;
+        if (currentTrackIndex >= 0 && currentTrackIndex < (int)playlist.size()) {
+            currentPath = playlist[currentTrackIndex].file.getFullPathName();
+        }
+
+        std::stable_sort(playlist.begin(), playlist.end(), [ascending](const TrackInfo& a, const TrackInfo& b) {
+            float bpmA = (a.bpm > 0.0f) ? a.bpm : (ascending ? 9999.0f : -9999.0f);
+            float bpmB = (b.bpm > 0.0f) ? b.bpm : (ascending ? 9999.0f : -9999.0f);
+            return ascending ? (bpmA < bpmB) : (bpmA > bpmB);
+        });
+
+        // Re-locate currentTrackIndex
+        if (currentPath.isNotEmpty()) {
+            for (int i = 0; i < (int)playlist.size(); ++i) {
+                if (playlist[i].file.getFullPathName() == currentPath) {
+                    currentTrackIndex = i;
+                    break;
+                }
+            }
+        }
+
+        if (onPlaylistChanged) onPlaylistChanged();
+    }
+
+    void sortPlaylistMinimalDelta(int startTrackIndex = 0) {
+        juce::ScopedLock sl(playlistLock);
+        int n = (int)playlist.size();
+        if (n <= 2) return;
+
+        startTrackIndex = juce::jlimit(0, n - 1, startTrackIndex);
+        juce::String currentPath;
+        if (currentTrackIndex >= 0 && currentTrackIndex < n) {
+            currentPath = playlist[currentTrackIndex].file.getFullPathName();
+        }
+
+        std::vector<TrackInfo> remaining = playlist;
+        std::vector<TrackInfo> ordered;
+        ordered.reserve(n);
+
+        ordered.push_back(remaining[startTrackIndex]);
+        remaining.erase(remaining.begin() + startTrackIndex);
+
+        auto bpmDist = [](float a, float b) -> float {
+            if (a <= 0.0f || b <= 0.0f) return 50.0f;
+            float dDirect = std::abs(a - b);
+            float dDouble = std::abs(a * 2.0f - b);
+            float dHalf = std::abs(a * 0.5f - b);
+            return juce::jmin(dDirect, juce::jmin(dDouble, dHalf));
+        };
+
+        while (!remaining.empty()) {
+            float lastBpm = ordered.back().bpm;
+            int bestIdx = 0;
+            float bestDist = 99999.0f;
+
+            for (int i = 0; i < (int)remaining.size(); ++i) {
+                float dist = bpmDist(lastBpm, remaining[i].bpm);
+                if (dist < bestDist) {
+                    bestDist = dist;
+                    bestIdx = i;
+                }
+            }
+
+            ordered.push_back(remaining[bestIdx]);
+            remaining.erase(remaining.begin() + bestIdx);
+        }
+
+        playlist = ordered;
+
+        if (currentPath.isNotEmpty()) {
+            for (int i = 0; i < (int)playlist.size(); ++i) {
+                if (playlist[i].file.getFullPathName() == currentPath) {
+                    currentTrackIndex = i;
+                    break;
+                }
+            }
+        }
+
+        if (onPlaylistChanged) onPlaylistChanged();
+    }
+
+    void sortPlaylistEnergyWave() {
+        juce::ScopedLock sl(playlistLock);
+        int n = (int)playlist.size();
+        if (n <= 2) return;
+
+        juce::String currentPath;
+        if (currentTrackIndex >= 0 && currentTrackIndex < n) {
+            currentPath = playlist[currentTrackIndex].file.getFullPathName();
+        }
+
+        // Partition into 3 tiers: Warmup (<105 BPM), Mid (105-122 BPM), Peak (>122 BPM)
+        std::vector<TrackInfo> warmup, mid, peak, unknown;
+        for (const auto& t : playlist) {
+            if (t.bpm <= 0.0f) unknown.push_back(t);
+            else if (t.bpm < 105.0f) warmup.push_back(t);
+            else if (t.bpm <= 122.0f) mid.push_back(t);
+            else peak.push_back(t);
+        }
+
+        auto bpmAsc = [](const TrackInfo& a, const TrackInfo& b) { return a.bpm < b.bpm; };
+        std::stable_sort(warmup.begin(), warmup.end(), bpmAsc);
+        std::stable_sort(mid.begin(), mid.end(), bpmAsc);
+        std::stable_sort(peak.begin(), peak.end(), bpmAsc);
+
+        // Build Wave 1 & Wave 2
+        std::vector<TrackInfo> ordered;
+        ordered.reserve(n);
+
+        auto takeFrom = [](std::vector<TrackInfo>& src, size_t count, std::vector<TrackInfo>& dst) {
+            size_t take = juce::jmin(count, src.size());
+            for (size_t i = 0; i < take; ++i) {
+                dst.push_back(src[0]);
+                src.erase(src.begin());
+            }
+        };
+
+        // Wave 1: First half of warmup, first half of mid, first half of peak
+        takeFrom(warmup, (warmup.size() + 1) / 2, ordered);
+        takeFrom(mid, (mid.size() + 1) / 2, ordered);
+        takeFrom(peak, (peak.size() + 1) / 2, ordered);
+
+        // Wave 2: Remaining warmup/mid, then peak crescendo
+        takeFrom(warmup, warmup.size(), ordered);
+        takeFrom(mid, mid.size(), ordered);
+        takeFrom(peak, peak.size(), ordered);
+
+        // Append any unanalyzed tracks
+        for (const auto& u : unknown) ordered.push_back(u);
+
+        playlist = ordered;
+
+        if (currentPath.isNotEmpty()) {
+            for (int i = 0; i < (int)playlist.size(); ++i) {
+                if (playlist[i].file.getFullPathName() == currentPath) {
+                    currentTrackIndex = i;
+                    break;
+                }
+            }
+        }
+
+        if (onPlaylistChanged) onPlaylistChanged();
+    }
+
+    void fitPlaylistToDuration(double targetMinutes) {
+        juce::ScopedLock sl(playlistLock);
+        if (playlist.empty() || targetMinutes <= 0.0) return;
+
+        double targetSeconds = targetMinutes * 60.0;
+        double accum = 0.0;
+        float xfade = crossfadeDurationSec.load();
+
+        std::vector<TrackInfo> fitted;
+        for (size_t i = 0; i < playlist.size(); ++i) {
+            double eff = playlist[i].getEffectiveDuration();
+            if (i > 0) eff = juce::jmax(0.0, eff - (double)xfade);
+            
+            if (accum + eff <= targetSeconds + 45.0 || fitted.empty()) {
+                fitted.push_back(playlist[i]);
+                accum += eff;
+                if (accum >= targetSeconds - 15.0) break;
+            }
+        }
+
+        if (!fitted.empty()) {
+            playlist = fitted;
+            if (currentTrackIndex >= (int)playlist.size()) {
+                currentTrackIndex = 0;
             }
             if (onPlaylistChanged) onPlaylistChanged();
         }
@@ -932,6 +1291,8 @@ public:
                     if (it != bpmCache.end()) {
                         info.bpm = it->second.bpm;
                         info.firstBeatSeconds = it->second.firstBeatSeconds;
+                        info.cueInSeconds = it->second.cueInSeconds;
+                        info.cueOutSeconds = it->second.cueOutSeconds;
                     }
                 }
                 banks[bankIndex].tracks.push_back(info);
@@ -1147,6 +1508,8 @@ public:
                 to->setProperty("title", t.title);
                 to->setProperty("duration", t.durationSeconds);
                 to->setProperty("bpm", (double)t.bpm);
+                to->setProperty("cueIn", t.cueInSeconds);
+                to->setProperty("cueOut", t.cueOutSeconds);
                 arr.add(juce::var(to));
             }
             obj->setProperty("tracks", arr);
@@ -1178,9 +1541,23 @@ public:
                     for (const auto& v : *arr) {
                         if (auto* to = v.getDynamicObject()) {
                             juce::File f(to->getProperty("path").toString());
-                            addFile(f);
+                            if (f.existsAsFile()) {
+                                TrackInfo info;
+                                info.file = f;
+                                info.title = to->getProperty("title").toString();
+                                if (info.title.isEmpty()) info.title = f.getFileNameWithoutExtension();
+                                info.durationSeconds = (double)to->getProperty("duration");
+                                info.bpm = (float)(double)to->getProperty("bpm");
+                                info.cueInSeconds = (double)to->getProperty("cueIn");
+                                info.cueOutSeconds = (double)to->getProperty("cueOut");
+                                {
+                                    juce::ScopedLock pl(playlistLock);
+                                    playlist.push_back(info);
+                                }
+                            }
                         }
                     }
+                    if (onPlaylistChanged) onPlaylistChanged();
                 }
             }
         }
@@ -1190,6 +1567,8 @@ private:
     struct CachedBpm {
         float bpm = 0.0f;
         double firstBeatSeconds = 0.0;
+        double cueInSeconds = 0.0;
+        double cueOutSeconds = 0.0;
     };
 
     void loadBpmCache() {
@@ -1206,6 +1585,8 @@ private:
                         CachedBpm cb;
                         cb.bpm = (float)bo->getProperty("bpm");
                         cb.firstBeatSeconds = (double)bo->getProperty("firstBeat");
+                        cb.cueInSeconds = (double)bo->getProperty("cueIn");
+                        cb.cueOutSeconds = (double)bo->getProperty("cueOut");
                         bpmCache[prop.name.toString()] = cb;
                     }
                 }
@@ -1225,6 +1606,8 @@ private:
                 juce::DynamicObject::Ptr bo = new juce::DynamicObject();
                 bo->setProperty("bpm", (double)pair.second.bpm);
                 bo->setProperty("firstBeat", pair.second.firstBeatSeconds);
+                bo->setProperty("cueIn", pair.second.cueInSeconds);
+                bo->setProperty("cueOut", pair.second.cueOutSeconds);
                 root->setProperty(pair.first, juce::var(bo.get()));
             }
         }
@@ -1244,6 +1627,8 @@ private:
                 if (trackIndex >= 0 && trackIndex < (int)playlist.size()) {
                     playlist[trackIndex].bpm = it->second.bpm;
                     playlist[trackIndex].firstBeatSeconds = it->second.firstBeatSeconds;
+                    playlist[trackIndex].cueInSeconds = it->second.cueInSeconds;
+                    playlist[trackIndex].cueOutSeconds = it->second.cueOutSeconds;
                     if (onPlaylistChanged) onPlaylistChanged();
                 }
                 return;
@@ -1255,7 +1640,8 @@ private:
             if (res.success && res.bpm > 0.0f) {
                 {
                     juce::ScopedLock sl(bpmCacheLock);
-                    bpmCache[fullPath] = { res.bpm, res.firstBeatSeconds };
+                    bpmCache[fullPath].bpm = res.bpm;
+                    bpmCache[fullPath].firstBeatSeconds = res.firstBeatSeconds;
                     saveBpmCache();
                 }
                 {
