@@ -98,17 +98,23 @@ public:
         std::atomic<juce::int64> totalSampleLength{0};
         std::atomic<float> tempoRatio{1.0f};
 
+        double sourceSampleRate = 44100.0;
+        double currentHostSampleRate = 44100.0;
         double resampleFractionalPos = 0.0;
         juce::AudioBuffer<float> rawBuffer;
+        juce::AudioBuffer<float> interBuffer;
         juce::AudioBuffer<float> buffer;
 
-        void prepare(double sampleRate, int maxBlockSize) {
+        void prepare(double hostSampleRate, int maxBlockSize) {
+            currentHostSampleRate = hostSampleRate > 0.0 ? hostSampleRate : 44100.0;
             int allocSize = juce::jmax(maxBlockSize * 2, 32768);
-            rawBuffer.setSize(2, allocSize, false, false, true);
+            rawBuffer.setSize(2, allocSize * 2, false, false, true);
             rawBuffer.clear();
+            interBuffer.setSize(2, allocSize * 2, false, false, true);
+            interBuffer.clear();
             buffer.setSize(2, allocSize, false, false, true);
             buffer.clear();
-            timeStretcher.prepare(sampleRate, allocSize);
+            timeStretcher.prepare(currentHostSampleRate, allocSize);
             resampleFractionalPos = 0.0;
         }
 
@@ -119,6 +125,7 @@ public:
             currentSamplePos.store(0);
             totalSampleLength.store(0);
             tempoRatio.store(1.0f);
+            sourceSampleRate = 44100.0;
             resampleFractionalPos = 0.0;
             timeStretcher.reset();
             timeStretcher.setTempoRatio(1.0f);
@@ -142,76 +149,111 @@ public:
             return tempoRatio.load();
         }
 
-        // High-Quality 4-point Catmull-Rom Resampler & Key-Lock Renderer
+        double getSampleRateRatio() const {
+            if (sourceSampleRate > 0.0 && currentHostSampleRate > 0.0) {
+                return sourceSampleRate / currentHostSampleRate;
+            }
+            return 1.0;
+        }
+
+        // 4-point Catmull-Rom cubic spline interpolation resampler
+        static void resampleCatmullRom(const juce::AudioBuffer<float>& srcBuf, int srcAvailableSamples,
+                                       juce::AudioBuffer<float>& dstBuf, int dstNumSamples,
+                                       double ratio, double& fractionalPos) {
+            int numChannels = dstBuf.getNumChannels();
+            for (int ch = 0; ch < numChannels; ++ch) {
+                int srcCh = juce::jmin(ch, srcBuf.getNumChannels() - 1);
+                const float* src = srcBuf.getReadPointer(srcCh);
+                float* dst = dstBuf.getWritePointer(ch);
+
+                double pos = fractionalPos;
+                for (int i = 0; i < dstNumSamples; ++i) {
+                    int iPos = (int)pos;
+                    float frac = (float)(pos - (double)iPos);
+
+                    float y0 = (iPos > 0) ? src[iPos - 1] : src[0];
+                    float y1 = (iPos < srcAvailableSamples) ? src[iPos] : 0.0f;
+                    float y2 = (iPos + 1 < srcAvailableSamples) ? src[iPos + 1] : y1;
+                    float y3 = (iPos + 2 < srcAvailableSamples) ? src[iPos + 2] : y2;
+
+                    float a0 = -0.5f * y0 + 1.5f * y1 - 1.5f * y2 + 0.5f * y3;
+                    float a1 = y0 - 2.5f * y1 + 2.0f * y2 - 0.5f * y3;
+                    float a2 = -0.5f * y0 + 0.5f * y2;
+                    float a3 = y1;
+
+                    dst[i] = a0 * frac * frac * frac + a1 * frac * frac + a2 * frac + a3;
+                    pos += ratio;
+                }
+            }
+            double totalConsumed = (double)dstNumSamples * ratio;
+            int wholeConsumed = (int)totalConsumed;
+            fractionalPos = totalConsumed - (double)wholeConsumed;
+        }
+
+        // High-Quality Sample-Rate Compensated Catmull-Rom & Key-Lock Renderer
         void renderBlock(int numSamples, bool useKeyLock) {
             if (!isPlaying.load() || bufferedSource == nullptr) {
                 buffer.clear();
                 return;
             }
 
-            float ratio = tempoRatio.load();
+            double srRatio = getSampleRateRatio();
+            float userRatio = tempoRatio.load();
 
-            if (useKeyLock && std::abs(ratio - 1.0f) > 0.002f) {
-                // Key-Lock Mode (Time-Stretching)
-                rawBuffer.clear();
-                juce::AudioSourceChannelInfo info(&rawBuffer, 0, numSamples);
-                bufferedSource->getNextAudioBlock(info);
-                currentSamplePos.store(bufferedSource->getNextReadPosition());
-                totalSampleLength.store(bufferedSource->getTotalLength());
+            if (useKeyLock && std::abs(userRatio - 1.0f) > 0.002f) {
+                // Key-Lock Mode with active tempo stretch
+                if (std::abs(srRatio - 1.0) < 0.0001) {
+                    // Source sample rate matches host DAC: feed directly to WSOLA time-stretcher
+                    rawBuffer.clear();
+                    juce::AudioSourceChannelInfo info(&rawBuffer, 0, numSamples);
+                    bufferedSource->getNextAudioBlock(info);
+                    currentSamplePos.store(bufferedSource->getNextReadPosition());
+                    totalSampleLength.store(bufferedSource->getTotalLength());
 
-                buffer.clear();
-                timeStretcher.process(rawBuffer, buffer, numSamples);
-            } else if (std::abs(ratio - 1.0f) < 0.001f) {
-                // Exact 1.0x ratio: direct read, 0 resample overhead, pristine audio
-                buffer.clear();
-                juce::AudioSourceChannelInfo info(&buffer, 0, numSamples);
-                bufferedSource->getNextAudioBlock(info);
-                currentSamplePos.store(bufferedSource->getNextReadPosition());
-                totalSampleLength.store(bufferedSource->getTotalLength());
-            } else {
-                // Clean Resample Mode (Vinyl / VSO): 100% pristine studio-master audio with zero phasing
-                int neededRaw = (int)std::ceil((double)numSamples * (double)ratio) + 6;
-                neededRaw = juce::jmin(neededRaw, rawBuffer.getNumSamples());
+                    buffer.clear();
+                    timeStretcher.process(rawBuffer, buffer, numSamples);
+                } else {
+                    // Source rate differs from host: first Catmull-Rom resample to host rate, then time-stretch
+                    int neededRaw = (int)std::ceil((double)numSamples * srRatio) + 6;
+                    neededRaw = juce::jmin(neededRaw, rawBuffer.getNumSamples());
 
-                rawBuffer.clear();
-                juce::AudioSourceChannelInfo info(&rawBuffer, 0, neededRaw);
-                bufferedSource->getNextAudioBlock(info);
-                currentSamplePos.store(bufferedSource->getNextReadPosition());
-                totalSampleLength.store(bufferedSource->getTotalLength());
+                    rawBuffer.clear();
+                    juce::AudioSourceChannelInfo info(&rawBuffer, 0, neededRaw);
+                    bufferedSource->getNextAudioBlock(info);
+                    currentSamplePos.store(bufferedSource->getNextReadPosition());
+                    totalSampleLength.store(bufferedSource->getTotalLength());
 
-                buffer.clear();
-                int numChannels = buffer.getNumChannels();
+                    interBuffer.clear();
+                    resampleCatmullRom(rawBuffer, neededRaw, interBuffer, numSamples, srRatio, resampleFractionalPos);
 
-                for (int ch = 0; ch < numChannels; ++ch) {
-                    int srcCh = juce::jmin(ch, rawBuffer.getNumChannels() - 1);
-                    const float* src = rawBuffer.getReadPointer(srcCh);
-                    float* dst = buffer.getWritePointer(ch);
-
-                    double pos = resampleFractionalPos;
-                    for (int i = 0; i < numSamples; ++i) {
-                        int iPos = (int)pos;
-                        float frac = (float)(pos - (double)iPos);
-
-                        // 4-point Catmull-Rom interpolation for transparent variable-speed audio
-                        float y0 = (iPos > 0) ? src[iPos - 1] : src[0];
-                        float y1 = src[iPos];
-                        float y2 = (iPos + 1 < neededRaw) ? src[iPos + 1] : y1;
-                        float y3 = (iPos + 2 < neededRaw) ? src[iPos + 2] : y2;
-
-                        float a0 = -0.5f * y0 + 1.5f * y1 - 1.5f * y2 + 0.5f * y3;
-                        float a1 = y0 - 2.5f * y1 + 2.0f * y2 - 0.5f * y3;
-                        float a2 = -0.5f * y0 + 0.5f * y2;
-                        float a3 = y1;
-
-                        dst[i] = a0 * frac * frac * frac + a1 * frac * frac + a2 * frac + a3;
-                        pos += (double)ratio;
-                    }
+                    buffer.clear();
+                    timeStretcher.process(interBuffer, buffer, numSamples);
                 }
+            } else {
+                // Clean Vinyl Mode (or KeyLock at 1.0x tempo): transparent Catmull-Rom resampling
+                double totalRatio = (double)userRatio * srRatio;
 
-                // Advance fractional remainder
-                double totalConsumed = (double)numSamples * (double)ratio;
-                int wholeConsumed = (int)totalConsumed;
-                resampleFractionalPos = totalConsumed - (double)wholeConsumed;
+                if (std::abs(totalRatio - 1.0) < 0.0001) {
+                    // 1:1 direct read (e.g. 48kHz MP3 on 48kHz soundcard at 1.0x tempo)
+                    buffer.clear();
+                    juce::AudioSourceChannelInfo info(&buffer, 0, numSamples);
+                    bufferedSource->getNextAudioBlock(info);
+                    currentSamplePos.store(bufferedSource->getNextReadPosition());
+                    totalSampleLength.store(bufferedSource->getTotalLength());
+                } else {
+                    // Resample to host rate & user tempo with 4-point cubic spline
+                    int neededRaw = (int)std::ceil((double)numSamples * totalRatio) + 6;
+                    neededRaw = juce::jmin(neededRaw, rawBuffer.getNumSamples());
+
+                    rawBuffer.clear();
+                    juce::AudioSourceChannelInfo info(&rawBuffer, 0, neededRaw);
+                    bufferedSource->getNextAudioBlock(info);
+                    currentSamplePos.store(bufferedSource->getNextReadPosition());
+                    totalSampleLength.store(bufferedSource->getTotalLength());
+
+                    buffer.clear();
+                    resampleCatmullRom(rawBuffer, neededRaw, buffer, numSamples, totalRatio, resampleFractionalPos);
+                }
             }
         }
     };
@@ -542,17 +584,19 @@ public:
             std::unique_ptr<juce::AudioFormatReader> reader(formatManager.createReaderFor(std::move(memStream)));
 
             if (reader != nullptr) {
+                double srcRate = (reader->sampleRate > 0.0) ? reader->sampleRate : currentSampleRate;
+                targetDeck.sourceSampleRate = srcRate;
                 targetDeck.rawSource = std::make_unique<juce::AudioFormatReaderSource>(reader.release(), true);
-                targetDeck.bufferedSource = std::make_unique<juce::BufferingAudioSource>(targetDeck.rawSource.get(), bufferThread, false, 32768);
-                targetDeck.bufferedSource->prepareToPlay(4096, currentSampleRate);
+                targetDeck.bufferedSource = std::make_unique<juce::BufferingAudioSource>(targetDeck.rawSource.get(), bufferThread, false, 65536);
+                targetDeck.bufferedSource->prepareToPlay(4096, srcRate);
 
                 juce::SpinLock::ScopedLockType al(audioLock);
                 targetDeck.trackInfo = info;
                 targetDeck.isLoaded.store(true);
 
                 juce::int64 startSample = 0;
-                if (info.cueInSeconds > 0.0 && currentSampleRate > 0.0) {
-                    startSample = (juce::int64)(info.cueInSeconds * currentSampleRate);
+                if (info.cueInSeconds > 0.0 && srcRate > 0.0) {
+                    startSample = (juce::int64)(info.cueInSeconds * srcRate);
                     startSample = juce::jlimit((juce::int64)0, targetDeck.bufferedSource->getTotalLength(), startSample);
                     targetDeck.bufferedSource->setNextReadPosition(startSample);
                 }
@@ -647,16 +691,18 @@ public:
 
     double getDeckPosition(int deckId) const {
         const Deck& d = (deckId == 0) ? deckA : deckB;
-        if (currentSampleRate > 0.0) {
-            return (double)d.currentSamplePos.load() / currentSampleRate;
+        double rate = (d.sourceSampleRate > 0.0) ? d.sourceSampleRate : currentSampleRate;
+        if (rate > 0.0) {
+            return (double)d.currentSamplePos.load() / rate;
         }
         return 0.0;
     }
 
     double getDeckLength(int deckId) const {
         const Deck& d = (deckId == 0) ? deckA : deckB;
-        if (currentSampleRate > 0.0) {
-            return (double)d.totalSampleLength.load() / currentSampleRate;
+        double rate = (d.sourceSampleRate > 0.0) ? d.sourceSampleRate : currentSampleRate;
+        if (rate > 0.0) {
+            return (double)d.totalSampleLength.load() / rate;
         }
         return 0.0;
     }
@@ -664,8 +710,9 @@ public:
     void setDeckPosition(int deckId, double seconds) {
         juce::SpinLock::ScopedLockType al(audioLock);
         Deck& d = (deckId == 0) ? deckA : deckB;
-        if (d.bufferedSource != nullptr && currentSampleRate > 0.0) {
-            juce::int64 samplePos = (juce::int64)(seconds * currentSampleRate);
+        double rate = (d.sourceSampleRate > 0.0) ? d.sourceSampleRate : currentSampleRate;
+        if (d.bufferedSource != nullptr && rate > 0.0) {
+            juce::int64 samplePos = (juce::int64)(seconds * rate);
             samplePos = juce::jlimit((juce::int64)0, d.bufferedSource->getTotalLength(), samplePos);
             d.bufferedSource->setNextReadPosition(samplePos);
             d.currentSamplePos.store(samplePos);
@@ -994,8 +1041,9 @@ public:
 
     void setDeckCueIn(int deckId) {
         Deck& d = (deckId == 0) ? deckA : deckB;
-        if (d.isLoaded.load() && currentSampleRate > 0.0) {
-            double curPos = (double)d.currentSamplePos.load() / currentSampleRate;
+        double rate = (d.sourceSampleRate > 0.0) ? d.sourceSampleRate : currentSampleRate;
+        if (d.isLoaded.load() && rate > 0.0) {
+            double curPos = (double)d.currentSamplePos.load() / rate;
             d.trackInfo.cueInSeconds = curPos;
             juce::String path = d.trackInfo.file.getFullPathName();
             {
@@ -1019,8 +1067,9 @@ public:
 
     void setDeckCueOut(int deckId) {
         Deck& d = (deckId == 0) ? deckA : deckB;
-        if (d.isLoaded.load() && currentSampleRate > 0.0) {
-            double curPos = (double)d.currentSamplePos.load() / currentSampleRate;
+        double rate = (d.sourceSampleRate > 0.0) ? d.sourceSampleRate : currentSampleRate;
+        if (d.isLoaded.load() && rate > 0.0) {
+            double curPos = (double)d.currentSamplePos.load() / rate;
             d.trackInfo.cueOutSeconds = curPos;
             juce::String path = d.trackInfo.file.getFullPathName();
             {
