@@ -22,23 +22,26 @@ juce_add_gui_app(Fanfare
 
 # All compilation units (must match the Projucer source list).
 target_sources(Fanfare PRIVATE
-    DaveCoreProject/Source/Main.cpp
-    DaveCoreProject/Source/MainComponent.cpp
-    DaveCoreProject/Source/RackSlotComponent.cpp
-    DaveCoreProject/Source/BoutiqueLookAndFeel.cpp
-    DaveCoreProject/Source/ConfigModalOverlay.cpp
-    DaveCoreProject/Source/LibraryPanel.cpp
-    DaveCoreProject/Source/QueueButtonComponent.cpp
-    DaveCoreProject/Source/SceneButtonComponent.cpp
-    DaveCoreProject/Source/RigSerializer.cpp
-    DaveCoreProject/Source/RigBuilder.cpp
-    DaveCoreProject/Source/RigTransitioner.cpp
-    DaveCoreProject/Source/AssetLoader.cpp
+    Source/Main.cpp
+    Source/MainComponent.cpp
+    Source/RackSlotComponent.cpp
+    Source/BoutiqueLookAndFeel.cpp
+    Source/ConfigModalOverlay.cpp
+    Source/LibraryPanel.cpp
+    Source/QueueButtonComponent.cpp
+    Source/SceneButtonComponent.cpp
+    Source/RigSerializer.cpp
+    Source/RigBuilder.cpp
+    Source/RigTransitioner.cpp
+    Source/AssetLoader.cpp
+    Source/Web/OpenRigWebServer.cpp
+    Source/Web/StageHotspotController.cpp
+    Source/Web/StageRemoteModalOverlay.cpp
 )
 
-target_include_directories(OpenRig PRIVATE
-    DaveCoreProject/Source
-    DaveCoreProject/JuceLibraryCode
+target_include_directories(Fanfare PRIVATE
+    Source
+    JuceLibraryCode
 )
 
 # Module configuration. Mirrors the Projurer AppConfig.h, EXCEPT ASIO is left

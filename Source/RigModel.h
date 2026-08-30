@@ -154,6 +154,11 @@ struct Scene {
     std::vector<SlotState> slotStates;
 };
 
+struct NoteTab {
+    juce::String title;
+    juce::String content;
+};
+
 struct Song {
     juce::String name;
     float fohMasterLevel = 1.0f;
@@ -165,6 +170,10 @@ struct Song {
     std::vector<SongSlot> slots;
     std::vector<Scene> scenes;
     int currentSceneIndex = 0;
+    std::vector<NoteTab> notes;
+    int activeNoteTabIndex = 0;
+    float noteFontSize = 20.0f;
+    bool noteIsMonospace = true;
 };
 
 struct Set {

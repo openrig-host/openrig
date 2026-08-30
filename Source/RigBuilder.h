@@ -176,10 +176,10 @@ private:
         logToFile("TRACE: buildOne " + label + " (Key: " + key + "). curPath: " + curPath + ", newPath: " + newPath);
 
         // Reuse-by-path: keep the live instance for same-path plugins.
-        // This avoids creating a second instance of Qt-based plugins (e.g.
-        // NI Super 8) which abort if instantiated a second time or off-thread.
-        // State is restored via setStateInformation in applyRig (message thread).
+        // This avoids creating a second concurrent instance of single-instance plugins (Kontakt, Roland Zenology/XV-5080, Super 8)
+        // which block or crash in their internal singleton lock when instantiated concurrently.
         if (curPath == newPath) {
+            logToFile("TRACE: buildOne " + label + " reusing existing plugin instance (curPath == newPath): " + newPath);
             ++r.reusedCount;
             return true;
         }
@@ -327,8 +327,9 @@ private:
 
         logToFile("TRACE: buildMaster " + label + " (Key: " + key + "). curPath: " + curPath + ", newPath: " + newPath);
 
-        // Reuse-by-path (see buildOne comment above).
+        // Reuse-by-path for master FX plugins.
         if (curPath == newPath) {
+            logToFile("TRACE: buildMaster " + label + " reusing existing plugin instance (curPath == newPath): " + newPath);
             ++r.reusedCount;
             return true;
         }

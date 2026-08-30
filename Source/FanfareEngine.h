@@ -128,16 +128,20 @@ public:
     // Release Master FX chains
     for (auto &p : fohPluginChain) {
       if (p) {
-        p->releaseResources();
-        p.reset();
+        FanfareLog::safeExecutePluginCall([&]() {
+          p->releaseResources();
+          p.reset();
+        }, "fohPlugin releaseResources/reset");
       }
     }
     fohPluginChain.clear();
 
     for (auto &p : iemPluginChain) {
       if (p) {
-        p->releaseResources();
-        p.reset();
+        FanfareLog::safeExecutePluginCall([&]() {
+          p->releaseResources();
+          p.reset();
+        }, "iemPlugin releaseResources/reset");
       }
     }
     iemPluginChain.clear();
@@ -740,15 +744,9 @@ public:
     }
 
     // Real-time audio rendering runs completely lock-free during playback.
-    // We check isApplyingRig atomic flag only to pause rendering during full song switches.
-    if (isApplyingRig.load(std::memory_order_acquire)) {
-      for (int i = 0; i < numOutputs; ++i)
-        if (outputData[i])
-          juce::FloatVectorOperations::clear(outputData[i], numSamples);
-      return;
-    }
-
-    // We have the lock - do the quick work (bus clearing, MIDI routing)
+    // When isApplyingRig is true, we keep the audio pump cycling with clean silence so VST3
+    // state synchronization handshakes (Kontakt, Roland Zenology) complete in <1ms without deadlocking.
+    const bool isSwitching = isApplyingRig.load(std::memory_order_acquire);
 
     // CRITICAL: Clear all output buffers first to prevent feedback
     for (int i = 0; i < numOutputs; ++i)
@@ -804,50 +802,52 @@ public:
       return msgChannel == effective;
     };
 
-    for (const auto metadata : midi) {
-      auto msg = metadata.getMessage();
-      int pos = metadata.samplePosition;
+    if (!isSwitching) {
+      for (const auto metadata : midi) {
+        auto msg = metadata.getMessage();
+        int pos = metadata.samplePosition;
 
-      // NEVER pass program change (patch change) messages
-      if (msg.isProgramChange())
-        continue;
+        // NEVER pass program change (patch change) messages
+        if (msg.isProgramChange())
+          continue;
 
-      int msgChannel = msg.getChannel();
+        int msgChannel = msg.getChannel();
 
-      // Special routing: MIDI messages -> only to slots
-      if (msg.isNoteOn() || msg.isNoteOff()) {
-        int noteNum = msg.getNoteNumber();
-        // Apply per-slot channel + note range filtering
-        for (size_t i = 0; i < slots.size(); ++i) {
-          if (slotAcceptsChannel(i, msgChannel) &&
-              slots[i]->isNoteInRange(noteNum)) {
-            int transposeSemis = juce::jlimit(-48, 48, slots[i]->getTransposeSemis());
-            if (transposeSemis != 0) {
-              int transposed = juce::jlimit(0, 127, noteNum + transposeSemis);
-              auto transposedMsg = msg.isNoteOn()
-                  ? juce::MidiMessage::noteOn(msg.getChannel(), transposed,
-                                              msg.getVelocity())
-                  : juce::MidiMessage::noteOff(msg.getChannel(), transposed,
-                                               msg.getVelocity());
-              slotMidiBuffers[i].addEvent(transposedMsg, pos);
-            } else {
-              slotMidiBuffers[i].addEvent(msg, pos);
+        // Special routing: MIDI messages -> only to slots
+        if (msg.isNoteOn() || msg.isNoteOff()) {
+          int noteNum = msg.getNoteNumber();
+          // Apply per-slot channel + note range filtering
+          for (size_t i = 0; i < slots.size(); ++i) {
+            if (slotAcceptsChannel(i, msgChannel) &&
+                slots[i]->isNoteInRange(noteNum)) {
+              int transposeSemis = juce::jlimit(-48, 48, slots[i]->getTransposeSemis());
+              if (transposeSemis != 0) {
+                int transposed = juce::jlimit(0, 127, noteNum + transposeSemis);
+                auto transposedMsg = msg.isNoteOn()
+                    ? juce::MidiMessage::noteOn(msg.getChannel(), transposed,
+                                                msg.getVelocity())
+                    : juce::MidiMessage::noteOff(msg.getChannel(), transposed,
+                                                 msg.getVelocity());
+                slotMidiBuffers[i].addEvent(transposedMsg, pos);
+              } else {
+                slotMidiBuffers[i].addEvent(msg, pos);
+              }
             }
           }
-        }
-      } else if (msg.isAftertouch() || msg.isPitchWheel()) {
-        // Aftertouch and pitch wheel go to channel-matched slots
-        for (size_t i = 0; i < slots.size(); ++i) {
-          if (slotAcceptsChannel(i, msgChannel))
-            slotMidiBuffers[i].addEvent(msg, pos);
-        }
-      } else if (msg.isController()) {
-        int ccNum = msg.getControllerNumber();
+        } else if (msg.isAftertouch() || msg.isPitchWheel()) {
+          // Aftertouch and pitch wheel go to channel-matched slots
+          for (size_t i = 0; i < slots.size(); ++i) {
+            if (slotAcceptsChannel(i, msgChannel))
+              slotMidiBuffers[i].addEvent(msg, pos);
+          }
+        } else if (msg.isController()) {
+          int ccNum = msg.getControllerNumber();
 
-        for (size_t i = 0; i < slots.size(); ++i) {
-          if (slotAcceptsChannel(i, msgChannel) &&
-              slots[i]->isCCAllowed(ccNum)) {
-            slotMidiBuffers[i].addEvent(msg, pos);
+          for (size_t i = 0; i < slots.size(); ++i) {
+            if (slotAcceptsChannel(i, msgChannel) &&
+                slots[i]->isCCAllowed(ccNum)) {
+              slotMidiBuffers[i].addEvent(msg, pos);
+            }
           }
         }
       }
@@ -1150,22 +1150,24 @@ public:
     const int fohOff = fohOutputOffset.load(std::memory_order_acquire);
     const int iemOff = iemOutputOffset.load(std::memory_order_acquire);
 
-    // Route FOH to configured outputs (default: 1+2)
-    if (fohOff >= 0 && fohOff < numOutputs && outputData[fohOff] != nullptr) {
-      juce::FloatVectorOperations::copy(outputData[fohOff],
-                                        fohBus.getReadPointer(0), numSamples);
-      if (fohOff + 1 < numOutputs && outputData[fohOff + 1] != nullptr)
-        juce::FloatVectorOperations::copy(outputData[fohOff + 1],
-                                          fohBus.getReadPointer(1), numSamples);
-    }
+    if (!isSwitching) {
+      // Route FOH to configured outputs (default: 1+2)
+      if (fohOff >= 0 && fohOff < numOutputs && outputData[fohOff] != nullptr) {
+        juce::FloatVectorOperations::copy(outputData[fohOff],
+                                          fohBus.getReadPointer(0), numSamples);
+        if (fohOff + 1 < numOutputs && outputData[fohOff + 1] != nullptr)
+          juce::FloatVectorOperations::copy(outputData[fohOff + 1],
+                                            fohBus.getReadPointer(1), numSamples);
+      }
 
-    // Route IEM to configured outputs (default: 3+4)
-    if (iemOff >= 0 && iemOff < numOutputs && outputData[iemOff] != nullptr) {
-      juce::FloatVectorOperations::copy(outputData[iemOff],
-                                        iemBus.getReadPointer(0), numSamples);
-      if (iemOff + 1 < numOutputs && outputData[iemOff + 1] != nullptr)
-        juce::FloatVectorOperations::copy(outputData[iemOff + 1],
-                                          iemBus.getReadPointer(1), numSamples);
+      // Route IEM to configured outputs (default: 3+4)
+      if (iemOff >= 0 && iemOff < numOutputs && outputData[iemOff] != nullptr) {
+        juce::FloatVectorOperations::copy(outputData[iemOff],
+                                          iemBus.getReadPointer(0), numSamples);
+        if (iemOff + 1 < numOutputs && outputData[iemOff + 1] != nullptr)
+          juce::FloatVectorOperations::copy(outputData[iemOff + 1],
+                                            iemBus.getReadPointer(1), numSamples);
+      }
     }
 
     // Update master peaks
@@ -1454,6 +1456,19 @@ public:
     rig->setProperty("scenes", sceneNodes);
     rig->setProperty("currentSceneIndex", currentSceneIndex);
 
+    // Notes / Gig Notepad
+    juce::Array<juce::var> noteNodes;
+    for (const auto &nt : currentNotes) {
+      auto *no = new juce::DynamicObject();
+      no->setProperty("title", nt.title);
+      no->setProperty("content", nt.content);
+      noteNodes.add(juce::var(no));
+    }
+    rig->setProperty("notes", noteNodes);
+    rig->setProperty("activeNoteTabIndex", activeNoteTabIndex);
+    rig->setProperty("noteFontSize", (double)noteFontSize);
+    rig->setProperty("noteIsMonospace", noteIsMonospace);
+
     return juce::JSON::toString(juce::var(rig));
   }
 
@@ -1476,7 +1491,9 @@ public:
       ~AutoReset() { flag.store(false, std::memory_order_release); }
     } resetFlag{isApplyingRig};
 
-    juce::ScopedLock sl(lock);
+    // Note: isApplyingRig pauses audio processing cleanly without spinning or priority inversions.
+    // We avoid holding the global audio lock across all plugin setStateInformation calls to prevent
+    // deadlocks with internal VST3 engine threads (Kontakt, Roland Zenology, etc.).
 
     fohMasterLevel = (float)rig.getProperty("fohMasterLevel", 1.0);
     iemMasterLevel = (float)rig.getProperty("iemMasterLevel", 1.0);
@@ -1809,6 +1826,30 @@ public:
     }
     currentSceneIndex = rig.getProperty("currentSceneIndex", 0);
 
+    // Notes / Gig Notepad
+    currentNotes.clear();
+    if (auto* noteArr = rig.getProperty("notes", juce::var()).getArray()) {
+      for (int i = 0; i < noteArr->size(); ++i) {
+        const auto& nv = noteArr->getReference(i);
+        if (nv.isObject()) {
+          Fanfare::NoteTab nt;
+          nt.title = nv.getProperty("title", "Notes").toString();
+          nt.content = nv.getProperty("content", "").toString();
+          currentNotes.push_back(nt);
+        }
+      }
+    }
+    if (currentNotes.empty()) {
+      currentNotes.push_back({ "Chords", "" });
+      currentNotes.push_back({ "Lyrics", "" });
+      currentNotes.push_back({ "Notes", "" });
+    }
+    activeNoteTabIndex = rig.getProperty("activeNoteTabIndex", 0);
+    noteFontSize = (float)rig.getProperty("noteFontSize", 20.0);
+    noteIsMonospace = (bool)rig.getProperty("noteIsMonospace", true);
+
+    broadcastNotesChanged();
+
     // Kill any stuck notes from the previous rig / state restoration
     panicTriggered.store(true);
 
@@ -1879,7 +1920,9 @@ public:
             ps.name = p->getName();
             ps.path = p->getPluginDescription().fileOrIdentifier;
             juce::MemoryBlock blob;
-            p->getStateInformation(blob);
+            FanfareLog::safeExecutePluginCall([&]() {
+                p->getStateInformation(blob);
+            }, "getStateInformation (" + p->getName() + ")");
             ps.stateBase64 = blob.toBase64Encoding();
             ps.uid = p->getPluginDescription().uniqueId;
         }
@@ -1893,7 +1936,9 @@ public:
             ps.name = p->getName();
             ps.path = p->getPluginDescription().fileOrIdentifier;
             juce::MemoryBlock blob;
-            p->getStateInformation(blob);
+            FanfareLog::safeExecutePluginCall([&]() {
+                p->getStateInformation(blob);
+            }, "getStateInformation (" + p->getName() + ")");
             ps.stateBase64 = blob.toBase64Encoding();
             ps.uid = p->getPluginDescription().uniqueId;
         }
@@ -1989,7 +2034,9 @@ public:
                 ps.name = plugin->getName();
                 ps.path = plugin->getPluginDescription().fileOrIdentifier;
                 juce::MemoryBlock blob;
-                plugin->getStateInformation(blob);
+                FanfareLog::safeExecutePluginCall([&]() {
+                    plugin->getStateInformation(blob);
+                }, "getStateInformation (" + plugin->getName() + ")");
                 ps.stateBase64 = blob.toBase64Encoding();
                 ps.uid = plugin->getPluginDescription().uniqueId;
             }
@@ -2024,6 +2071,10 @@ public:
         song.scenes.push_back(sc);
     }
     song.currentSceneIndex = currentSceneIndex;
+    song.notes = currentNotes;
+    song.activeNoteTabIndex = activeNoteTabIndex;
+    song.noteFontSize = noteFontSize;
+    song.noteIsMonospace = noteIsMonospace;
 
     return song;
   }
@@ -2149,7 +2200,9 @@ public:
         ps.name = plugin->getName();
         ps.path = plugin->getPluginDescription().fileOrIdentifier;
         juce::MemoryBlock blob;
-        plugin->getStateInformation(blob);
+        FanfareLog::safeExecutePluginCall([&]() {
+            plugin->getStateInformation(blob);
+        }, "getStateInformation (" + plugin->getName() + ")");
         ps.stateBase64 = blob.toBase64Encoding();
         ps.uid = plugin->getPluginDescription().uniqueId;
       }
@@ -2343,7 +2396,9 @@ public:
     vt->setProperty("name", plugin->getName());
 
     juce::MemoryBlock blob;
-    plugin->getStateInformation(blob);
+    FanfareLog::safeExecutePluginCall([&]() {
+      plugin->getStateInformation(blob);
+    }, "getStateInformation (" + plugin->getName() + ")");
     vt->setProperty("state", blob.toBase64Encoding());
 
     auto desc = plugin->getPluginDescription();
@@ -2433,11 +2488,15 @@ public:
 
       juce::MemoryBlock blob;
       blob.fromBase64Encoding(newStateBase64);
-      try {
+      logToFile("TRACE: setStateInformation started for reused plugin " + currentPlugin->getName() + " (" + juce::String(blob.getSize()) + " bytes)");
+      bool stateOk = FanfareLog::safeExecutePluginCall([&]() {
         currentPlugin->setStateInformation(blob.getData(), (int)blob.getSize());
+      }, "setStateInformation (Reused " + currentPlugin->getName() + ")");
+      logToFile("TRACE: setStateInformation finished for reused plugin: " + currentPlugin->getName());
+      if (stateOk) {
         lastAppliedPluginStates[key] = newStateBase64;
-      } catch (...) {
-        logToFile("WARNING: setStateInformation threw for reused plugin, continuing");
+      } else {
+        logToFile("WARNING: setStateInformation faulted for reused plugin: " + currentPlugin->getName() + ", continuing");
       }
       return;
     }
@@ -2572,14 +2631,18 @@ public:
     }
     for (auto &p : oldFoh) {
       if (p != nullptr) {
-        p->releaseResources();
-        p.reset();
+        FanfareLog::safeExecutePluginCall([&]() {
+          p->releaseResources();
+          p.reset();
+        }, "oldFoh releaseResources/reset");
       }
     }
     for (auto &p : oldIem) {
       if (p != nullptr) {
-        p->releaseResources();
-        p.reset();
+        FanfareLog::safeExecutePluginCall([&]() {
+          p->releaseResources();
+          p.reset();
+        }, "oldIem releaseResources/reset");
       }
     }
   }
@@ -2595,6 +2658,8 @@ public:
 
   void setFohMasterLevel(float level) { fohMasterLevel = level; }
   void setIemMasterLevel(float level) { iemMasterLevel = level; }
+  float getFohMasterLevel() const { return fohMasterLevel.load(); }
+  float getIemMasterLevel() const { return iemMasterLevel.load(); }
 
   // Global default MIDI channel for routing (1..16, or 0 = Omni).
   void setDefaultMidiChannel(int channel) {
@@ -2968,8 +3033,10 @@ public:
         }
       }
       if (oldPlugin) {
-        oldPlugin->releaseResources();
-        oldPlugin.reset();
+        FanfareLog::safeExecutePluginCall([&]() {
+          oldPlugin->releaseResources();
+          oldPlugin.reset();
+        }, "oldPlugin releaseResources/reset");
       }
       callback(true, "");
       return;
@@ -3023,8 +3090,10 @@ public:
         chain[chainIndex] = std::move(instance);
       }
       if (oldPlugin) {
-        oldPlugin->releaseResources();
-        oldPlugin.reset();
+        FanfareLog::safeExecutePluginCall([&]() {
+          oldPlugin->releaseResources();
+          oldPlugin.reset();
+        }, "oldPlugin releaseResources/reset");
       }
       callback(true, "");
     } else {
@@ -3182,6 +3251,14 @@ public:
     return stagedPlugins.find(key) != stagedPlugins.end();
   }
 
+  bool isPluginStateIdentical(const juce::String &key, const juce::String &stateBase64) const {
+    juce::ScopedLock sl(const_cast<juce::CriticalSection&>(stagingLock));
+    auto it = lastAppliedPluginStates.find(key);
+    if (it != lastAppliedPluginStates.end())
+      return it->second == stateBase64 && !stateBase64.isEmpty();
+    return false;
+  }
+
   void pushPreloadedPlugin(const juce::String &key,
                            std::unique_ptr<juce::AudioPluginInstance> inst) {
     juce::ScopedLock sl(stagingLock);
@@ -3209,5 +3286,47 @@ public:
 
   juce::CriticalSection &getCallbackLock() { return lock; }
 
+  Mp3PlayerProcessor* getMp3Player() {
+    auto* s = getSlot(10);
+    return s ? &s->getMp3Player() : nullptr;
+  }
+
+  // Gig Notepad State
+  const std::vector<Fanfare::NoteTab>& getNotes() const { return currentNotes; }
+  void setNotes(const std::vector<Fanfare::NoteTab>& n) { currentNotes = n; }
+  int getActiveNoteTabIndex() const { return activeNoteTabIndex; }
+  void setActiveNoteTabIndex(int idx) { activeNoteTabIndex = idx; }
+  float getNoteFontSize() const { return noteFontSize; }
+  void setNoteFontSize(float sz) { noteFontSize = sz; }
+  bool getNoteIsMonospace() const { return noteIsMonospace; }
+  void setNoteIsMonospace(bool mono) { noteIsMonospace = mono; }
+
+  void broadcastNotesChanged() {
+    juce::MessageManager::callAsync([this]() {
+      for (auto& pair : noteListeners) {
+        if (pair.second) pair.second();
+      }
+      if (onNotesChanged) onNotesChanged();
+    });
+  }
+
+  void addNotesListener(void* key, std::function<void()> callback) {
+    noteListeners[key] = callback;
+  }
+
+  void removeNotesListener(void* key) {
+    noteListeners.erase(key);
+  }
+
+  std::function<void()> onNotesChanged;
+
+private:
+  std::vector<Fanfare::NoteTab> currentNotes{ { "Chords", "" }, { "Lyrics", "" }, { "Notes", "" } };
+  std::map<void*, std::function<void()>> noteListeners;
+  int activeNoteTabIndex = 0;
+  float noteFontSize = 20.0f;
+  bool noteIsMonospace = true;
+
+public:
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(FanfareEngine)
 };

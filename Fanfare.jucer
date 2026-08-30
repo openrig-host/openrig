@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
 <JUCERPROJECT id="y15uHa" name="Fanfare" projectType="guiapp" useAppConfig="1"
-              addUsingNamespaceToJuceHeader="0" jucerFormatVersion="1" bundleIdentifier="com.fanfare.app">
+              addUsingNamespaceToJuceHeader="0" jucerFormatVersion="1" bundleIdentifier="com.fanfare.app"
+              iconBig="Source/Resources/Fanfare_Icon.png" iconSmall="Source/Resources/Fanfare_Icon.png">
   <MAINGROUP id="kDqy99" name="Fanfare">
     <GROUP id="{7F03F339-D8EE-9CEA-49B0-ACBF8ABA11C0}" name="Source">
       <FILE id="engineH" name="FanfareEngine.h" compile="0" resource="0"
@@ -67,6 +68,20 @@
             resource="0" file="Source/Mp3PlayerProcessor.h"/>
       <FILE id="mp3PlayerComponentH" name="Mp3PlayerComponent.h" compile="0"
             resource="0" file="Source/Mp3PlayerComponent.h"/>
+      <FILE id="webServerH" name="OpenRigWebServer.h" compile="0" resource="0"
+            file="Source/Web/OpenRigWebServer.h"/>
+      <FILE id="webServerCpp" name="OpenRigWebServer.cpp" compile="1" resource="0"
+            file="Source/Web/OpenRigWebServer.cpp"/>
+      <FILE id="qrCodeH" name="QrCodeGenerator.h" compile="0" resource="0"
+            file="Source/Web/QrCodeGenerator.h"/>
+      <FILE id="hotspotH" name="StageHotspotController.h" compile="0" resource="0"
+            file="Source/Web/StageHotspotController.h"/>
+      <FILE id="hotspotCpp" name="StageHotspotController.cpp" compile="1" resource="0"
+            file="Source/Web/StageHotspotController.cpp"/>
+      <FILE id="remoteOverlayH" name="StageRemoteModalOverlay.h" compile="0" resource="0"
+            file="Source/Web/StageRemoteModalOverlay.h"/>
+      <FILE id="remoteOverlayCpp" name="StageRemoteModalOverlay.cpp" compile="1" resource="0"
+            file="Source/Web/StageRemoteModalOverlay.cpp"/>
       <FILE id="juceDspCpp" name="include_juce_dsp.cpp" compile="1" resource="0"
             file="JuceLibraryCode/include_juce_dsp.cpp"/>
     </GROUP>

@@ -310,7 +310,7 @@ inline void crashHandler(void *exceptionInfo) {
   wchar_t appData[MAX_PATH] = {0};
   GetEnvironmentVariableW(L"APPDATA", appData, MAX_PATH);
   wchar_t crashDir[MAX_PATH] = {0};
-  wsprintfW(crashDir, L"%s\\OpenRig\\Crashes", appData);
+  wsprintfW(crashDir, L"%s\\Fanfare\\Crashes", appData);
   CreateDirectoryW(appData, nullptr);
   CreateDirectoryW(crashDir, nullptr);
 
@@ -318,12 +318,11 @@ inline void crashHandler(void *exceptionInfo) {
   GetLocalTime(&st);
   wchar_t dmpPath[MAX_PATH] = {0};
   wchar_t txtPath[MAX_PATH] = {0};
-  wsprintfW(dmpPath, L"%s\\OpenRig_%04d%02d%02d_%02d%02d%02d.dmp", crashDir, st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
-  wsprintfW(txtPath, L"%s\\OpenRig_%04d%02d%02d_%02d%02d%02d.txt", crashDir, st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
+  wsprintfW(dmpPath, L"%s\\Fanfare_%04d%02d%02d_%02d%02d%02d.dmp", crashDir, st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
+  wsprintfW(txtPath, L"%s\\Fanfare_%04d%02d%02d_%02d%02d%02d.txt", crashDir, st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
 
   // STEP 2: WRITE MINIDUMP FIRST (Zero Heap Dependency)
   writeCrashDumpHeapFree(exceptionInfo, dmpPath);
-
 
   // STEP 3: HEAP-FREE TEXT REPORT WRITER (Raw Win32 WriteFile to stack buffer)
   static char reportBuf[65536];
@@ -336,7 +335,7 @@ inline void crashHandler(void *exceptionInfo) {
   };
 
   appendRaw("==================================================================\n");
-  appendRaw("!!! OPENRIG EMERGENCY CRASH REPORT !!!\n");
+  appendRaw("!!! FANFARE EMERGENCY CRASH REPORT !!!\n");
   appendRaw("==================================================================\n");
 
   uint32_t currentTid = (uint32_t)::GetCurrentThreadId();
@@ -428,23 +427,50 @@ inline void crashHandler(void *exceptionInfo) {
 }
 
 #ifdef _WIN32
-inline LONG WINAPI openRigVectoredExceptionHandler(PEXCEPTION_POINTERS ep) {
+inline LONG WINAPI fanfareUnhandledExceptionFilter(PEXCEPTION_POINTERS ep) {
   if (ep != nullptr && ep->ExceptionRecord != nullptr) {
     DWORD code = ep->ExceptionRecord->ExceptionCode;
     if (code == EXCEPTION_ACCESS_VIOLATION || code == EXCEPTION_ILLEGAL_INSTRUCTION ||
-        code == EXCEPTION_STACK_OVERFLOW || code == EXCEPTION_INT_DIVIDE_BY_ZERO) {
+        code == EXCEPTION_STACK_OVERFLOW || code == EXCEPTION_INT_DIVIDE_BY_ZERO ||
+        code == 0xE06D7363) {
+
+      uint32_t currentTid = (uint32_t)::GetCurrentThreadId();
+      uint32_t audioTid = g_audioThreadId.load();
+      uint32_t mainTid = g_mainThreadId.load();
+
+      // Check if this exception occurred in a non-critical background worker thread
+      // (such as Kontakt 8 WINHTTP telemetry/license worker thread).
+      // If so, terminate ONLY the faulting thread so the live audio and UI keep running!
+      if (currentTid != audioTid && currentTid != mainTid && audioTid != 0) {
+        wchar_t appData[MAX_PATH] = {0};
+        GetEnvironmentVariableW(L"APPDATA", appData, MAX_PATH);
+        wchar_t crashDir[MAX_PATH] = {0};
+        wsprintfW(crashDir, L"%s\\Fanfare\\Crashes", appData);
+        CreateDirectoryW(crashDir, nullptr);
+
+        SYSTEMTIME st;
+        GetLocalTime(&st);
+        wchar_t dmpPath[MAX_PATH] = {0};
+        wsprintfW(dmpPath, L"%s\\WorkerThreadFault_%04d%02d%02d_%02d%02d%02d.dmp", crashDir, st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
+        writeCrashDumpHeapFree(ep, dmpPath);
+
+        // Terminate the background worker thread only
+        ::ExitThread(1);
+        return EXCEPTION_CONTINUE_EXECUTION;
+      }
+
       static std::atomic<bool> crashHandled{false};
       if (!crashHandled.exchange(true)) {
         crashHandler(ep);
       }
     }
   }
-  return EXCEPTION_CONTINUE_SEARCH;
+  return EXCEPTION_EXECUTE_HANDLER;
 }
 
 inline void setupCrashHandlers() {
   g_mainThreadId.store((uint32_t)::GetCurrentThreadId());
-  AddVectoredExceptionHandler(1, openRigVectoredExceptionHandler);
+  SetUnhandledExceptionFilter(fanfareUnhandledExceptionFilter);
   _set_invalid_parameter_handler([](const wchar_t*, const wchar_t*, const wchar_t*, unsigned int, uintptr_t) {
     crashHandler(nullptr);
     ::ExitProcess(1);

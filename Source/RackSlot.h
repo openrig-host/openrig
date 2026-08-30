@@ -136,6 +136,9 @@ public:
     if (bypassed.load()) {
       leftPeak.store(0.0f);
       rightPeak.store(0.0f);
+      cpuUsage.store(0.0f);
+      for (int i = 0; i < 3; ++i)
+        chainCpuUsage[i].store(0.0f);
       {
         juce::SpinLock::ScopedTryLockType sl(injectedMidiLock);
         if (sl.isLocked()) {
@@ -148,6 +151,7 @@ public:
     }
 
     auto startTime = juce::Time::getHighResolutionTicks();
+    double totalBlockSecs = (double)slotBuffer.getNumSamples() / lastSampleRate;
 
     // 1. Merge injected MIDI from harmony routers (thread-safe)
     {
@@ -245,6 +249,7 @@ public:
 
         auto &plugin = pluginChain[i];
         if (plugin && (i >= 3 || chainSettings[i].enabled.load())) {
+          auto plugStartTime = juce::Time::getHighResolutionTicks();
           try {
             bool isInstrument = (i < 3) ? chainIsInstrument[i].load() : plugin->getPluginDescription().isInstrument;
             if (isInstrument) {
@@ -295,6 +300,17 @@ public:
                           " consecutive exceptions in processBlock — AUTO-BYPASSED for stability.");
               }
             }
+
+            if (i < 3) {
+              auto plugElapsed = juce::Time::getHighResolutionTicks() - plugStartTime;
+              double plugElapsedSecs =
+                  (double)plugElapsed / juce::Time::getHighResolutionTicksPerSecond();
+              float plugLoad =
+                  (totalBlockSecs > 0.0) ? (float)(plugElapsedSecs / totalBlockSecs) : 0.0f;
+              chainCpuUsage[i].store(0.92f * chainCpuUsage[i].load() + 0.08f * plugLoad);
+            }
+          } else if (i < 3) {
+            chainCpuUsage[i].store(0.92f * chainCpuUsage[i].load());
           }
         }
       }
@@ -317,7 +333,6 @@ public:
     auto elapsed = juce::Time::getHighResolutionTicks() - startTime;
     double elapsedSecs =
         (double)elapsed / juce::Time::getHighResolutionTicksPerSecond();
-    double totalBlockSecs = (double)slotBuffer.getNumSamples() / lastSampleRate;
     float currentLoad =
         (totalBlockSecs > 0.0) ? (float)(elapsedSecs / totalBlockSecs) : 0.0f;
 
@@ -340,6 +355,11 @@ public:
   float getLeftPeak() const { return leftPeak.load(); }
   float getRightPeak() const { return rightPeak.load(); }
   float getCpuUsage() const { return cpuUsage.load(); }
+  float getChainCpuUsage(int chainIndex) const {
+    if (chainIndex >= 0 && chainIndex < 3)
+      return chainCpuUsage[chainIndex].load();
+    return 0.0f;
+  }
   bool getAndClearMidiActivity() {
     return midiActivity.exchange(false);
   }
@@ -622,8 +642,10 @@ public:
     }
 
     if (oldPlugin) {
-      oldPlugin->releaseResources();
-      oldPlugin.reset();
+      FanfareLog::safeExecutePluginCall([&]() {
+        oldPlugin->releaseResources();
+        oldPlugin.reset();
+      }, "oldPlugin releaseResources/reset");
     }
   }
 
@@ -636,8 +658,10 @@ public:
     }
     for (auto &p : oldPlugins) {
       if (p) {
-        p->releaseResources();
-        p.reset();
+        FanfareLog::safeExecutePluginCall([&]() {
+          p->releaseResources();
+          p.reset();
+        }, "pluginChain releaseResources/reset");
       }
     }
     for (int i = 0; i < 3; ++i)
@@ -660,8 +684,10 @@ public:
     }
     for (auto &p : oldPlugins) {
       if (p) {
-        p->releaseResources();
-        p.reset();
+        FanfareLog::safeExecutePluginCall([&]() {
+          p->releaseResources();
+          p.reset();
+        }, "pluginChain preserve releaseResources/reset");
       }
     }
   }
@@ -1011,6 +1037,7 @@ private:
   std::atomic<bool> chainIsInstrument[3]{false, false, false};
   juce::MidiBuffer filteredMidiScratch;
   std::atomic<float> cpuUsage{0.0f};
+  std::atomic<float> chainCpuUsage[3]{0.0f, 0.0f, 0.0f};
   double lastSampleRate = 44100.0;
 
   std::atomic<float> aux1SendLevel{0.0f};

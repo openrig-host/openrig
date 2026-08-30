@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#07090d">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>OpenRig Stage Companion</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Offline / Connection Status Banner -->
+  <div id="connectionBanner" class="connection-banner disconnected">
+    <span class="status-dot"></span>
+    <span id="connectionText">DISCONNECTED &mdash; RECONNECTING TO OPENRIG...</span>
+  </div>
+
+  <!-- Master Stage Frame: Main Area + Right Vertical Meter Sidebar -->
+  <div class="stage-frame">
+    
+    <!-- MAIN WORKSPACE AREA (1024x600 Optimized) -->
+    <div class="stage-main-area">
+      
+      <!-- Compact Stage Header (40px) -->
+      <header class="stage-header">
+        <div class="header-left">
+          <div class="app-brand">
+            <span class="brand-title">OPENRIG</span>
+            <span class="brand-badge">STAGE HUD</span>
+          </div>
+          <div class="telemetry-pills">
+            <div class="pill" id="cpuPill">CPU: <span id="cpuVal">0%</span></div>
+            <div class="pill" id="xrunPill">XRUN: <span id="xrunVal">0</span></div>
+            <div class="pill wake-lock-pill" id="wakeLockPill">SCREEN AWAKE</div>
+          </div>
+        </div>
+
+        <div class="header-right">
+          <button id="fullscreenBtn" class="btn btn-fullscreen" title="Toggle Fullscreen">FULLSCREEN</button>
+          <button id="panicBtn" class="btn btn-panic" title="Panic: All Notes Off / Silence Audio">PANIC KILL</button>
+        </div>
+      </header>
+
+      <!-- Navigation Tabs (34px) -->
+      <nav class="view-tabs">
+        <button class="tab-btn active" data-view="hudView">STAGE HUD</button>
+        <button class="tab-btn" data-view="songsView">SONGS</button>
+        <button class="tab-btn" data-view="notepadView">GIG NOTEPAD</button>
+        <button class="tab-btn" data-view="mixerView">TOUCH MIXER</button>
+        <button class="tab-btn" data-view="mp3View">BREAK / DJ</button>
+      </nav>
+
+      <!-- View Panes -->
+      <main class="main-content">
+        
+        <!-- VIEW 1: STAGE HUD (Main Live Performance Dashboard) -->
+        <section id="hudView" class="view-pane active">
+          
+          <!-- Song Navigation & Hero Bar (Compact) -->
+          <div class="song-hero-bar">
+            <button id="hudPrevBtn" class="btn btn-song-nav btn-prev" title="Previous Song in Setlist">
+              <span class="nav-arrow">&larr;</span>
+              <span class="nav-text">PREV</span>
+            </button>
+
+            <div class="song-hero-center" id="songHeroCenter">
+              <div class="song-meta-row">
+                <span class="song-pos-badge" id="songPosBadge">SONG 1 OF 1</span>
+                <div class="up-next-pill" id="upNextPill">
+                  <span class="up-next-label" id="upNextLabel">NEXT:</span>
+                  <span class="up-next-name" id="nextSongName">&mdash; END OF SET &mdash;</span>
+                  <span class="preload-status-dot" id="preloadDot" title="Preload Status"></span>
+                </div>
+              </div>
+              <h1 class="current-song-title" id="currentSongTitle">DEFAULT RIG</h1>
+            </div>
+
+            <button id="hudNextBtn" class="btn btn-song-nav btn-next" title="Next Song in Setlist">
+              <span class="nav-text" id="hudNextBtnText">NEXT</span>
+              <span class="nav-arrow">&rarr;</span>
+            </button>
+          </div>
+
+          <!-- Interactive Fast Song Queue Strip (Tap to queue / switch) -->
+          <div class="stage-section setlist-strip-section">
+            <div class="section-title-row">
+              <span class="section-title">SETLIST QUEUE &mdash; TAP ANY SONG TO SWITCH</span>
+              <span class="section-subtitle" id="queuePreloadStatus">All Set</span>
+            </div>
+            <div class="setlist-fast-strip" id="setlistFastStrip">
+              <!-- Dynamically populated with setlist song queue chips with green ready glow -->
+            </div>
+          </div>
+
+          <!-- Active Song Instruments / Rack Slots -->
+          <div class="stage-section instruments-section">
+            <div class="section-title-row">
+              <span class="section-title">ACTIVE INSTRUMENTS IN SONG</span>
+              <span class="section-subtitle" id="activeSlotsCount">0 Active</span>
+            </div>
+            <div class="song-slots-grid" id="songSlotsGrid">
+              <!-- Dynamically populated with active rack slot cards -->
+            </div>
+          </div>
+
+          <!-- Yamaha 88-Key Zone & Note Split Map (Slim) -->
+          <div class="stage-section zone-map-section">
+            <div class="section-title-row">
+              <span class="section-title">YAMAHA 88-KEY ZONE MAP</span>
+              <span class="section-subtitle">A0 (21) &mdash; C8 (108)</span>
+            </div>
+            <div class="keyboard-zones-container" id="keyboardZonesContainer">
+              <!-- Dynamically populated with note split bars based on slot note ranges -->
+            </div>
+            <div class="keyboard-ruler">
+              <span>A0</span>
+              <span>C1</span>
+              <span>C2</span>
+              <span>C3</span>
+              <span>C4 (Mid)</span>
+              <span>C5</span>
+              <span>C6</span>
+              <span>C7</span>
+              <span>C8</span>
+            </div>
+          </div>
+
+          <!-- Quick Stage Notepad & Chords Preview Box -->
+          <div class="stage-section quick-notepad-section">
+            <div class="section-title-row">
+              <span class="section-title" id="quickNotesHeader">CHORD CHART / NOTES PREVIEW</span>
+              <button id="jumpToNotepadBtn" class="btn-jump-tab">OPEN FULL NOTEPAD &rarr;</button>
+            </div>
+            <div class="quick-notes-container">
+              <pre class="quick-notes-content" id="quickNotesContent">No notes for this song. Tap 'OPEN FULL NOTEPAD' to add notes.</pre>
+            </div>
+          </div>
+
+        </section>
+
+        <!-- VIEW 2: SONGS BUBBLES / BUTTONS GRID TAB -->
+        <section id="songsView" class="view-pane">
+          <div class="songs-tab-header">
+            <div class="songs-header-left">
+              <h2>SONG LIBRARY &amp; TAGS</h2>
+              <span class="songs-header-subtitle">TAP ANY BUTTON TO LOAD / PLAY</span>
+            </div>
+            <div class="songs-header-right">
+              <button id="songSortBtn" class="btn btn-sort" title="Toggle Sort Order">SORT: A&rarr;Z</button>
+              <input type="text" id="songSearchInput" class="song-search-input" placeholder="Search songs or tags...">
+              <span class="song-count-pill" id="songsTabCount">0 SONGS</span>
+            </div>
+          </div>
+
+          <!-- Tag & Category Quick Filter Row -->
+          <div class="songs-categories-bar" id="songsCategoriesBar">
+            <!-- Dynamically populated with tag pills -->
+          </div>
+
+          <!-- Responsive Grid of Song Bubble Buttons -->
+          <div class="songs-bubbles-grid" id="songsBubblesGrid">
+            <!-- Dynamically populated with tactile song bubbles/buttons -->
+          </div>
+        </section>
+
+        <!-- VIEW 3: GIG NOTEPAD & CHORD CHARTS -->
+        <section id="notepadView" class="view-pane">
+          <div class="notepad-toolbar">
+            <div class="notepad-tabs" id="notepadTabs"></div>
+            <div class="notepad-controls">
+              <div id="notepadFormatBar" class="notepad-format-bar" style="display: none;">
+                <button class="btn-fmt btn-fmt-bold" data-tag="bold" title="Bold (**text**)"><b>B</b></button>
+                <button class="btn-fmt btn-fmt-blue" data-tag="blue" title="Blue Text">BLUE</button>
+                <button class="btn-fmt btn-fmt-green" data-tag="green" title="Green Text">GREEN</button>
+                <button class="btn-fmt btn-fmt-yellow" data-tag="yellow" title="Yellow / Amber Text">YELLOW</button>
+                <button class="btn-fmt btn-fmt-white" data-tag="white" title="White Text">WHITE</button>
+                <button class="btn-fmt btn-fmt-red" data-tag="red" title="Red Alert Text">RED</button>
+                <button class="btn-fmt btn-fmt-chord" data-tag="chord" title="Chord Badge ([C#m7])">[CHORD]</button>
+              </div>
+              <button id="fontDecBtn" class="btn btn-tool" title="Decrease Font Size">A-</button>
+              <span id="fontSizeDisplay" class="font-size-label">22px</span>
+              <button id="fontIncBtn" class="btn btn-tool" title="Increase Font Size">A+</button>
+              <button id="monoToggleBtn" class="btn btn-tool">MONO</button>
+              <button id="editLockBtn" class="btn btn-tool active">LIVE VIEW</button>
+            </div>
+          </div>
+          <div class="notepad-body">
+            <div id="notepadLiveViewer" class="notepad-live-viewer"></div>
+            <textarea id="notepadTextarea" class="notepad-editor" style="display: none;" spellcheck="false" placeholder="Type chords, lyrics, or notes. Use tags like [blue]Verse 1[/blue], [green]Chorus[/green], [yellow]Bridge[/yellow], **Bold**, or [C#m7] for chords."></textarea>
+          </div>
+        </section>
+
+        <!-- VIEW 4: TOUCH MIXER -->
+        <section id="mixerView" class="view-pane">
+          <div class="mixer-container">
+            <div class="mixer-channel-strips" id="mixerStrips"></div>
+
+            <!-- Master Fader Strip -->
+            <div class="master-strip">
+              <div class="strip-header">MASTER</div>
+              <div class="master-faders-pair">
+                <div class="fader-column">
+                  <span class="fader-name">FOH</span>
+                  <div class="touch-fader-track" data-fader="masterFoh">
+                    <div class="fader-fill" id="masterFohFill" style="height: 80%;"></div>
+                    <div class="fader-handle" id="masterFohHandle" style="bottom: 80%;"></div>
+                  </div>
+                  <span class="fader-val" id="masterFohVal">0.80</span>
+                </div>
+                <div class="fader-column">
+                  <span class="fader-name">IEM</span>
+                  <div class="touch-fader-track" data-fader="masterIem">
+                    <div class="fader-fill" id="masterIemFill" style="height: 80%;"></div>
+                    <div class="fader-handle" id="masterIemHandle" style="bottom: 80%;"></div>
+                  </div>
+                  <span class="fader-val" id="masterIemVal">0.80</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- VIEW 5: BREAK MUSIC & DJ PLAYLISTS -->
+        <section id="mp3View" class="view-pane">
+          <div class="dj-deck-container">
+            <!-- Preset Banks Toolbar -->
+            <div class="dj-banks-bar" id="djBanksBar">
+              <!-- Dynamically populated 6 preset banks: Hits, Oldies, Dinner, Dance, Ballads, Break -->
+            </div>
+
+            <!-- Current Playing Hero -->
+            <div class="dj-player-card">
+              <div class="dj-deck-status-row">
+                <span class="dj-deck-badge" id="djDeckBadge">DECK A (LIVE)</span>
+                <span class="dj-crossfade-badge" id="djXfadeBadge" style="display:none;">CROSSFADING...</span>
+                <span class="dj-autodj-badge" id="djAutoDjBadge">AUTO-DJ: ON</span>
+              </div>
+              <h2 class="dj-track-title" id="djTrackTitle">No track loaded</h2>
+              <div class="dj-time-row">
+                <span id="djTimeCurrent">00:00</span>
+                <div class="dj-progress-bar-container" id="djProgressContainer">
+                  <div class="dj-progress-bar-fill" id="djProgressFill" style="width: 0%;"></div>
+                </div>
+                <span id="djTimeTotal">00:00</span>
+              </div>
+
+              <!-- Transport Buttons -->
+              <div class="dj-transport-row">
+                <button class="btn btn-dj-transport" id="djPrevBtn" title="Previous Track (Crossfade)">&larr; PREV</button>
+                <button class="btn btn-dj-transport btn-dj-play" id="djPlayPauseBtn" title="Play / Pause">&#9658; PLAY</button>
+                <button class="btn btn-dj-transport" id="djNextBtn" title="Next Track (Crossfade)">NEXT &rarr;</button>
+              </div>
+            </div>
+
+            <!-- YouTube / Web Link Grabber Bar -->
+            <div class="dj-youtube-bar">
+              <input type="text" id="djYtUrlInput" class="input-yt-url" placeholder="Paste YouTube link here (auto-converts to MP3 192k)...">
+              <button class="btn btn-yt-grab" id="djYtGrabBtn">GRAB MP3 (192k)</button>
+              <button class="btn btn-yt-grab-play" id="djYtGrabPlayBtn">GRAB & PLAY</button>
+            </div>
+            <div id="djYtStatusMsg" class="dj-yt-status" style="display: none;"></div>
+
+            <!-- DJ Playlist Table -->
+            <div class="dj-playlist-section">
+              <div class="section-title-row">
+                <span class="section-title">PLAYLIST QUEUE &mdash; TAP TO CROSSFADE</span>
+                <span class="section-subtitle" id="djTrackCount">0 Tracks</span>
+              </div>
+              <div class="dj-playlist-list" id="djPlaylistList">
+                <!-- Dynamically populated tracks -->
+              </div>
+            </div>
+          </div>
+        </section>
+
+      </main>
+
+      <!-- Bottom Stage Status Bar (24px) -->
+      <footer class="stage-footer">
+        <div class="footer-left">
+          <span class="latency-indicator" id="latencyIndicator">WS: CONNECTED</span>
+        </div>
+        <div class="footer-center">
+          <span id="clockDisplay">00:00:00</span>
+        </div>
+        <div class="footer-right">
+          <span class="host-pill">OpenRig v1.0.0</span>
+        </div>
+      </footer>
+
+    </div>
+
+    <!-- FAR RIGHT COLUMN: FULL-HEIGHT VERTICAL MASTER VU METERS (84px width) -->
+    <aside class="vertical-meters-sidebar" title="Master Audio Output Levels (Logarithmic dB Scale)">
+      <div class="sidebar-title">VU METERS</div>
+      
+      <div class="meters-pair-container">
+        
+        <!-- FOH Vertical Meter Pair -->
+        <div class="meter-column">
+          <div class="meter-label">FOH</div>
+          <div class="clip-led" id="clipLedFoh" title="FOH Peak Overload"></div>
+          <div class="v-meter-track">
+            <div class="v-meter-bar" id="vMeterFohL"></div>
+            <div class="v-meter-bar" id="vMeterFohR"></div>
+            <div class="v-meter-scale">
+              <span>+3</span>
+              <span>0</span>
+              <span>-6</span>
+              <span>-12</span>
+              <span>-24</span>
+              <span>-40</span>
+              <span>-&infin;</span>
+            </div>
+          </div>
+          <div class="meter-sublabel">L&nbsp;&nbsp;&nbsp;R</div>
+        </div>
+
+        <!-- IEM Vertical Meter Pair -->
+        <div class="meter-column">
+          <div class="meter-label">IEM</div>
+          <div class="clip-led" id="clipLedIem" title="IEM Peak Overload"></div>
+          <div class="v-meter-track">
+            <div class="v-meter-bar" id="vMeterIemL"></div>
+            <div class="v-meter-bar" id="vMeterIemR"></div>
+            <div class="v-meter-scale">
+              <span>+3</span>
+              <span>0</span>
+              <span>-6</span>
+              <span>-12</span>
+              <span>-24</span>
+              <span>-40</span>
+              <span>-&infin;</span>
+            </div>
+          </div>
+          <div class="meter-sublabel">L&nbsp;&nbsp;&nbsp;R</div>
+        </div>
+
+      </div>
+    </aside>
+
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

@@ -70,6 +70,15 @@ public:
     setVisible(true);
     toFront(true);
   }
+  ~PluginWindow() override {
+    if (auto* content = getContentComponent()) {
+      clearContentComponent();
+      FanfareLog::safeExecutePluginCall([content]() {
+        delete content;
+      }, "PluginEditor destructor");
+    }
+  }
+
   void closeButtonPressed() override {
     if (onWindowClosed)
       onWindowClosed();
@@ -197,12 +206,37 @@ MainComponent::MainComponent() {
   // Initialize scene buttons from default scenes
   refreshSceneButtons();
 
+  // Initialize embedded Web Server for Tablet HUD Companion
+  webServer = std::make_unique<OpenRig::WebServer>(engine, this);
+  webServer->startServer(8080);
+  hotspotController = std::make_unique<OpenRig::StageHotspotController>();
+  engine.onNotesChanged = [this]() {
+    if (webServer) webServer->notifyNotesChanged();
+  };
+
+  if (auto* mp3 = engine.getMp3Player()) {
+    mp3->onPlayStarted = [this]() {
+      if (webServer) webServer->notifyMp3Changed();
+    };
+    mp3->onTrackChanged = [this]() {
+      if (webServer) webServer->notifyMp3Changed();
+    };
+    mp3->onPlaylistChanged = [this]() {
+      if (webServer) webServer->notifyMp3Changed();
+    };
+    mp3->onBanksChanged = [this]() {
+      if (webServer) webServer->notifyMp3Changed();
+    };
+  }
+
   LOG_INFO("OpenRig initialized successfully");
   setWantsKeyboardFocus (true);
   addKeyListener (this);
 }
 
 MainComponent::~MainComponent() {
+  if (webServer)
+    webServer->stopServer();
   removeKeyListener (this);
   stopTimer();
   if (transitioner)
@@ -351,24 +385,24 @@ void MainComponent::setupSlotComponents() {
           hideLoadingOverlay();
           return;
         }
-        try {
-          auto *editor = plugin->createEditor();
-          hideLoadingOverlay();
-          if (editor) {
-            auto *w = new PluginWindow(slot->getPluginName(chainIndex), editor, plugin);
-            w->onWindowClosed = [this, w] {
-              if (activePluginWindows.contains(w)) {
-                activePluginWindows.removeObject(w, false);
-                juce::MessageManager::callAsync([w]() { delete w; });
-              }
-            };
-            activePluginWindows.add(w);
-          }
-        } catch (...) {
-          hideLoadingOverlay();
+        juce::AudioProcessorEditor* editor = nullptr;
+        bool ok = FanfareLog::safeExecutePluginCall([&]() {
+          editor = plugin->createEditor();
+        }, "createEditor (" + plugin->getName() + ")");
+        hideLoadingOverlay();
+        if (ok && editor != nullptr) {
+          auto *w = new PluginWindow(slot->getPluginName(chainIndex), editor, plugin);
+          w->onWindowClosed = [this, w] {
+            if (activePluginWindows.contains(w)) {
+              activePluginWindows.removeObject(w, false);
+              juce::MessageManager::callAsync([w]() { delete w; });
+            }
+          };
+          activePluginWindows.add(w);
+        } else if (!ok) {
           juce::AlertWindow::showMessageBoxAsync(
               juce::MessageBoxIconType::WarningIcon, "Editor Error",
-              "Plugin editor could not be created.");
+              "Plugin editor could not be created safely.");
         }
       });
     };
@@ -417,7 +451,7 @@ void MainComponent::setupSlotComponents() {
         resized();
       }));
       addAndMakeVisible(mp3Overlay.get());
-      mp3Overlay->centreWithSize(680, 520);
+      mp3Overlay->centreWithSize(780, 580);
     };
 
     // Note Range Dialog (CallOutBox)
@@ -580,24 +614,24 @@ void MainComponent::setupSlotComponents() {
           hideLoadingOverlay();
           return;
         }
-        try {
-          auto *editor = plugin->createEditor();
-          hideLoadingOverlay();
-          if (editor) {
-            auto *w = new PluginWindow(slot->getPluginName(chainIndex), editor, plugin);
-            w->onWindowClosed = [this, w] {
-              if (activePluginWindows.contains(w)) {
-                activePluginWindows.removeObject(w, false);
-                juce::MessageManager::callAsync([w]() { delete w; });
-              }
-            };
-            activePluginWindows.add(w);
-          }
-        } catch (...) {
-          hideLoadingOverlay();
+        juce::AudioProcessorEditor* editor = nullptr;
+        bool ok = FanfareLog::safeExecutePluginCall([&]() {
+          editor = plugin->createEditor();
+        }, "createEditor (" + plugin->getName() + ")");
+        hideLoadingOverlay();
+        if (ok && editor != nullptr) {
+          auto *w = new PluginWindow(slot->getPluginName(chainIndex), editor, plugin);
+          w->onWindowClosed = [this, w] {
+            if (activePluginWindows.contains(w)) {
+              activePluginWindows.removeObject(w, false);
+              juce::MessageManager::callAsync([w]() { delete w; });
+            }
+          };
+          activePluginWindows.add(w);
+        } else if (!ok) {
           juce::AlertWindow::showMessageBoxAsync(
               juce::MessageBoxIconType::WarningIcon, "Editor Error",
-              "Plugin editor could not be created.");
+              "Plugin editor could not be created safely.");
         }
       });
     };
@@ -806,6 +840,18 @@ void MainComponent::setupHeaderButtons() {
                               loadRigAsync(file);
                           });
   };
+
+  // Gig Notepad & Stage Notes button
+  addAndMakeVisible(gigNotepadBtn);
+  gigNotepadBtn.setColour(juce::TextButton::buttonColourId, ThemeManager::get(Theme::Role::raised));
+  gigNotepadBtn.setTooltip("Open Gig Notepad & Stage Notes for Current Setup (Ctrl+N)");
+  gigNotepadBtn.onClick = [this] { showGigNotepadWindow(); };
+
+  // Web Remote HUD button
+  addAndMakeVisible(webRemoteBtn);
+  webRemoteBtn.setColour(juce::TextButton::buttonColourId, ThemeManager::get(Theme::Role::raised));
+  webRemoteBtn.setTooltip("Open Web Remote HUD Settings & Tablet Connection URL");
+  webRemoteBtn.onClick = [this] { showWebRemoteDialog(); };
 
   // Prev / Next Setlist buttons
   addAndMakeVisible(prevSetlistBtn);
@@ -1019,6 +1065,8 @@ void MainComponent::refreshSceneButtons() {
       engine.loadScene(sceneIdx);
       for (int j = 0; j < sceneButtons.size(); ++j)
         sceneButtons[j]->setActive(j == sceneIdx);
+      if (webServer)
+        webServer->notifySceneChanged(sceneIdx, engine.getSceneName(sceneIdx));
     };
 
     btn->onRightClicked = [this, sceneIdx](int, const juce::MouseEvent&) {
@@ -1473,6 +1521,8 @@ void MainComponent::changeListenerCallback(juce::ChangeBroadcaster* source) {
       c->repaint();
   } else if (source == &Fanfare::SetlistManager::getInstance()) {
     updatePreloadStatus();
+    if (webServer)
+      webServer->notifySetlistChanged();
   }
 }
 
@@ -1582,10 +1632,10 @@ void MainComponent::paint(juce::Graphics &g) {
 void MainComponent::resized() {
   auto r = getLocalBounds();
 
-  // Header area - Row 1: Stage View (Logo + setup name + setlist nav)
+  // Header area - Row 1: Stage View (Logo Emblem + setup name + setlist nav)
   auto stageHeader = r.removeFromTop(38);
   if (logoComponent.isVisible()) {
-    logoComponent.setBounds(stageHeader.removeFromLeft(140).reduced(2, 2));
+    logoComponent.setBounds(stageHeader.removeFromLeft(40).reduced(2));
   }
   setupNameLabel.setBounds(stageHeader.removeFromLeft(350).reduced(4));
 
@@ -1605,10 +1655,12 @@ void MainComponent::resized() {
   midiMonitorToggle.setBounds(controlBar.removeFromLeft(75).reduced(4));
 
   // Right Actions
-  saveBtn.setBounds(controlBar.removeFromRight(95).reduced(4));
-  loadBtn.setBounds(controlBar.removeFromRight(95).reduced(4));
-  panicBtn.setBounds(controlBar.removeFromRight(75).reduced(4));
   exitBtn.setBounds(controlBar.removeFromRight(60).reduced(4));
+  panicBtn.setBounds(controlBar.removeFromRight(75).reduced(4));
+  saveBtn.setBounds(controlBar.removeFromRight(85).reduced(4));
+  loadBtn.setBounds(controlBar.removeFromRight(85).reduced(4));
+  webRemoteBtn.setBounds(controlBar.removeFromRight(75).reduced(4));
+  gigNotepadBtn.setBounds(controlBar.removeFromRight(75).reduced(4));
 
   // Center: Telemetry + Clock packed together
   auto centerBar = controlBar.reduced(4, 2);
@@ -1741,7 +1793,9 @@ void MainComponent::resized() {
   if (setupBuilderOverlay)
     setupBuilderOverlay->centreWithSize(400, 480);
   if (resourceInspectorOverlay)
-    resourceInspectorOverlay->centreWithSize(680, 480);
+    resourceInspectorOverlay->centreWithSize(740, 520);
+  if (stageRemoteOverlay)
+    stageRemoteOverlay->setBounds(getLocalBounds());
 }
 
 void MainComponent::showResourceInspectorModal() {
@@ -1752,8 +1806,18 @@ void MainComponent::showResourceInspectorModal() {
     });
     addAndMakeVisible(resourceInspectorOverlay.get());
   }
-  resourceInspectorOverlay->centreWithSize(680, 480);
+  resourceInspectorOverlay->centreWithSize(740, 520);
   resourceInspectorOverlay->toFront(true);
+}
+
+void MainComponent::showGigNotepadWindow() {
+  if (gigNotepadWindow != nullptr) {
+    gigNotepadWindow->toFront(true);
+    return;
+  }
+  gigNotepadWindow = std::make_unique<GigNotepadWindow>(engine, [this] {
+    gigNotepadWindow.reset();
+  });
 }
 
 void MainComponent::hideLoadingOverlay() { loadingOverlay.reset(); }
@@ -2041,8 +2105,11 @@ void MainComponent::openMasterPluginEditor(bool isFoh, int chainIndex) {
       }
     }
 
-    auto *editor = plugin->createEditor();
-    if (editor) {
+    juce::AudioProcessorEditor* editor = nullptr;
+    bool ok = FanfareLog::safeExecutePluginCall([&]() {
+      editor = plugin->createEditor();
+    }, "createEditor (Master " + plugin->getName() + ")");
+    if (ok && editor != nullptr) {
       auto *w = new PluginWindow(name, editor, plugin);
       w->onWindowClosed = [this, w] {
         if (activePluginWindows.contains(w)) {
@@ -2217,6 +2284,10 @@ bool MainComponent::keyPressed (const juce::KeyPress& key, juce::Component* orig
     }
     return true;
   }
+  else if (key.getModifiers().isCommandDown() && (key.getKeyCode() == 'N' || key.getKeyCode() == 'n')) {
+    showGigNotepadWindow();
+    return true;
+  }
   else if (key.isKeyCode ('P') || key.isKeyCode ('p')) {
     engine.triggerPanic();
     return true;
@@ -2274,4 +2345,24 @@ void MainComponent::closeAllPluginWindows() {
     delete tempArray;
   });
 }
+
+void MainComponent::showWebRemoteDialog() {
+  if (stageRemoteOverlay != nullptr) {
+    stageRemoteOverlay.reset();
+    return;
+  }
+  if (hotspotController == nullptr) {
+    hotspotController = std::make_unique<OpenRig::StageHotspotController>();
+  }
+  stageRemoteOverlay = std::make_unique<OpenRig::StageRemoteModalOverlay>(*hotspotController, 8080);
+  stageRemoteOverlay->onClose = [this]() {
+    stageRemoteOverlay.reset();
+    repaint();
+  };
+  addAndMakeVisible(*stageRemoteOverlay);
+  stageRemoteOverlay->setBounds(getLocalBounds());
+  stageRemoteOverlay->toFront(true);
+}
+
+
 

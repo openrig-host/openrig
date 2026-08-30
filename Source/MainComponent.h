@@ -8,6 +8,7 @@
 #include "SamplerComponent.h"
 #include "Mp3PlayerComponent.h"
 #include "ResourceInspectorModal.h"
+#include "GigNotepadWindow.h"
 #include "SetupMidiTriggers.h"
 #include "LoadingOverlay.h"
 #include "SetupBuilderOverlay.h"
@@ -25,6 +26,9 @@
 #include "SceneButtonComponent.h"
 #include "RigTransitioner.h"
 #include "AnalogVuMeter.h"
+#include "Web/OpenRigWebServer.h"
+#include "Web/StageHotspotController.h"
+#include "Web/StageRemoteModalOverlay.h"
 #include <JuceHeader.h>
 #include <functional>
 
@@ -68,6 +72,9 @@ public:
   void showAboutDialog();
   void showConfigOverlay();
   void setActiveMidiNoteLearner(juce::Component* learner) { activeMidiNoteLearner = learner; }
+  double getCpuUsage() { return deviceManager.getCpuUsage() * 100.0; }
+  int getAudioUnderruns() const { return audioUnderrunCount.load(); }
+  void loadRigFromFile(const juce::File &file, int targetSetlistIndex = -1);
 
 private:
   //==============================================================================
@@ -83,6 +90,8 @@ private:
   juce::TextButton busRoutingBtn{"BUS ROUTING"};
   juce::TextButton saveBtn{"SAVE RIG"};
   juce::TextButton loadBtn{"LOAD RIG"};
+  juce::TextButton gigNotepadBtn{"NOTEPAD"};
+  juce::TextButton webRemoteBtn{"REMOTE"};
   juce::TextButton prevSetlistBtn{"<<"};
   juce::TextButton nextSetlistBtn{">>"};
   juce::TextButton panicBtn{"PANIC"};
@@ -91,7 +100,7 @@ private:
   juce::OwnedArray<RackSlotComponent> rackSlotComponents;
   juce::OwnedArray<RackSlotComponent> auxReturnComponents;
 
-  // Overlays
+  // Overlays & Windows
   std::unique_ptr<ChannelStripComponent> channelStripOverlay;
   std::unique_ptr<MidiEffectsComponent> midiEffectsOverlay;
   std::unique_ptr<SamplerComponent> samplerOverlay;
@@ -101,8 +110,14 @@ private:
   std::unique_ptr<LibraryPanel> libraryPanel;
   std::unique_ptr<SetupBuilderOverlay> setupBuilderOverlay;
   std::unique_ptr<ResourceInspectorModal> resourceInspectorOverlay;
+  std::unique_ptr<GigNotepadWindow> gigNotepadWindow;
+  std::unique_ptr<OpenRig::WebServer> webServer;
+  std::unique_ptr<OpenRig::StageHotspotController> hotspotController;
+  std::unique_ptr<OpenRig::StageRemoteModalOverlay> stageRemoteOverlay;
 
   void showResourceInspectorModal();
+  void showGigNotepadWindow();
+  void showWebRemoteDialog();
   
   int currentSetupIndex = 0;
 
@@ -134,7 +149,6 @@ private:
   void loadSetupFromButton(int buttonIndex);
   void assignJsonToButton(int buttonIndex);
   void loadRigFile(int index);
-  void loadRigFromFile(const juce::File &file, int targetSetlistIndex = -1);
   void loadSetFile(const juce::File &file);
   void saveButtonMappings();
   void loadButtonMappings();

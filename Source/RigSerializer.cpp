@@ -213,6 +213,23 @@ bool RigSerializer::varToSong(const juce::var& rig, Song& out) {
     }
 
     out.currentSceneIndex = rig.getProperty("currentSceneIndex", 0);
+
+    // Notes / Gig Notepad tabs
+    if (auto* noteArr = rig.getProperty("notes", juce::var()).getArray()) {
+        for (int i = 0; i < noteArr->size(); ++i) {
+            const auto& nv = noteArr->getReference(i);
+            if (nv.isObject()) {
+                NoteTab nt;
+                nt.title = nv.getProperty("title", "Notes").toString();
+                nt.content = nv.getProperty("content", "").toString();
+                out.notes.push_back(nt);
+            }
+        }
+    }
+    out.activeNoteTabIndex = rig.getProperty("activeNoteTabIndex", 0);
+    out.noteFontSize = (float)rig.getProperty("noteFontSize", 20.0);
+    out.noteIsMonospace = (bool)rig.getProperty("noteIsMonospace", true);
+
     return true;
 }
 
@@ -410,6 +427,18 @@ juce::var RigSerializer::songToVar(const Song& song) {
     }
     rig->setProperty("scenes", sceneNodes);
     rig->setProperty("currentSceneIndex", song.currentSceneIndex);
+
+    juce::Array<juce::var> noteNodes;
+    for (const auto& nt : song.notes) {
+        auto* no = new juce::DynamicObject();
+        no->setProperty("title", nt.title);
+        no->setProperty("content", nt.content);
+        noteNodes.add(juce::var(no));
+    }
+    rig->setProperty("notes", noteNodes);
+    rig->setProperty("activeNoteTabIndex", song.activeNoteTabIndex);
+    rig->setProperty("noteFontSize", (double)song.noteFontSize);
+    rig->setProperty("noteIsMonospace", song.noteIsMonospace);
 
     return juce::var(rig);
 }
