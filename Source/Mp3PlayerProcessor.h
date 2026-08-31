@@ -85,8 +85,7 @@ public:
     struct Deck {
         int deckId = 0; // 0 = Deck A, 1 = Deck B
         std::unique_ptr<juce::AudioFormatReaderSource> rawSource;
-        std::unique_ptr<juce::BufferingAudioSource> bufferedSource;
-        std::unique_ptr<juce::ResamplingAudioSource> resamplingSource;
+        juce::AudioTransportSource transportSource;
         juce::MemoryBlock trackMemory;
         TrackInfo trackInfo;
 
@@ -95,8 +94,6 @@ public:
         std::atomic<bool> isLoaded{false};
         std::atomic<bool> isPlaying{false};
         std::atomic<float> gain{0.0f};
-        std::atomic<juce::int64> currentSamplePos{0};
-        std::atomic<juce::int64> totalSampleLength{0};
         std::atomic<float> tempoRatio{1.0f};
 
         double sourceSampleRate = 44100.0;
@@ -112,31 +109,21 @@ public:
             buffer.setSize(2, allocSize, false, false, true);
             buffer.clear();
             timeStretcher.prepare(currentHostSampleRate, allocSize);
-            if (resamplingSource != nullptr) {
-                resamplingSource->prepareToPlay(allocSize, currentHostSampleRate);
-            }
+            transportSource.prepareToPlay(allocSize, currentHostSampleRate);
         }
 
         void reset() {
             isPlaying.store(false);
             isLoaded.store(false);
             gain.store(0.0f);
-            currentSamplePos.store(0);
-            totalSampleLength.store(0);
             tempoRatio.store(1.0f);
             sourceSampleRate = 44100.0;
             timeStretcher.reset();
             timeStretcher.setTempoRatio(1.0f);
 
-            if (resamplingSource != nullptr) {
-                resamplingSource.reset();
-            }
-            if (bufferedSource != nullptr) {
-                bufferedSource.reset();
-            }
-            if (rawSource != nullptr) {
-                rawSource.reset();
-            }
+            transportSource.stop();
+            transportSource.setSource(nullptr);
+            rawSource.reset();
             trackMemory.setSize(0);
             trackInfo = TrackInfo();
         }
@@ -150,44 +137,28 @@ public:
             return tempoRatio.load();
         }
 
-        double getBaseSampleRateRatio() const {
-            if (sourceSampleRate > 0.0 && currentHostSampleRate > 0.0) {
-                return sourceSampleRate / currentHostSampleRate;
-            }
-            return 1.0;
-        }
-
-        // High-Quality Sample-Rate Compensated Continuous Resampler & Key-Lock Renderer
+        // Flawless Native JUCE Audio Streaming with Pitch/KeyLock Support
         void renderBlock(int numSamples, bool useKeyLock) {
-            if (!isPlaying.load() || resamplingSource == nullptr || bufferedSource == nullptr) {
+            if (!isPlaying.load() || !isLoaded.load()) {
                 buffer.clear();
                 return;
             }
 
-            double baseRatio = getBaseSampleRateRatio();
             float userRatio = tempoRatio.load();
 
             if (useKeyLock && std::abs(userRatio - 1.0f) > 0.002f) {
-                // Key-Lock Mode: ResamplingAudioSource converts to host DAC rate with zero block artifacts
-                resamplingSource->setResamplingRatio(baseRatio);
+                // Key-Lock Mode: AudioTransportSource resamples source to host DAC rate -> WSOLA stretches tempo without pitch shift
                 rawBuffer.clear();
                 juce::AudioSourceChannelInfo info(&rawBuffer, 0, numSamples);
-                resamplingSource->getNextAudioBlock(info);
-                currentSamplePos.store(bufferedSource->getNextReadPosition());
-                totalSampleLength.store(bufferedSource->getTotalLength());
+                transportSource.getNextAudioBlock(info);
 
                 buffer.clear();
                 timeStretcher.process(rawBuffer, buffer, numSamples);
             } else {
-                // Clean Vinyl Mode (or KeyLock at 1.0x tempo): ResamplingAudioSource combines SR conversion + vinyl tempo ratio seamlessly
-                double totalRatio = baseRatio * (double)userRatio;
-                resamplingSource->setResamplingRatio(totalRatio);
-
+                // Clean Studio Mode: AudioTransportSource directly renders pristine anti-aliased stream
                 buffer.clear();
                 juce::AudioSourceChannelInfo info(&buffer, 0, numSamples);
-                resamplingSource->getNextAudioBlock(info);
-                currentSamplePos.store(bufferedSource->getNextReadPosition());
-                totalSampleLength.store(bufferedSource->getTotalLength());
+                transportSource.getNextAudioBlock(info);
             }
         }
     };
@@ -231,13 +202,13 @@ public:
         bool useKeyLock = (syncMode.load() == SyncMode::KeyLock);
 
         // Render Deck A
-        bool deckAPlaying = deckA.isPlaying.load() && deckA.bufferedSource != nullptr;
+        bool deckAPlaying = deckA.isPlaying.load() && deckA.isLoaded.load();
         if (deckAPlaying) {
             deckA.renderBlock(numSamples, useKeyLock);
         }
 
         // Render Deck B
-        bool deckBPlaying = deckB.isPlaying.load() && deckB.bufferedSource != nullptr;
+        bool deckBPlaying = deckB.isPlaying.load() && deckB.isLoaded.load();
         if (deckBPlaying) {
             deckB.renderBlock(numSamples, useKeyLock);
         }
@@ -262,6 +233,7 @@ public:
                     crossfadeProgress.store(curProg);
                     if (curProg >= 1.0f) {
                         isCrossfading.store(false);
+                        deckA.transportSource.stop();
                         deckA.isPlaying.store(false);
                         deckA.gain.store(0.0f);
                     }
@@ -271,6 +243,7 @@ public:
                     crossfadeProgress.store(curProg);
                     if (curProg <= 0.0f) {
                         isCrossfading.store(false);
+                        deckB.transportSource.stop();
                         deckB.isPlaying.store(false);
                         deckB.gain.store(0.0f);
                     }
@@ -335,8 +308,8 @@ public:
         int activeIdx = activeDeckIndex.load();
         Deck& curDeck = (activeIdx == 0) ? deckA : deckB;
         if (curDeck.isPlaying.load() && !isCrossfading.load()) {
-            double curPos = (currentSampleRate > 0.0) ? ((double)curDeck.currentSamplePos.load() / currentSampleRate) : 0.0;
-            double curLen = (currentSampleRate > 0.0) ? ((double)curDeck.totalSampleLength.load() / currentSampleRate) : 0.0;
+            double curPos = curDeck.transportSource.getCurrentPosition();
+            double curLen = curDeck.transportSource.getLengthInSeconds();
 
             double effectiveEnd = curLen;
             if (curDeck.trackInfo.cueOutSeconds > curDeck.trackInfo.cueInSeconds && curDeck.trackInfo.cueOutSeconds < curLen) {
@@ -351,7 +324,7 @@ public:
                     juce::MessageManager::callAsync([this]() {
                         nextTrack(true);
                     });
-                } else if (remaining <= 0.05) {
+                } else if (remaining <= 0.05 || curDeck.transportSource.hasStreamFinished()) {
                     juce::MessageManager::callAsync([this]() {
                         onTrackFinished();
                     });
@@ -373,10 +346,10 @@ public:
         Deck& curDeck = (activeIdx == 0) ? deckA : deckB;
 
         if (curDeck.isLoaded.load()) {
-            if (curDeck.bufferedSource != nullptr && curDeck.bufferedSource->getNextReadPosition() >= curDeck.bufferedSource->getTotalLength()) {
-                curDeck.bufferedSource->setNextReadPosition(0);
-                curDeck.currentSamplePos.store(0);
+            if (curDeck.transportSource.hasStreamFinished()) {
+                curDeck.transportSource.setPosition(curDeck.trackInfo.cueInSeconds > 0.0 ? curDeck.trackInfo.cueInSeconds : 0.0);
             }
+            curDeck.transportSource.start();
             curDeck.isPlaying.store(true);
             playing.store(true);
             if (onPlayStarted) onPlayStarted();
@@ -385,6 +358,8 @@ public:
     }
 
     void pause() {
+        deckA.transportSource.stop();
+        deckB.transportSource.stop();
         deckA.isPlaying.store(false);
         deckB.isPlaying.store(false);
         playing.store(false);
@@ -417,6 +392,7 @@ public:
             activeDeckIndex.store(0);
             isCrossfading.store(false);
             if (startPlaying) {
+                deckA.transportSource.start();
                 deckA.isPlaying.store(true);
                 playing.store(true);
             }
@@ -429,6 +405,7 @@ public:
                 Deck& targetDeck = (targetDeckIdx == 0) ? deckA : deckB;
                 Deck& outgoingDeck = (targetDeckIdx == 0) ? deckB : deckA;
 
+                targetDeck.transportSource.start();
                 targetDeck.isPlaying.store(true);
                 playing.store(true);
                 activeDeckIndex.store(targetDeckIdx);
@@ -446,6 +423,7 @@ public:
                     // Instant cut
                     isCrossfading.store(false);
                     crossfadeProgress.store((targetDeckIdx == 0) ? 0.0f : 1.0f);
+                    outgoingDeck.transportSource.stop();
                     outgoingDeck.isPlaying.store(false);
                     outgoingDeck.gain.store(0.0f);
                 }
@@ -521,27 +499,21 @@ public:
                 double srcRate = (reader->sampleRate > 0.0) ? reader->sampleRate : currentSampleRate;
                 targetDeck.sourceSampleRate = srcRate;
                 targetDeck.rawSource = std::make_unique<juce::AudioFormatReaderSource>(reader.release(), true);
-                targetDeck.bufferedSource = std::make_unique<juce::BufferingAudioSource>(targetDeck.rawSource.get(), bufferThread, false, 65536);
-                targetDeck.bufferedSource->prepareToPlay(4096, srcRate);
-
-                targetDeck.resamplingSource = std::make_unique<juce::ResamplingAudioSource>(targetDeck.bufferedSource.get(), false, 2);
-                targetDeck.resamplingSource->setResamplingRatio(targetDeck.getBaseSampleRateRatio());
-                targetDeck.resamplingSource->prepareToPlay(4096, currentSampleRate);
+                
+                // AudioTransportSource provides high-quality polyphase anti-aliased resampling + thread buffering
+                targetDeck.transportSource.setSource(targetDeck.rawSource.get(), 65536, &bufferThread, srcRate, 2);
+                targetDeck.transportSource.prepareToPlay(4096, currentSampleRate);
 
                 juce::SpinLock::ScopedLockType al(audioLock);
                 targetDeck.trackInfo = info;
                 targetDeck.isLoaded.store(true);
 
-                juce::int64 startSample = 0;
-                if (info.cueInSeconds > 0.0 && srcRate > 0.0) {
-                    startSample = (juce::int64)(info.cueInSeconds * srcRate);
-                    startSample = juce::jlimit((juce::int64)0, targetDeck.bufferedSource->getTotalLength(), startSample);
-                    targetDeck.bufferedSource->setNextReadPosition(startSample);
-                    targetDeck.resamplingSource->flushBuffers();
+                if (info.cueInSeconds > 0.0) {
+                    targetDeck.transportSource.setPosition(info.cueInSeconds);
+                } else {
+                    targetDeck.transportSource.setPosition(0.0);
                 }
 
-                targetDeck.currentSamplePos.store(startSample);
-                targetDeck.totalSampleLength.store(targetDeck.bufferedSource->getTotalLength());
                 targetDeck.setTempoRatio(1.0f);
                 return true;
             }
@@ -582,8 +554,9 @@ public:
         bool loaded = loadTrackIntoDeck(deckId, file, info);
         if (loaded) {
             Deck& d = (deckId == 0) ? deckA : deckB;
-            d.isPlaying.store(autoPlay);
             if (autoPlay) {
+                d.transportSource.start();
+                d.isPlaying.store(true);
                 playing.store(true);
                 activeDeckIndex.store(deckId);
                 crossfadeProgress.store((deckId == 0) ? 0.0f : 1.0f);
@@ -599,13 +572,10 @@ public:
     void playDeck(int deckId) {
         Deck& d = (deckId == 0) ? deckA : deckB;
         if (d.isLoaded.load()) {
-            if (d.bufferedSource != nullptr && d.bufferedSource->getNextReadPosition() >= d.bufferedSource->getTotalLength()) {
-                d.bufferedSource->setNextReadPosition(0);
-                if (d.resamplingSource != nullptr) {
-                    d.resamplingSource->flushBuffers();
-                }
-                d.currentSamplePos.store(0);
+            if (d.transportSource.hasStreamFinished()) {
+                d.transportSource.setPosition(d.trackInfo.cueInSeconds > 0.0 ? d.trackInfo.cueInSeconds : 0.0);
             }
+            d.transportSource.start();
             d.isPlaying.store(true);
             playing.store(true);
             activeDeckIndex.store(deckId);
@@ -616,6 +586,7 @@ public:
 
     void pauseDeck(int deckId) {
         Deck& d = (deckId == 0) ? deckA : deckB;
+        d.transportSource.stop();
         d.isPlaying.store(false);
         if (!deckA.isPlaying.load() && !deckB.isPlaying.load()) {
             playing.store(false);
@@ -633,18 +604,16 @@ public:
 
     double getDeckPosition(int deckId) const {
         const Deck& d = (deckId == 0) ? deckA : deckB;
-        double rate = (d.sourceSampleRate > 0.0) ? d.sourceSampleRate : currentSampleRate;
-        if (rate > 0.0) {
-            return (double)d.currentSamplePos.load() / rate;
+        if (d.isLoaded.load()) {
+            return d.transportSource.getCurrentPosition();
         }
         return 0.0;
     }
 
     double getDeckLength(int deckId) const {
         const Deck& d = (deckId == 0) ? deckA : deckB;
-        double rate = (d.sourceSampleRate > 0.0) ? d.sourceSampleRate : currentSampleRate;
-        if (rate > 0.0) {
-            return (double)d.totalSampleLength.load() / rate;
+        if (d.isLoaded.load()) {
+            return d.transportSource.getLengthInSeconds();
         }
         return 0.0;
     }
@@ -652,15 +621,8 @@ public:
     void setDeckPosition(int deckId, double seconds) {
         juce::SpinLock::ScopedLockType al(audioLock);
         Deck& d = (deckId == 0) ? deckA : deckB;
-        double rate = (d.sourceSampleRate > 0.0) ? d.sourceSampleRate : currentSampleRate;
-        if (d.bufferedSource != nullptr && rate > 0.0) {
-            juce::int64 samplePos = (juce::int64)(seconds * rate);
-            samplePos = juce::jlimit((juce::int64)0, d.bufferedSource->getTotalLength(), samplePos);
-            d.bufferedSource->setNextReadPosition(samplePos);
-            if (d.resamplingSource != nullptr) {
-                d.resamplingSource->flushBuffers();
-            }
-            d.currentSamplePos.store(samplePos);
+        if (d.isLoaded.load()) {
+            d.transportSource.setPosition(seconds);
         }
     }
 
@@ -728,15 +690,15 @@ public:
             slave.setTempoRatio(ratio);
 
             // If master is playing, quantize / align downbeat
-            if (master.isPlaying.load() && currentSampleRate > 0.0) {
-                double masterPos = (double)master.currentSamplePos.load() / currentSampleRate;
+            if (master.isPlaying.load()) {
+                double masterPos = master.transportSource.getCurrentPosition();
                 double beatPeriodMaster = 60.0 / masterBpm;
                 double beatPhase = std::fmod(masterPos - master.trackInfo.firstBeatSeconds, beatPeriodMaster);
                 if (beatPhase < 0.0) beatPhase += beatPeriodMaster;
 
                 // Nudge slave so its beat phase matches master
                 double slaveBeatPeriod = 60.0 / slaveBpm;
-                double slavePos = (double)slave.currentSamplePos.load() / currentSampleRate;
+                double slavePos = slave.transportSource.getCurrentPosition();
                 double currentSlavePhase = std::fmod(slavePos - slave.trackInfo.firstBeatSeconds, slaveBeatPeriod);
                 if (currentSlavePhase < 0.0) currentSlavePhase += slaveBeatPeriod;
 
@@ -986,9 +948,8 @@ public:
 
     void setDeckCueIn(int deckId) {
         Deck& d = (deckId == 0) ? deckA : deckB;
-        double rate = (d.sourceSampleRate > 0.0) ? d.sourceSampleRate : currentSampleRate;
-        if (d.isLoaded.load() && rate > 0.0) {
-            double curPos = (double)d.currentSamplePos.load() / rate;
+        if (d.isLoaded.load()) {
+            double curPos = d.transportSource.getCurrentPosition();
             d.trackInfo.cueInSeconds = curPos;
             juce::String path = d.trackInfo.file.getFullPathName();
             {
@@ -1012,9 +973,8 @@ public:
 
     void setDeckCueOut(int deckId) {
         Deck& d = (deckId == 0) ? deckA : deckB;
-        double rate = (d.sourceSampleRate > 0.0) ? d.sourceSampleRate : currentSampleRate;
-        if (d.isLoaded.load() && rate > 0.0) {
-            double curPos = (double)d.currentSamplePos.load() / rate;
+        if (d.isLoaded.load()) {
+            double curPos = d.transportSource.getCurrentPosition();
             d.trackInfo.cueOutSeconds = curPos;
             juce::String path = d.trackInfo.file.getFullPathName();
             {
@@ -1404,33 +1364,15 @@ public:
     bool isPlaying() const { return playing.load(); }
     
     double getPosition() const {
-        int activeIdx = activeDeckIndex.load();
-        const Deck& curDeck = (activeIdx == 0) ? deckA : deckB;
-        if (currentSampleRate > 0.0) {
-            return (double)curDeck.currentSamplePos.load() / currentSampleRate;
-        }
-        return 0.0;
+        return getDeckPosition(activeDeckIndex.load());
     }
 
     double getLength() const {
-        int activeIdx = activeDeckIndex.load();
-        const Deck& curDeck = (activeIdx == 0) ? deckA : deckB;
-        if (currentSampleRate > 0.0) {
-            return (double)curDeck.totalSampleLength.load() / currentSampleRate;
-        }
-        return 0.0;
+        return getDeckLength(activeDeckIndex.load());
     }
 
     void setPosition(double seconds) {
-        juce::SpinLock::ScopedLockType al(audioLock);
-        int activeIdx = activeDeckIndex.load();
-        Deck& curDeck = (activeIdx == 0) ? deckA : deckB;
-        if (curDeck.bufferedSource != nullptr && currentSampleRate > 0.0) {
-            juce::int64 samplePos = (juce::int64)(seconds * currentSampleRate);
-            samplePos = juce::jlimit((juce::int64)0, curDeck.bufferedSource->getTotalLength(), samplePos);
-            curDeck.bufferedSource->setNextReadPosition(samplePos);
-            curDeck.currentSamplePos.store(samplePos);
-        }
+        setDeckPosition(activeDeckIndex.load(), seconds);
     }
 
     void setGain(float g) { gain.store(juce::jlimit(0.0f, 2.0f, g)); }
