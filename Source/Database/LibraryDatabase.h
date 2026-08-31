@@ -376,6 +376,7 @@ public:
     // --- Multi-Format Export Capabilities ---
     bool exportToCsv(const juce::File& targetFile)
     {
+        juce::File file = targetFile.getFileExtension().isEmpty() ? targetFile.withFileExtension("csv") : targetFile;
         auto tracks = getAllTracks("title");
         juce::String csv = "File Path,File Name,Title,Artist,Duration (sec),BPM,First Beat (sec),Cue In (sec),Cue Out (sec),Effective Duration (sec),Gain Trim (dB),Play Count,Last Played,Date Added\r\n";
 
@@ -406,11 +407,12 @@ public:
             csv += "\r\n";
         }
 
-        return targetFile.replaceWithText(csv);
+        return file.replaceWithText(csv);
     }
 
     bool exportToJson(const juce::File& targetFile)
     {
+        juce::File file = targetFile.getFileExtension().isEmpty() ? targetFile.withFileExtension("json") : targetFile;
         auto tracks = getAllTracks("title");
         juce::DynamicObject::Ptr root = new juce::DynamicObject();
         root->setProperty("schemaVersion", "1.0");
@@ -441,11 +443,12 @@ public:
         }
 
         root->setProperty("tracks", arr);
-        return targetFile.replaceWithText(juce::JSON::toString(juce::var(root.get())));
+        return file.replaceWithText(juce::JSON::toString(juce::var(root.get())));
     }
 
     bool exportToM3u(const juce::File& targetFile, const std::vector<TrackRecord>& specificTracks = {})
     {
+        juce::File file = targetFile.getFileExtension().isEmpty() ? targetFile.withFileExtension("m3u") : targetFile;
         auto tracks = specificTracks.empty() ? getAllTracks("title") : specificTracks;
         juce::String m3u = "#EXTM3U\n";
         m3u += "#EXT-FANFARE-EXPORT:date=" + juce::Time::getCurrentTime().formatted("%Y-%m-%d %H:%M:%S") + "\n";
@@ -460,16 +463,17 @@ public:
             m3u += t.filePath + "\n";
         }
 
-        return targetFile.replaceWithText(m3u);
+        return file.replaceWithText(m3u);
     }
 
     bool backupDatabase(const juce::File& targetFile)
     {
+        juce::File file = targetFile.getFileExtension().isEmpty() ? targetFile.withFileExtension("db") : targetFile;
         juce::ScopedLock sl(dbLock);
         if (!ensureOpen()) return false;
 
         sqlite3* backupDb = nullptr;
-        int rc = sqlite3_open_v2(targetFile.getFullPathName().toRawUTF8(), &backupDb, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nullptr);
+        int rc = sqlite3_open_v2(file.getFullPathName().toRawUTF8(), &backupDb, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nullptr);
         if (rc != SQLITE_OK)
         {
             if (backupDb) sqlite3_close_v2(backupDb);
@@ -486,7 +490,6 @@ public:
         rc = sqlite3_backup_step(backup, -1);
         sqlite3_backup_finish(backup);
         sqlite3_close_v2(backupDb);
-
         return (rc == SQLITE_DONE);
     }
 

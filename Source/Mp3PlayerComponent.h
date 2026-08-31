@@ -1370,7 +1370,7 @@ public:
     void savePlaylist() {
         fileChooser = std::make_unique<juce::FileChooser>(
             "Save Playlist As...",
-            processor.getLastFolder(),
+            processor.getLastFolder().getChildFile("playlist.m3u"),
             "*.m3u;*.json"
         );
         fileChooser->launchAsync(
@@ -1378,6 +1378,9 @@ public:
             [this](const juce::FileChooser& fc) {
                 auto file = fc.getResult();
                 if (file != juce::File()) {
+                    if (file.getFileExtension().isEmpty()) {
+                        file = file.withFileExtension("m3u");
+                    }
                     processor.savePlaylist(file);
                     processor.setLastFolder(file);
                 }

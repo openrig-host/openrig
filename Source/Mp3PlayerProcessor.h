@@ -1492,16 +1492,14 @@ public:
         }
     }
 
-    void savePlaylist(const juce::File& file) const {
+    void savePlaylist(const juce::File& targetFile) const {
         juce::ScopedLock sl(playlistLock);
-        if (file.getFileExtension().equalsIgnoreCase(".m3u")) {
-            juce::String text = "#EXTM3U\n";
-            for (const auto& t : playlist) {
-                text += "#EXTINF:" + juce::String((int)t.durationSeconds) + "," + t.title + "\n";
-                text += t.file.getFullPathName() + "\n";
-            }
-            file.replaceWithText(text);
-        } else {
+        juce::File file = targetFile;
+        if (file.getFileExtension().isEmpty()) {
+            file = file.withFileExtension("m3u");
+        }
+
+        if (file.getFileExtension().equalsIgnoreCase(".json")) {
             auto* obj = new juce::DynamicObject();
             juce::Array<juce::var> arr;
             for (const auto& t : playlist) {
@@ -1516,6 +1514,19 @@ public:
             }
             obj->setProperty("tracks", arr);
             file.replaceWithText(juce::JSON::toString(juce::var(obj)));
+        } else {
+            // Extended M3U playlist format with Fanfare BPM & cue point tags
+            juce::String text = "#EXTM3U\n";
+            for (const auto& t : playlist) {
+                text += "#EXTINF:" + juce::String((int)t.durationSeconds) + "," + t.title + "\n";
+                if (t.bpm > 0.0f || t.hasCues()) {
+                    text += "#EXT-FANFARE:bpm=" + juce::String(t.bpm, 1) + 
+                            ",cue_in=" + juce::String(t.cueInSeconds, 2) + 
+                            ",cue_out=" + juce::String(t.cueOutSeconds, 2) + "\n";
+                }
+                text += t.file.getFullPathName() + "\n";
+            }
+            file.replaceWithText(text);
         }
     }
 
@@ -1523,20 +1534,9 @@ public:
         if (!file.existsAsFile()) return;
         clearPlaylist();
 
-        if (file.getFileExtension().equalsIgnoreCase(".m3u")) {
-            juce::StringArray lines;
-            file.readLines(lines);
-            for (const auto& line : lines) {
-                auto trimmed = line.trim();
-                if (trimmed.isNotEmpty() && !trimmed.startsWith("#")) {
-                    juce::File f(trimmed);
-                    if (!juce::File::isAbsolutePath(trimmed)) {
-                        f = file.getParentDirectory().getChildFile(trimmed);
-                    }
-                    addFile(f);
-                }
-            }
-        } else {
+        // Check if file content is JSON
+        auto text = file.loadFileAsString();
+        if (text.trimStart().startsWithChar('{')) {
             auto parsed = juce::JSON::parse(file);
             if (auto* obj = parsed.getDynamicObject()) {
                 if (auto* arr = obj->getProperty("tracks").getArray()) {
@@ -1560,9 +1560,61 @@ public:
                         }
                     }
                     if (onPlaylistChanged) onPlaylistChanged();
+                    return;
                 }
             }
         }
+
+        // Otherwise parse as Extended M3U or path list
+        juce::StringArray lines;
+        file.readLines(lines);
+        float nextBpm = 0.0f;
+        double nextCueIn = 0.0, nextCueOut = 0.0;
+
+        for (const auto& line : lines) {
+            auto trimmed = line.trim();
+            if (trimmed.isEmpty()) continue;
+
+            if (trimmed.startsWithIgnoreCase("#EXT-FANFARE:")) {
+                auto tagData = trimmed.substring(13);
+                juce::StringArray pairs;
+                pairs.addTokens(tagData, ",;", "\"");
+                for (const auto& p : pairs) {
+                    if (p.startsWithIgnoreCase("bpm=")) nextBpm = (float)p.substring(4).getDoubleValue();
+                    else if (p.startsWithIgnoreCase("cue_in=")) nextCueIn = p.substring(7).getDoubleValue();
+                    else if (p.startsWithIgnoreCase("cue_out=")) nextCueOut = p.substring(8).getDoubleValue();
+                }
+            } else if (!trimmed.startsWith("#")) {
+                juce::File f(trimmed);
+                if (!juce::File::isAbsolutePath(trimmed)) {
+                    f = file.getParentDirectory().getChildFile(trimmed);
+                }
+                if (f.existsAsFile()) {
+                    TrackInfo info;
+                    info.file = f;
+                    info.title = f.getFileNameWithoutExtension();
+                    info.bpm = nextBpm;
+                    info.cueInSeconds = nextCueIn;
+                    info.cueOutSeconds = nextCueOut;
+
+                    std::unique_ptr<juce::AudioFormatReader> reader(formatManager.createReaderFor(f));
+                    if (reader != nullptr) {
+                        info.durationSeconds = (double)reader->lengthInSamples / reader->sampleRate;
+                    }
+                    {
+                        juce::ScopedLock pl(playlistLock);
+                        playlist.push_back(info);
+                    }
+                    if (info.bpm <= 0.0f) {
+                        analyzeTrackBpm((int)playlist.size() - 1, f);
+                    }
+                }
+                nextBpm = 0.0f;
+                nextCueIn = 0.0;
+                nextCueOut = 0.0;
+            }
+        }
+        if (onPlaylistChanged) onPlaylistChanged();
     }
 
     void loadBpmCache() {
