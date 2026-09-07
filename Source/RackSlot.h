@@ -166,6 +166,11 @@ public:
     // messages
     applyCCMappings(midiMessages);
 
+    // Mixer-assigned CCs (FOH/IEM level) are consumed by the mixer and must
+    // NOT reach the plugin: some engines (UVI) cut sustained voices when
+    // certain CCs arrive mid-note.
+    stripMixerCCs(midiMessages);
+
     // Remap passthrough CCs so the plugin sees the outgoing CC number
     applyCCPassthrough(midiMessages);
 
@@ -947,6 +952,32 @@ public:
     midiMessages.swapWith(passthroughScratch);
   }
 
+  // Remove mixer-assigned CCs (FOH/IEM level controls) from the MIDI stream
+  // before plugins see it: a CC that drives this strip's fader is a rig
+  // control, and some engines (UVI) cut sustained voices when CCs arrive
+  // mid-note. Call after applyCCMappings, before applyCCPassthrough.
+  void stripMixerCCs(juce::MidiBuffer &midiMessages) {
+    const int foh = fohCC.load();
+    const int iem = iemCC.load();
+    if (foh < 0 && iem < 0)
+      return; // no mixer CCs assigned on this strip
+
+    mixerCCScratch.clear();
+    bool changed = false;
+    for (const auto &meta : midiMessages) {
+      auto msg = meta.getMessage();
+      if (msg.isController() &&
+          ((foh >= 0 && msg.getControllerNumber() == foh) ||
+           (iem >= 0 && msg.getControllerNumber() == iem))) {
+        changed = true; // consumed by the mixer — dropped from the plugin stream
+        continue;
+      }
+      mixerCCScratch.addEvent(msg, meta.samplePosition);
+    }
+    if (changed)
+      midiMessages.swapWith(mixerCCScratch);
+  }
+
   // Apply CC values to mapped parameters (call in processBlock)
   void applyCCMappings(const juce::MidiBuffer &midiMessages) {
     juce::SpinLock::ScopedTryLockType lock(ccMappingLock);
@@ -1047,6 +1078,7 @@ private:
   std::map<int, int> ccPassthroughMap;
   juce::SpinLock ccPassthroughLock;
   juce::MidiBuffer passthroughScratch; // pre-allocated to avoid per-block alloc
+  juce::MidiBuffer mixerCCScratch;     // scratch for mixer-CC stripping (FOH/IEM)
 
   std::atomic<float> leftPeak{0.0f};
   std::atomic<float> rightPeak{0.0f};
