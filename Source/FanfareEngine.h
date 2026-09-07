@@ -17,6 +17,7 @@
 
 #ifdef _WIN32
 #define NOMINMAX // Prevent Windows.h from defining min/max macros
+#include <objbase.h> // CoInitializeEx/CoUninitialize — off-thread plugin builds
 #include <Windows.h>
 #include <intrin.h> // For _mm_pause()
 #endif
@@ -2532,10 +2533,61 @@ public:
     //    path). buildPluginFromVar already prepared it and restored state.
     auto key = stagingKeyFor(slotIdx, chainIdx, isFohOrChannel);
     if (!popStagedPlugin(key, instance)) {
-      // 2. Fallback: build synchronously (cold path / legacy synchronous import).
-      juce::String error;
-      if (!buildPluginFromVar(vt, instance, error) || !instance)
+      // 2. Fallback: cold path — build OFF-THREAD with a bounded wait (a
+      // message-thread build hangs for engines whose init needs a pumping
+      // thread: UVI Workstation, Sep 7; faults for HALion 7, Sep 6). On
+      // timeout: abandon, leave the slot without this plugin, rig continues.
+      struct OffThreadVarBuild {
+        FanfareEngine *engine;
+        juce::var vt;
+        std::unique_ptr<juce::AudioPluginInstance> inst;
+        juce::String err;
+        bool ok = false;
+        std::atomic<bool> done{false};
+        std::atomic<bool> abandoned{false};
+      };
+      auto ctx = std::make_shared<OffThreadVarBuild>();
+      ctx->engine = this;
+      ctx->vt = vt;
+
+      std::thread t([ctx]() {
+#ifdef _WIN32
+        ::CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+#endif
+        std::unique_ptr<juce::AudioPluginInstance> tmp;
+        juce::String tmpErr;
+        bool tmpOk = false;
+        if (! ctx->abandoned.load(std::memory_order_acquire))
+          tmpOk = ctx->engine->buildPluginFromVar(ctx->vt, tmp, tmpErr) && (bool)tmp;
+        if (! ctx->abandoned.load(std::memory_order_acquire)) {
+          ctx->inst = std::move(tmp);
+          ctx->err = tmpErr;
+          ctx->ok = tmpOk;
+        } else {
+          tmp.reset();
+        }
+#ifdef _WIN32
+        ::CoUninitialize();
+#endif
+        ctx->done.store(true, std::memory_order_release);
+      });
+
+      int waitedMs = 0;
+      while (! ctx->done.load(std::memory_order_acquire) && waitedMs < 40000) {
+        juce::Thread::sleep(100);
+        waitedMs += 100;
+      }
+
+      if (ctx->done.load(std::memory_order_acquire)) {
+        t.join();
+        instance = std::move(ctx->inst);
+      } else {
+        ctx->abandoned.store(true, std::memory_order_release);
+        logToFile("WARNING: cold-path plugin build timed out (40s) for key " + key +
+                  " — abandoning; the rig continues without it.");
+        t.detach();
         return;
+      }
     }
 
     if (slotIdx >= 0) {
@@ -2946,8 +2998,84 @@ public:
     return availablePlugins[index].path;
   }
 
+  // Build a plugin instance (create + layout configuration + prepare) on an
+  // MTA background thread with a bounded wait, then hand back the prepared
+  // instance. Message-thread plugin instantiation hangs for engines whose
+  // init needs a pumping thread (UVI Workstation: setPlayConfigDetails
+  // deadlock, Sep 7) or faults outright (HALion 7, Sep 6) — background MTA
+  // builds are the environment every working host uses (RigBuilder's staging
+  // path has been proving this all along). On timeout the build is abandoned:
+  // the half-built instance lives on the detached worker thread and the
+  // caller gets null — the rig survives.
+  std::unique_ptr<juce::AudioPluginInstance> buildInstanceOffThread(
+      const juce::PluginDescription &desc, juce::String &error,
+      int timeoutMs = 40000) {
+    struct OffThreadBuild {
+      FanfareEngine *engine;
+      juce::PluginDescription desc;
+      std::unique_ptr<juce::AudioPluginInstance> inst;
+      juce::String err;
+      std::atomic<bool> done{false};
+      std::atomic<bool> abandoned{false};
+    };
+    auto ctx = std::make_shared<OffThreadBuild>();
+    ctx->engine = this;
+    ctx->desc = desc;
+
+    std::thread t([ctx]() {
+#ifdef _WIN32
+      ::CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+#endif
+      std::unique_ptr<juce::AudioPluginInstance> tmp;
+      juce::String tmpErr;
+      if (! ctx->abandoned.load(std::memory_order_acquire))
+        tmp = ctx->engine->getFormatManager().createPluginInstance(
+            ctx->desc, ctx->engine->getCurrentSampleRate(),
+            ctx->engine->getCurrentBlockSize(), tmpErr);
+      if (tmp && ! ctx->abandoned.load(std::memory_order_acquire)) {
+        ctx->engine->configureStereoLayout(tmp.get());
+        if (! ctx->abandoned.load(std::memory_order_acquire))
+          tmp->prepareToPlay(ctx->engine->getCurrentSampleRate(),
+                             ctx->engine->getCurrentBlockSize());
+      }
+      if (! ctx->abandoned.load(std::memory_order_acquire)) {
+        ctx->inst = std::move(tmp);
+        ctx->err = tmpErr;
+      } else {
+        tmp.reset(); // abandoned: release on the worker thread
+      }
+#ifdef _WIN32
+      ::CoUninitialize();
+#endif
+      ctx->done.store(true, std::memory_order_release);
+    });
+
+    int waitedMs = 0;
+    while (! ctx->done.load(std::memory_order_acquire) && waitedMs < timeoutMs) {
+      juce::Thread::sleep(100);
+      waitedMs += 100;
+    }
+
+    if (ctx->done.load(std::memory_order_acquire)) {
+      t.join();
+      error = ctx->err;
+      return std::move(ctx->inst);
+    }
+
+    ctx->abandoned.store(true, std::memory_order_release);
+    logToFile("WARNING: off-thread plugin build timed out (" +
+              juce::String(timeoutMs / 1000) + "s) for " + desc.name +
+              " — abandoning; the rig continues without it.");
+    t.detach();
+    error = "build timed out";
+    return nullptr;
+  }
+
   // Load a plugin from the registry into a specific slot
-  // NOTE: This is synchronous - UI will freeze briefly during load
+  // NOTE: instantiation+configuration happen on an MTA background thread with
+  // a bounded wait — see buildInstanceOffThread. The message thread waits
+  // (UI frozen for the build duration) but can no longer deadlock inside a
+  // plugin whose init needs a pumping thread.
   void
   loadPluginIntoSlot(int slotIndex, int chainIndex, int pluginIndex,
                      std::function<void(bool, const juce::String &)> callback) {
@@ -2999,17 +3127,17 @@ public:
     juce::PluginDescription desc = *descriptions[0];
     logToFile("Found: " + desc.name);
 
-    // Create instance synchronously
+    // Build on an MTA background thread with a bounded wait (see
+    // buildInstanceOffThread): message-thread instantiation hangs for engines
+    // whose init needs a pumping thread (UVI Workstation, Sep 7) or faults
+    // outright (HALion 7, Sep 6).
     juce::String errorMessage;
     pinDllInMemory(pluginPath);
     size_t ramBefore = FanfareLog::getMemoryStats().workingSetBytes;
-    auto instance = formatManager.createPluginInstance(
-        desc, currentSampleRate, currentBlockSize, errorMessage);
+    auto instance = buildInstanceOffThread(desc, errorMessage);
 
     if (instance) {
       logToFile("Plugin loaded successfully!");
-      configureStereoLayout(instance.get());
-      instance->prepareToPlay(currentSampleRate, currentBlockSize);
       size_t ramAfter = FanfareLog::getMemoryStats().workingSetBytes;
       if (ramAfter > ramBefore) {
         slotVec[realIdx]->setEstimatedRamBytes(ramAfter - ramBefore);
