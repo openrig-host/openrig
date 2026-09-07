@@ -846,6 +846,37 @@ public:
     }
   }
 
+  // Re-resolve cached parameter pointers against the CURRENTLY loaded plugin
+  // instances. Mappings restored from a song/strip before the plugin chain
+  // swaps in carry null pointers (and setPluginInChain invalidates any that
+  // resolved), leaving the assignments listed but dead. Call after the
+  // plugin chain finishes loading. Message-thread only.
+  void revalidateCCMappings() {
+    juce::SpinLock::ScopedLockType lock(ccMappingLock);
+    for (auto &it : ccParameterMappings) {
+      auto &map = it.second;
+      juce::AudioProcessorParameter *paramPtr = nullptr;
+      if (auto *plugin = getPluginInstance(map.chainIndex)) {
+        auto &params = plugin->getParameters();
+        if (map.paramId.isNotEmpty()) {
+          for (auto *param : params) {
+            if (auto *withId = dynamic_cast<juce::AudioProcessorParameterWithID*>(param)) {
+              if (withId->paramID == map.paramId) {
+                paramPtr = param;
+                break;
+              }
+            }
+          }
+        }
+        if (paramPtr == nullptr && map.parameterIndex >= 0 &&
+            map.parameterIndex < (int)params.size()) {
+          paramPtr = params[map.parameterIndex];
+        }
+      }
+      map.cachedParam = paramPtr;
+    }
+  }
+
   void mapCCToParameter(int ccNum, int chainIndex, int paramIndex,
                         float minVal = 0.0f, float maxVal = 1.0f, bool inv = false) {
     juce::String paramId;

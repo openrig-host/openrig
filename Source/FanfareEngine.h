@@ -1738,6 +1738,13 @@ public:
             }
           }
         }
+
+        // Re-resolve CC mappings now that this slot's plugin chain is loaded.
+        // Mappings were restored earlier in this function, before the plugin
+        // swap — their cached parameter pointers are null (fresh boot) or
+        // invalidated by setPluginInChain. Without this pass the assignments
+        // show in the manager but never reach the plugin.
+        s->revalidateCCMappings();
       }
       for (int i = numToLoad; i < numSlots; ++i) {
         auto s = slots[i].get();
@@ -2353,6 +2360,13 @@ public:
       cs.level.store(songSlot.chain[p].level);
       cs.enabled.store(songSlot.chain[p].enabled);
     }
+
+    // Re-resolve CC mappings now that the plugin chain is loaded — the
+    // mappings were restored above, before the plugin swap, so their cached
+    // parameter pointers are null (fresh boot) or were invalidated by
+    // setPluginInChain. Without this pass the assignments show in the CC
+    // manager but never reach the plugin.
+    s->revalidateCCMappings();
   }
 
   // Apply a SongSlot preset directly (e.g. from drag-and-drop). Thread-safe:
