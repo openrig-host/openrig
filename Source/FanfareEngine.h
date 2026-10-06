@@ -62,11 +62,8 @@ public:
         slots.push_back(std::make_unique<RackSlot>("Monitor In"));
         slots.back()->setInputChannelIndex(0); // Hardware In 1
       } else if (i == 1) {
-        slots.push_back(std::make_unique<RackSlot>("CK88"));
-        slots.back()->setInputChannelIndex(FanfareConstants::kKeyboardInputChannel); // Hardware In 11 (CK88)
-      } else if (i == 11) {
-        slots.push_back(std::make_unique<RackSlot>("Accordion"));
-        slots.back()->setInputChannelIndex(12); // Hardware In 13 (Accordion)
+        slots.push_back(std::make_unique<RackSlot>("Keyboard"));
+        slots.back()->setInputChannelIndex(FanfareConstants::kKeyboardInputChannel); // Hardware In 11
       } else {
         slots.push_back(
             std::make_unique<RackSlot>("Slot " + juce::String(i + 1)));
