@@ -207,6 +207,8 @@ public:
       int chainLen = juce::jmax((int)pluginChain.size(), 3);
       for (int i = 0; i < chainLen; ++i) {
         if (i < 3 && chainMidiOut[i].isMidiOut.load()) {
+          if (i == drainSlot.load())
+            drainSlot.store(-1); // MIDI-out slots don't fade
           if (chainSettings[i].enabled.load()) {
             int low = chainSettings[i].lowNote.load();
             int high = chainSettings[i].highNote.load();
@@ -253,7 +255,11 @@ public:
           continue;
 
         auto &plugin = pluginChain[i];
-        if (plugin && (i >= 3 || chainSettings[i].enabled.load())) {
+        if (i == drainSlot.load() &&
+            (!plugin || !(i < 3 && chainIsInstrument[i].load())))
+          drainSlot.store(-1); // only instrument slots drain; FX hard-cut
+        if (plugin &&
+            (i >= 3 || chainSettings[i].enabled.load() || i == drainSlot.load())) {
           auto plugStartTime = juce::Time::getHighResolutionTicks();
           try {
             bool isInstrument = (i < 3) ? chainIsInstrument[i].load() : plugin->getPluginDescription().isInstrument;
@@ -280,17 +286,44 @@ public:
                   }
                 }
 
+                // One-shot panic right after enabling (clears anything stale)
+                // and once at drain start (releases held voices of the side
+                // being swapped out).
+                if (i == enablePanicSlot.load()) {
+                  enablePanicSlot.store(-1);
+                  appendPanic(filteredMidiScratch, 0);
+                }
+                if (i == drainSlot.load() && !drainPanicSent.exchange(true))
+                  appendPanic(filteredMidiScratch, 0);
+
                 FanfareLog::safeExecutePluginCall([&]() {
                   plugin->processBlock(scratchBuffer, filteredMidiScratch);
                 }, "processBlock (" + plugin->getName() + ")");
 
                 scratchBuffer.applyGain(instGain);
 
+                // Swap drain: fade the disabled instrument to silence so a
+                // held chord dies musically instead of clicking off.
+                if (i == drainSlot.load()) {
+                  scratchBuffer.applyGain(drainGain.load());
+                  float step =
+                      (float)numSamp / (float)(0.08 * juce::jmax(8000.0, lastSampleRate));
+                  float g = drainGain.load() - step;
+                  if (g <= 0.0f) {
+                    drainGain.store(0.0f);
+                    drainSlot.store(-1);
+                  } else {
+                    drainGain.store(g);
+                  }
+                }
+
                 for (int ch = 0; ch < slotBuffer.getNumChannels(); ++ch) {
                   if (ch < scratchBuffer.getNumChannels())
                     slotBuffer.addFrom(ch, 0, scratchBuffer, ch, 0, slotBuffer.getNumSamples());
                 }
               } else {
+                if (i == enablePanicSlot.load())
+                  enablePanicSlot.store(-1);
                 FanfareLog::safeExecutePluginCall([&]() {
                   plugin->processBlock(slotBuffer, midiMessages);
                 }, "processBlock (" + plugin->getName() + ")");
@@ -823,10 +856,14 @@ public:
     float maxValue = 1.0f; // Parameter range maximum (0-1)
     bool invert = false;   // Flip CC direction (drawbar behaviour)
     juce::AudioProcessorParameter* cachedParam = nullptr;
+    bool toggle = false;      // Latch mode: each press flips between min and max
+    bool toggleState = false; // Current latch (transient — not saved)
+    bool toggleArmed = false; // Press-edge detector (transient)
   };
 
   void mapCCToParameter(int ccNum, int chainIndex, const juce::String& paramId, int paramIndex,
-                        float minVal = 0.0f, float maxVal = 1.0f, bool inv = false) {
+                        float minVal = 0.0f, float maxVal = 1.0f, bool inv = false,
+                        bool tog = false) {
     juce::SpinLock::ScopedLockType lock(ccMappingLock);
     juce::AudioProcessorParameter* paramPtr = nullptr;
     if (auto *plugin = getPluginInstance(chainIndex)) {
@@ -845,7 +882,7 @@ public:
         paramPtr = params[paramIndex];
       }
     }
-    ccParameterMappings[ccNum] = {chainIndex, paramIndex, paramId, minVal, maxVal, inv, paramPtr};
+    ccParameterMappings[ccNum] = {chainIndex, paramIndex, paramId, minVal, maxVal, inv, paramPtr, tog};
     if (ccNum >= 0 && ccNum < 128) {
       allowedCCs[ccNum].store(true);
     }
@@ -883,7 +920,8 @@ public:
   }
 
   void mapCCToParameter(int ccNum, int chainIndex, int paramIndex,
-                        float minVal = 0.0f, float maxVal = 1.0f, bool inv = false) {
+                        float minVal = 0.0f, float maxVal = 1.0f, bool inv = false,
+                        bool tog = false) {
     juce::String paramId;
     if (auto *plugin = getPluginInstance(chainIndex)) {
       auto &params = plugin->getParameters();
@@ -892,7 +930,7 @@ public:
           paramId = withId->paramID;
       }
     }
-    mapCCToParameter(ccNum, chainIndex, paramId, paramIndex, minVal, maxVal, inv);
+    mapCCToParameter(ccNum, chainIndex, paramId, paramIndex, minVal, maxVal, inv, tog);
   }
 
   void unmapCC(int ccNum) {
@@ -905,6 +943,15 @@ public:
     auto it = ccParameterMappings.find(ccNum);
     if (it != ccParameterMappings.end())
       it->second.invert = inv;
+  }
+
+  void setCCToggle(int ccNum, bool tog) {
+    juce::SpinLock::ScopedLockType lock(ccMappingLock);
+    auto it = ccParameterMappings.find(ccNum);
+    if (it != ccParameterMappings.end()) {
+      it->second.toggle = tog;
+      it->second.toggleState = false; // latch restarts OFF when the mode changes
+    }
   }
 
   void clearAllCCMappings() {
@@ -959,7 +1006,9 @@ public:
   void stripMixerCCs(juce::MidiBuffer &midiMessages) {
     const int foh = fohCC.load();
     const int iem = iemCC.load();
-    if (foh < 0 && iem < 0)
+    const int mute = muteCC.load();
+    const int swap = swapCC.load();
+    if (foh < 0 && iem < 0 && mute < 0 && swap < 0)
       return; // no mixer CCs assigned on this strip
 
     mixerCCScratch.clear();
@@ -968,7 +1017,9 @@ public:
       auto msg = meta.getMessage();
       if (msg.isController() &&
           ((foh >= 0 && msg.getControllerNumber() == foh) ||
-           (iem >= 0 && msg.getControllerNumber() == iem))) {
+           (iem >= 0 && msg.getControllerNumber() == iem) ||
+           (mute >= 0 && msg.getControllerNumber() == mute) ||
+           (swap >= 0 && msg.getControllerNumber() == swap))) {
         changed = true; // consumed by the mixer — dropped from the plugin stream
         continue;
       }
@@ -999,6 +1050,37 @@ public:
           iemLevel.store(ccVal / 127.0f);
         }
 
+        // Mute toggle: press (value > 64, same convention as setup
+        // triggers) flips bypass; release just re-arms the edge detector.
+        if (muteCC.load() >= 0 && ccNum == muteCC.load()) {
+          bool pressed = ccVal > 64;
+          if (pressed && !muteCCArmed.load()) {
+            muteCCArmed.store(true);
+            setBypass(!bypassed.load());
+          } else if (!pressed) {
+            muteCCArmed.store(false);
+          }
+        }
+
+        // Swap toggle: press flips which of the two bound chain slots is
+        // enabled. The newly disabled side drains (fade + panic) so held
+        // notes don't hang when swapped back.
+        if (swapCC.load() >= 0 && ccNum == swapCC.load()) {
+          int a = swapA.load(), b = swapB.load();
+          if (a >= 0 && b >= 0) {
+            bool pressed = ccVal > 64;
+            if (pressed && !swapCCArmed.load()) {
+              swapCCArmed.store(true);
+              int victim = (swapLeader.load() == b) ? b : a;
+              int active = (victim == a) ? b : a;
+              swapLeader.store(active);
+              beginSwap(active, victim);
+            } else if (!pressed) {
+              swapCCArmed.store(false);
+            }
+          }
+        }
+
         // Handle CC-to-Parameter mappings
         auto it = ccParameterMappings.find(ccNum);
         if (it != ccParameterMappings.end()) {
@@ -1006,21 +1088,88 @@ public:
           juce::AudioProcessorParameter* targetParam = map.cachedParam;
 
           if (targetParam != nullptr) {
-            float normalized = ccVal / 127.0f;
-            if (map.invert) {
-              normalized = 1.0f - normalized;
+            if (map.toggle) {
+              // Latch mode: a press (value crossing above 64, the same
+              // convention as setup triggers) flips between the range ends;
+              // release just re-arms the edge detector.
+              bool pressed = ccVal > 64;
+              if (pressed && !map.toggleArmed) {
+                map.toggleArmed = true;
+                map.toggleState = !map.toggleState;
+                bool on = (map.toggleState != map.invert);
+                targetParam->setValue(on ? map.maxValue : map.minValue);
+              } else if (!pressed) {
+                map.toggleArmed = false;
+              }
+            } else {
+              float normalized = ccVal / 127.0f;
+              if (map.invert) {
+                normalized = 1.0f - normalized;
+              }
+              float scaled = map.minValue + normalized * (map.maxValue - map.minValue);
+              targetParam->setValue(scaled);
             }
-            float scaled = map.minValue + normalized * (map.maxValue - map.minValue);
-            targetParam->setValue(scaled);
           }
         }
       }
     }
   }
 
+  // Flip a swap pair: enable `activeIdx` immediately (with a one-shot
+  // all-notes-off panic so stale voices can't ring), fade `victimIdx` out
+  // over ~80ms while panicking it, then it stays disabled. Audio thread.
+  void beginSwap(int activeIdx, int victimIdx) {
+    if (drainSlot.load() == activeIdx)
+      drainSlot.store(-1); // re-enabling a slot that was still fading out
+    chainSettings[activeIdx].enabled.store(true);
+    enablePanicSlot.store(activeIdx);
+    if (victimIdx >= 0 && victimIdx < 3) {
+      drainSlot.store(victimIdx);
+      drainGain.store(1.0f);
+      drainPanicSent.store(false);
+    }
+    chainSettings[victimIdx].enabled.store(false);
+  }
+
+  // Sustain off + all-notes-off + all-sound-off on every channel, so the
+  // target engine releases held voices regardless of its MIDI setup.
+  static void appendPanic(juce::MidiBuffer &buffer, int samplePos) {
+    for (int ch = 1; ch <= 16; ++ch) {
+      buffer.addEvent(juce::MidiMessage::controllerEvent(ch, 64, 0), samplePos);
+      buffer.addEvent(juce::MidiMessage::controllerEvent(ch, 123, 0), samplePos);
+      buffer.addEvent(juce::MidiMessage::controllerEvent(ch, 120, 0), samplePos);
+    }
+  }
+
   // --- Midi Mapping ---
   int getFohCC() const { return fohCC.load(); }
   void setFohCC(int cc) { fohCC.store(cc); }
+
+  int getMuteCC() const { return muteCC.load(); }
+  void setMuteCC(int cc) {
+    muteCC.store(cc);
+    muteCCArmed.store(false);
+  }
+
+  // Instrument swap: one CC alternates which of two chain slots is enabled
+  // (both plugins stay loaded). The disabled side drains: a short fade plus
+  // all-notes-off panic so held chords don't hang when swapped back.
+  int getSwapCC() const { return swapCC.load(); }
+  int getSwapA() const { return swapA.load(); }
+  int getSwapB() const { return swapB.load(); }
+  void setSwapPair(int cc, int chainA, int chainB) {
+    if (chainA == chainB || chainA < 0 || chainA > 2 || chainB < 0 || chainB > 2) {
+      cc = -1;
+      chainA = chainB = -1;
+    } else if (cc >= 0 && cc < 128) {
+      allowedCCs[cc].store(true);
+    }
+    swapCC.store(cc);
+    swapA.store(chainA);
+    swapB.store(chainB);
+    swapCCArmed.store(false);
+    swapLeader.store(-1);
+  }
 
   int getIemCC() const { return iemCC.load(); }
   void setIemCC(int cc) { iemCC.store(cc); }
@@ -1057,6 +1206,17 @@ private:
 
   std::atomic<int> fohCC{-1};   // CC for FOH level
   std::atomic<int> iemCC{-1};   // CC for IEM level
+  std::atomic<int> muteCC{-1};  // CC that toggles strip mute (press-edge)
+  std::atomic<bool> muteCCArmed{false}; // mute press-edge detector (transient)
+  std::atomic<int> swapCC{-1};  // CC that alternates swapA/swapB chain slots
+  std::atomic<int> swapA{-1};   // first chain slot of the swap pair
+  std::atomic<int> swapB{-1};   // second chain slot of the swap pair
+  std::atomic<int> swapLeader{-1}; // which side is currently ON (transient)
+  std::atomic<bool> swapCCArmed{false}; // swap press-edge detector (transient)
+  std::atomic<int> drainSlot{-1}; // chain slot fading out during a swap
+  std::atomic<float> drainGain{0.0f};
+  std::atomic<bool> drainPanicSent{false};
+  std::atomic<int> enablePanicSlot{-1}; // chain slot that just got enabled
   std::atomic<int> levelCC{-1}; // CC for general level control
   std::atomic<int> midiChannelOverride{-1}; // -1 = global default, 0 = Omni
 

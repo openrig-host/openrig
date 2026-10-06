@@ -16,7 +16,7 @@ function Convert-FileToByteArray([string]$filePath, [string]$varName) {
     return $sb.ToString()
 }
 
-$targetHeader = "z:\davecore\Source\Web\EmbeddedWebAssets.h"
+$targetHeader = (Join-Path $PSScriptRoot "EmbeddedWebAssets.h")
 $sbAll = [System.Text.StringBuilder]::new()
 [void]$sbAll.AppendLine("#pragma once")
 [void]$sbAll.AppendLine("#include <cstddef>")
@@ -25,9 +25,9 @@ $sbAll = [System.Text.StringBuilder]::new()
 [void]$sbAll.AppendLine("namespace EmbeddedWebAssets {")
 [void]$sbAll.AppendLine()
 
-[void]$sbAll.Append((Convert-FileToByteArray "z:\davecore\Source\Web\static\index.html" "INDEX_HTML_DATA"))
-[void]$sbAll.Append((Convert-FileToByteArray "z:\davecore\Source\Web\static\style.css" "STYLE_CSS_DATA"))
-[void]$sbAll.Append((Convert-FileToByteArray "z:\davecore\Source\Web\static\app.js" "APP_JS_DATA"))
+[void]$sbAll.Append((Convert-FileToByteArray (Join-Path $PSScriptRoot "static\index.html") "INDEX_HTML_DATA"))
+[void]$sbAll.Append((Convert-FileToByteArray (Join-Path $PSScriptRoot "static\style.css") "STYLE_CSS_DATA"))
+[void]$sbAll.Append((Convert-FileToByteArray (Join-Path $PSScriptRoot "static\app.js") "APP_JS_DATA"))
 
 [void]$sbAll.AppendLine("} // namespace EmbeddedWebAssets")
 [void]$sbAll.AppendLine("} // namespace OpenRig")

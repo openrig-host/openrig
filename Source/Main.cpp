@@ -38,10 +38,12 @@ public:
     timeBeginPeriod(1);
 #endif
 
+    juce::SystemStats::setApplicationCrashHandler(FanfareLog::crashHandler);
 #ifdef _WIN32
+    // Must be called AFTER setApplicationCrashHandler so that fanfareUnhandledExceptionFilter
+    // is the active Win32 top-level exception filter (preserving background thread isolation).
     FanfareLog::setupCrashHandlers();
 #endif
-    juce::SystemStats::setApplicationCrashHandler(FanfareLog::crashHandler);
 
     mainWindow.reset(new MainWindow(getApplicationName()));
   }

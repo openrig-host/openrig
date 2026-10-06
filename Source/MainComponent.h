@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "AssetLoader.h"
 #include "BoutiqueLookAndFeel.h"
@@ -69,12 +69,18 @@ public:
   void saveAudioSettings();
   void loadAudioSettings();
   void resetAudioDevice();
+  void setAuxLogoImage(const juce::Image &loaded, bool animate);
+  void chooseAuxLogoImage();
+  void resetAuxLogoImage();
+  void loadAuxLogoPreference();
+  void saveAuxLogoPreference() const;
   void showAboutDialog();
   void showConfigOverlay();
   void setActiveMidiNoteLearner(juce::Component* learner) { activeMidiNoteLearner = learner; }
   double getCpuUsage() { return deviceManager.getCpuUsage() * 100.0; }
   int getAudioUnderruns() const { return audioUnderrunCount.load(); }
   void loadRigFromFile(const juce::File &file, int targetSetlistIndex = -1);
+  void updateStripCollapseStates();
 
 private:
   //==============================================================================
@@ -213,8 +219,20 @@ private:
   void logAudioNanSpike(int channel, int sampleIndex, float badVal);
 
   juce::Label setupNameLabel{"setupNameLabel", "No rig loaded"};
+  juce::File currentRigFile;
+  juce::ToggleButton freshBuildToggle{"CLEAN SLATE"};
+  juce::ToggleButton autoCollapseToggle{"STAGE COMPACT"};
+  juce::Label stripWidthLabel{"wLabel", "STRIP WIDTH"};
+  juce::Slider stripWidthSlider;
+  int preferredExpandedWidth = 140;
+  int dragBaseExpandedWidth = 140;
+  static constexpr int kMinExpandedWidth = 85;
+  static constexpr int kMaxExpandedWidth = 260;
   juce::ImageComponent logoComponent;
   juce::Image logoImage;
+  juce::ImageComponent lastWaltzLogoComponent;
+  juce::Image lastWaltzLogoImage;
+  juce::String auxLogoUserPath; // empty = embedded Last Waltz art
   juce::Label clockLabel{"clockLabel", ""};
   juce::Label preloadStatusLabel{"preloadStatusLabel", ""};
   juce::Rectangle<int> headerBounds;
@@ -228,6 +246,11 @@ private:
   HMODULE avrtModule = nullptr;
   typedef HANDLE(WINAPI * PAvSetMmThreadCharacteristicsA)(LPCSTR, LPDWORD);
   PAvSetMmThreadCharacteristicsA avSetMmThreadFn = nullptr;
+  GUID previousPowerSchemeGuid{};
+  bool previousPowerSchemeSaved = false;
+  bool powerPlanForcedHigh = false;
+  void configureWindowsPerformanceMode();
+  void restoreWindowsPowerMode();
 #endif
   juce::Label midiMonitorLabel{"midiMonitor", "MIDI: --"};
   juce::TextButton midiMonitorToggle{"MIDI MON"};
@@ -266,7 +289,7 @@ private:
       }
     }
 
-    // Scene MIDI trigger learn — intercept next PC if armed
+    // Scene MIDI trigger learn â€” intercept next PC if armed
     if (msg.isProgramChange() && sceneMidiLearnArmed >= 0) {
       int learnedPC = msg.getProgramChangeNumber();
       int learnedCh = msg.getChannel();

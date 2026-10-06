@@ -34,6 +34,7 @@ struct CCMapping {
     float minValue = 0.0f;
     float maxValue = 1.0f;
     bool invert = false;
+    bool toggle = false;
 };
 
 struct CCPassthrough {
@@ -111,6 +112,10 @@ struct SongSlot {
     std::set<int> allowedCCs;
     int fohCC = -1;
     int iemCC = -1;
+    int muteCC = -1;
+    int swapCC = -1; // alternates which of swapA/swapB chain slots is enabled
+    int swapA = -1;
+    int swapB = -1;
     int midiChannelOverride = -1; // -1 means use global default
 
     ChannelStripSettings strip;
@@ -174,6 +179,7 @@ struct Song {
     int activeNoteTabIndex = 0;
     float noteFontSize = 20.0f;
     bool noteIsMonospace = true;
+    bool freshBuild = false;
 };
 
 struct Set {

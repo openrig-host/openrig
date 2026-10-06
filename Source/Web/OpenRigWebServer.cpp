@@ -457,6 +457,8 @@ void WebServer::processIncomingWsMessage(const juce::String& messageText) {
             engine.saveCurrentStateToScene(engine.getCurrentSceneIndex());
             engine.loadScene(idx);
             notifySceneChanged(idx, engine.getSceneName(idx));
+            if (mainComponent != nullptr)
+                mainComponent->updateStripCollapseStates();
         });
     } else if (type == "prev_setlist") {
         juce::MessageManager::callAsync([this]() {
@@ -706,6 +708,8 @@ juce::String WebServer::handleApiPost(const juce::String& path, const juce::var&
             engine.saveCurrentStateToScene(engine.getCurrentSceneIndex());
             engine.loadScene(idx);
             notifySceneChanged(idx, engine.getSceneName(idx));
+            if (mainComponent != nullptr)
+                mainComponent->updateStripCollapseStates();
         });
         return "{\"ok\":true}";
     } else if (path == "/api/panic") {
@@ -1097,6 +1101,7 @@ bool WebServer::serveStaticFile(void* socketHandle, const juce::String& relative
     candidateDirs.add(exeDir.getParentDirectory().getParentDirectory().getChildFile("Web/static"));
     candidateDirs.add(exeDir.getParentDirectory().getParentDirectory().getParentDirectory().getParentDirectory().getChildFile("Source/Web/static"));
     candidateDirs.add(juce::File::getCurrentWorkingDirectory().getChildFile("Source/Web/static"));
+    candidateDirs.add(juce::File("C:/davecore/Source/Web/static"));
     candidateDirs.add(juce::File("Z:/davecore/Source/Web/static"));
 
     for (const auto& dir : candidateDirs) {

@@ -15,6 +15,10 @@ build/
 # Local backups
 Source_BACKUP*/
 
+# Personal gig art (embedded via __has_include; public builds fall back to the
+# OpenRig logo when this file is absent)
+LastWaltzLogoData.h
+
 # Editor
 .vscode/
 .idea/

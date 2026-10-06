@@ -43,7 +43,7 @@ class CCMappingComponent : public juce::Component,
 public:
   using LearnBus = Fanfare::MidiLearnBus;
 
-  CCMappingComponent(RackSlot &s) : slot(s) {
+  CCMappingComponent(RackSlot &s, int autoArmLearn = 0) : slot(s) {
     // --- Fader CC row ---
     addAndMakeVisible(fohLabel);
     fohLabel.setText("FOH CC:", juce::dontSendNotification);
@@ -72,6 +72,42 @@ public:
     iemLearnBtn.setColour(juce::TextButton::buttonColourId, ThemeManager::get(Theme::Role::ok));
     iemLearnBtn.setTooltip("Learn IEM fader CC");
     iemLearnBtn.onClick = [this] { armFaderLearn(false); };
+
+    addAndMakeVisible(muteLabel);
+    muteLabel.setText("Mute:", juce::dontSendNotification);
+    muteLabel.setTooltip("Mute toggle CC: press = mute, press again = unmute");
+    addAndMakeVisible(muteCCEditor);
+    muteCCEditor.setText(juce::String(slot.getMuteCC()));
+    muteCCEditor.setInputRestrictions(3, "0123456789");
+    muteCCEditor.onTextChange = [this] {
+      slot.setMuteCC(muteCCEditor.getText().getIntValue());
+    };
+    addAndMakeVisible(muteLearnBtn);
+    muteLearnBtn.setButtonText("L");
+    muteLearnBtn.setColour(juce::TextButton::buttonColourId, ThemeManager::get(Theme::Role::danger));
+    muteLearnBtn.setTooltip("Learn mute toggle CC (press = mute, press again = unmute)");
+    muteLearnBtn.onClick = [this] { armMuteLearn(); };
+
+    // --- Instrument swap row ---
+    addAndMakeVisible(swapLabel);
+    swapLabel.setText("Swap:", juce::dontSendNotification);
+    swapLabel.setTooltip("Instrument swap: one CC alternates which of the two plugins plays (both stay loaded)");
+    addAndMakeVisible(swapACombo);
+    swapACombo.setTooltip("First plugin of the swap pair");
+    addAndMakeVisible(swapBCombo);
+    swapBCombo.setTooltip("Second plugin of the swap pair");
+    addAndMakeVisible(swapCCEditor);
+    swapCCEditor.setInputRestrictions(3, "0123456789");
+    swapCCEditor.setTooltip("CC that toggles the swap (press = B plays, press again = A plays)");
+    addAndMakeVisible(swapLearnBtn);
+    swapLearnBtn.setButtonText("L");
+    swapLearnBtn.setColour(juce::TextButton::buttonColourId, ThemeManager::get(Theme::Role::ok));
+    swapLearnBtn.setTooltip("Learn instrument swap CC (press = B plays, press again = A plays)");
+    swapLearnBtn.onClick = [this] { armSwapLearn(); };
+    refreshSwapCombos();
+    swapACombo.onChange = [this] { applySwapBinding(); };
+    swapBCombo.onChange = [this] { applySwapBinding(); };
+    swapCCEditor.onTextChange = [this] { applySwapBinding(); };
 
     // --- MIDI channel override ---
     addAndMakeVisible(chLabel);
@@ -145,6 +181,14 @@ public:
     invBtn.setClickingTogglesState(true);
     invBtn.addListener(this);
 
+    addAndMakeVisible(togBtn);
+    togBtn.setButtonText("TOG");
+    togBtn.setColour(juce::TextButton::buttonColourId, ThemeManager::get(Theme::Role::warn).darker(0.3f));
+    togBtn.setColour(juce::TextButton::buttonOnColourId, ThemeManager::get(Theme::Role::warn));
+    togBtn.setTooltip("Toggle mode: each press flips the parameter between Min and Max (press = on, press again = off)");
+    togBtn.setClickingTogglesState(true);
+    togBtn.addListener(this);
+
     // --- CC Passthrough controls ---
     addAndMakeVisible(passFromLabel);
     passFromLabel.setText("Pass:", juce::dontSendNotification);
@@ -210,6 +254,14 @@ public:
     selInvBtn.setClickingTogglesState(true);
     selInvBtn.onClick = [this] { toggleSelectedInvert(); };
 
+    addAndMakeVisible(selTogBtn);
+    selTogBtn.setButtonText("TOG");
+    selTogBtn.setColour(juce::TextButton::buttonColourId, ThemeManager::get(Theme::Role::warn).darker(0.3f));
+    selTogBtn.setColour(juce::TextButton::buttonOnColourId, ThemeManager::get(Theme::Role::warn));
+    selTogBtn.setTooltip("Toggle latch mode on selected mapping (press = on, press again = off)");
+    selTogBtn.setClickingTogglesState(true);
+    selTogBtn.onClick = [this] { toggleSelectedToggleMode(); };
+
     addAndMakeVisible(delBtn);
     delBtn.setButtonText("DELETE");
     delBtn.setColour(juce::TextButton::buttonColourId, ThemeManager::get(Theme::Role::danger));
@@ -222,6 +274,15 @@ public:
     updateMappingList();
     mappingList.updateContent();
     setSize(660, 510);
+
+    // Opened via long-press on the strip's MUTE / FOH / IEM button — arm the
+    // matching learn right away so the next CC captured binds it.
+    if (autoArmLearn == 1)
+      armFaderLearn(true);
+    else if (autoArmLearn == 2)
+      armFaderLearn(false);
+    else if (autoArmLearn == 3)
+      armMuteLearn();
   }
 
   ~CCMappingComponent() override {
@@ -325,6 +386,89 @@ public:
                         juce::dontSendNotification);
   }
 
+  void armMuteLearn() {
+    RackSlot *s = &slot;
+    Fanfare::LearnTarget t;
+    t.isFader = true;
+
+    juce::Component::SafePointer<CCMappingComponent> safe(this);
+    std::function<void(int, int)> cb = [s, safe](int cc, int) {
+      s->setMuteCC(cc);
+      s->allowCC(cc);
+      juce::MessageManager::callAsync([safe, cc] {
+        if (safe)
+          safe->refreshAfterCapture(cc);
+      });
+    };
+    LearnBus::getInstance().arm(t, cb);
+    statusLabel.setText("LEARNING: mute toggle (press = mute, again = unmute)",
+                        juce::dontSendNotification);
+  }
+
+  // ---- Instrument swap ----
+  void refreshSwapCombos() {
+    auto fill = [this](juce::ComboBox &box, const juce::String &hint) {
+      box.clear(juce::dontSendNotification);
+      for (int i = 0; i < juce::jmin(3, slot.getChainSize()); ++i) {
+        auto name = slot.getPluginName(i);
+        if (name.isNotEmpty())
+          box.addItem(name, i + 1);
+      }
+      box.setTextWhenNothingSelected(hint);
+    };
+    fill(swapACombo, "Pick A");
+    fill(swapBCombo, "Pick B");
+    swapACombo.setSelectedId(slot.getSwapA() + 1, juce::dontSendNotification);
+    swapBCombo.setSelectedId(slot.getSwapB() + 1, juce::dontSendNotification);
+    swapCCEditor.setText(juce::String(slot.getSwapCC()),
+                         juce::dontSendNotification);
+  }
+
+  void applySwapBinding() {
+    int a = swapACombo.getSelectedId() - 1;
+    int b = swapBCombo.getSelectedId() - 1;
+    if (a < 0 || b < 0) {
+      slot.setSwapPair(-1, a, b); // incomplete — clear any binding
+      return;
+    }
+    if (a == b) {
+      statusLabel.setText("Swap: pick two different plugins.",
+                          juce::dontSendNotification);
+      return;
+    }
+    int cc = swapCCEditor.getText().getIntValue();
+    if (cc < 0 || cc > 127)
+      return; // half-typed or empty
+    slot.setSwapPair(cc, a, b);
+    statusLabel.setText("Swap bound: CC" + juce::String(cc) + " toggles " +
+                            slot.getPluginName(a) + " / " + slot.getPluginName(b),
+                        juce::dontSendNotification);
+  }
+
+  void armSwapLearn() {
+    int a = swapACombo.getSelectedId() - 1;
+    int b = swapBCombo.getSelectedId() - 1;
+    if (a < 0 || b < 0 || a == b) {
+      statusLabel.setText("Pick two different plugins for the swap first.",
+                          juce::dontSendNotification);
+      return;
+    }
+    RackSlot *s = &slot;
+    Fanfare::LearnTarget t;
+    t.isFader = true;
+
+    juce::Component::SafePointer<CCMappingComponent> safe(this);
+    std::function<void(int, int)> cb = [s, a, b, safe](int cc, int) {
+      s->setSwapPair(cc, a, b);
+      juce::MessageManager::callAsync([safe, cc] {
+        if (safe)
+          safe->refreshAfterCapture(cc);
+      });
+    };
+    LearnBus::getInstance().arm(t, cb);
+    statusLabel.setText("LEARNING: instrument swap", juce::dontSendNotification);
+  }
+
   void armNewParamLearn() {
     int chainIdx = pluginSelector.getSelectedId() - 1;
     int paramIdx = paramSelector.getSelectedId() - 1;
@@ -350,9 +494,10 @@ public:
     t.parameterIndex = paramIdx;
 
     juce::Component::SafePointer<CCMappingComponent> safe(this);
+    bool tog = togBtn.getToggleState();
     std::function<void(int, int)> cb =
-        [s, chainIdx, paramIdx, paramId, mn, mx, safe](int cc, int) {
-          s->mapCCToParameter(cc, chainIdx, paramId, paramIdx, mn, mx);
+        [s, chainIdx, paramIdx, paramId, mn, mx, tog, safe](int cc, int) {
+          s->mapCCToParameter(cc, chainIdx, paramId, paramIdx, mn, mx, false, tog);
           juce::MessageManager::callAsync([safe, cc] {
             if (safe)
               safe->refreshAfterCapture(cc);
@@ -512,7 +657,8 @@ public:
     if (mx < 0.0f || mx > 1.0f)
       mx = 1.0f;
     bool inv = invBtn.getToggleState();
-    slot.mapCCToParameter(cc, chainIdx, paramId, paramIdx, mn, mx, inv);
+    bool tog = togBtn.getToggleState();
+    slot.mapCCToParameter(cc, chainIdx, paramId, paramIdx, mn, mx, inv, tog);
 
     disarmQuickLearn();
     updateMappingList();
@@ -520,7 +666,7 @@ public:
     statusLabel.setText("QUICK LEARN bound: CC" + juce::String(cc) + " -> " +
                             slot.getPluginName(chainIdx) + " :" +
                             slot.getParameterNames(chainIdx)[paramIdx] +
-                            (inv ? " [INV]" : ""),
+                            (inv ? " [INV]" : "") + (tog ? " [TOG]" : ""),
                         juce::dontSendNotification);
   }
 
@@ -536,6 +682,21 @@ public:
     m.mapping.invert = newState;
     mappingList.repaintRow(row);
     statusLabel.setText("CC" + juce::String(m.cc) + (newState ? " inverted." : " normal."),
+                        juce::dontSendNotification);
+  }
+
+  void toggleSelectedToggleMode() {
+    int row = mappingList.getSelectedRow();
+    if (row < 0 || row >= (int)mappings.size())
+      return;
+    auto &m = mappings[row];
+    if (m.type == MappingItem::Passthrough)
+      return;
+    bool newState = selTogBtn.getToggleState();
+    slot.setCCToggle(m.cc, newState);
+    m.mapping.toggle = newState;
+    mappingList.repaintRow(row);
+    statusLabel.setText("CC" + juce::String(m.cc) + (newState ? " toggle mode." : " direct mode."),
                         juce::dontSendNotification);
   }
 
@@ -572,7 +733,8 @@ public:
                           pluginName + " : " + paramName + "  [" +
                           juce::String(m.mapping.minValue, 2) + "-" +
                           juce::String(m.mapping.maxValue, 2) + "]" +
-                          (m.mapping.invert ? " [INV]" : "");
+                          (m.mapping.invert ? " [INV]" : "") +
+                          (m.mapping.toggle ? " [TOG]" : "");
       g.drawText(text, 6, 0, width - 8, height, juce::Justification::centredLeft,
                  true);
     }
@@ -585,6 +747,7 @@ public:
     selLearnBtn.setEnabled(hasSel);
     delBtn.setEnabled(hasSel);
     selInvBtn.setEnabled(hasSel);
+    selTogBtn.setEnabled(hasSel);
     if (hasSel) {
       auto &m = mappings[lastRowSelected];
       if (m.type == MappingItem::Passthrough) {
@@ -592,15 +755,18 @@ public:
         selMaxEditor.setEnabled(false);
         selLearnBtn.setEnabled(false);
         selInvBtn.setEnabled(false);
+        selTogBtn.setEnabled(false);
         selMinEditor.setText("--", juce::dontSendNotification);
         selMaxEditor.setText("--", juce::dontSendNotification);
         selInvBtn.setToggleState(false, juce::dontSendNotification);
+        selTogBtn.setToggleState(false, juce::dontSendNotification);
       } else {
         selMinEditor.setText(juce::String(m.mapping.minValue, 2),
                              juce::dontSendNotification);
         selMaxEditor.setText(juce::String(m.mapping.maxValue, 2),
                              juce::dontSendNotification);
         selInvBtn.setToggleState(m.mapping.invert, juce::dontSendNotification);
+        selTogBtn.setToggleState(m.mapping.toggle, juce::dontSendNotification);
       }
     }
   }
@@ -617,13 +783,16 @@ public:
     float mn = juce::jlimit(0.0f, 1.0f, minEditor.getText().getFloatValue());
     float mx = juce::jlimit(0.0f, 1.0f, maxEditor.getText().getFloatValue());
     bool inv = invBtn.getToggleState();
+    bool tog = togBtn.getToggleState();
     juce::String paramId = getParamId(chainIdx, paramIdx);
-    slot.mapCCToParameter(cc, chainIdx, paramId, paramIdx, mn, mx, inv);
+    slot.mapCCToParameter(cc, chainIdx, paramId, paramIdx, mn, mx, inv, tog);
     updateMappingList();
     mappingList.updateContent();
     ccEditor.setText("");
     invBtn.setToggleState(false, juce::dontSendNotification);
-    statusLabel.setText("Mapped CC" + juce::String(cc) + (inv ? " [INV]." : "."),
+    togBtn.setToggleState(false, juce::dontSendNotification);
+    statusLabel.setText("Mapped CC" + juce::String(cc) +
+                            (inv ? " [INV]" : "") + (tog ? " [TOG]" : "") + ".",
                         juce::dontSendNotification);
   }
 
@@ -691,7 +860,8 @@ public:
     float mx = juce::jlimit(0.0f, 1.0f, selMaxEditor.getText().getFloatValue());
     // Re-map with existing identity but updated range.
     slot.mapCCToParameter(m.cc, m.mapping.chainIndex, m.mapping.paramId,
-                          m.mapping.parameterIndex, mn, mx, m.mapping.invert);
+                          m.mapping.parameterIndex, mn, mx, m.mapping.invert,
+                          m.mapping.toggle);
     m.mapping.minValue = mn;
     m.mapping.maxValue = mx;
     mappingList.repaintRow(row);
@@ -729,6 +899,10 @@ public:
                         juce::dontSendNotification);
     iemCCEditor.setText(juce::String(slot.getIemCC()),
                         juce::dontSendNotification);
+    muteCCEditor.setText(juce::String(slot.getMuteCC()),
+                         juce::dontSendNotification);
+    swapCCEditor.setText(juce::String(slot.getSwapCC()),
+                         juce::dontSendNotification);
 
     juce::String msg = "Learned CC" + juce::String(boundCC) + ".";
     bool hasParam = slot.getCCMappings().count(boundCC) > 0;
@@ -766,13 +940,17 @@ public:
     iemCCEditor.setBounds(faderRow.removeFromLeft(editW));
     iemLearnBtn.setBounds(faderRow.removeFromLeft(btnW));
     faderRow.removeFromLeft(16);
+    muteLabel.setBounds(faderRow.removeFromLeft(46));
+    muteCCEditor.setBounds(faderRow.removeFromLeft(editW));
+    muteLearnBtn.setBounds(faderRow.removeFromLeft(btnW));
+    faderRow.removeFromLeft(16);
     chLabel.setBounds(faderRow.removeFromLeft(55));
     chSelector.setBounds(faderRow);
 
     r.removeFromTop(6);
 
     // List
-    auto listArea = r.removeFromTop(r.getHeight() - 28 - 28 - 28 - 30 - 22);
+    auto listArea = r.removeFromTop(r.getHeight() - 28 - 28 - 28 - 30 - 22 - 30);
     mappingList.setBounds(listArea);
 
     r.removeFromTop(6);
@@ -788,6 +966,8 @@ public:
     selLearnBtn.setBounds(selRow.removeFromLeft(80));
     selRow.removeFromLeft(4);
     selInvBtn.setBounds(selRow.removeFromLeft(36));
+    selRow.removeFromLeft(4);
+    selTogBtn.setBounds(selRow.removeFromLeft(36));
     selRow.removeFromLeft(6);
     delBtn.setBounds(selRow.removeFromLeft(70));
 
@@ -800,6 +980,8 @@ public:
     mapBtn.setBounds(addRow.removeFromRight(60));
     addRow.removeFromRight(4);
     invBtn.setBounds(addRow.removeFromRight(36));
+    addRow.removeFromRight(4);
+    togBtn.setBounds(addRow.removeFromRight(36));
     addRow.removeFromRight(6);
     maxLabel.setBounds(addRow.removeFromRight(30));
     maxEditor.setBounds(addRow.removeFromRight(44));
@@ -833,19 +1015,37 @@ public:
     passFromLabel.setBounds(passRow.removeFromRight(36));
 
     r.removeFromTop(4);
+
+    // Instrument swap row
+    auto swapRow = r.removeFromTop(26);
+    swapLearnBtn.setBounds(swapRow.removeFromRight(26));
+    swapRow.removeFromRight(6);
+    swapCCEditor.setBounds(swapRow.removeFromRight(40));
+    swapRow.removeFromRight(6);
+    swapBCombo.setBounds(swapRow.removeFromRight(130));
+    swapRow.removeFromRight(6);
+    swapACombo.setBounds(swapRow.removeFromRight(130));
+    swapRow.removeFromRight(6);
+    swapLabel.setBounds(swapRow.removeFromLeft(46));
+
+    r.removeFromTop(4);
     statusLabel.setBounds(r);
   }
 
 private:
   RackSlot &slot;
 
-  juce::Label fohLabel, iemLabel, minLabel, maxLabel, selMinLabel, selMaxLabel,
-      chLabel, ccLabel, statusLabel, passFromLabel, passToLabel;
-  juce::TextEditor fohCCEditor, iemCCEditor, minEditor, maxEditor, selMinEditor,
-      selMaxEditor, ccEditor, passFromEditor, passToEditor;
-  juce::ComboBox pluginSelector, paramSelector, chSelector;
-  juce::TextButton fohLearnBtn, iemLearnBtn, learnBtn, mapBtn, selLearnBtn,
-      delBtn, passBtn, ck88PresetBtn, invBtn, selInvBtn, quickLearnBtn;
+  juce::Label fohLabel, iemLabel, muteLabel, swapLabel, minLabel, maxLabel,
+      selMinLabel, selMaxLabel, chLabel, ccLabel, statusLabel, passFromLabel,
+      passToLabel;
+  juce::TextEditor fohCCEditor, iemCCEditor, muteCCEditor, swapCCEditor,
+      minEditor, maxEditor, selMinEditor, selMaxEditor, ccEditor,
+      passFromEditor, passToEditor;
+  juce::ComboBox pluginSelector, paramSelector, chSelector, swapACombo,
+      swapBCombo;
+  juce::TextButton fohLearnBtn, iemLearnBtn, muteLearnBtn, swapLearnBtn,
+      learnBtn, mapBtn, selLearnBtn, delBtn, passBtn, ck88PresetBtn, invBtn,
+      togBtn, selInvBtn, selTogBtn, quickLearnBtn;
   juce::ListBox mappingList;
 
   struct MappingItem {

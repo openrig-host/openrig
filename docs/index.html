@@ -727,7 +727,7 @@
         <button class="tab-btn" onclick="switchTab(2)">Arpeggiator & MIDI FX</button>
         <button class="tab-btn" onclick="switchTab(3)">8-Pad Sampler & Waveform</button>
         <button class="tab-btn" onclick="switchTab(4)">Active VST Editors</button>
-        <button class="tab-btn" onclick="switchTab(5)">Arm & Wiggle CC Manager</button>
+        <button class="tab-btn" onclick="switchTab(5)">CC Manager — Learn · Toggle · Swap</button>
       </div>
 
       <div class="showcase-viewport">
@@ -854,6 +854,18 @@
         <h3>Absolute Data Sovereignty</h3>
         <p>No cloud sync, no accounts, no telemetry. Your patches are standard human-readable JSON files you fully control.</p>
       </div>
+      <div class="card">
+        <h3>Latch, Toggle & Swap From MIDI</h3>
+        <p>Bind any button to press-on/press-off parameter toggles, per-strip mutes, or A/B swaps between loaded instruments. Swaps fade the old sound out with an all-notes-off drain — zero stuck notes by design.</p>
+      </div>
+      <div class="card">
+        <h3>Parallel, Hang-Proof Loading</h3>
+        <p>Setups build every plugin concurrently, interleaved by engine. Same-plugin instances serialize safely, and NI plugins (Kontakt) restore on the GUI thread exactly like interactive loads. One misbehaving plugin can't stall the rest of the rig.</p>
+      </div>
+      <div class="card">
+        <h3>Long-Press Learn & Custom Branding</h3>
+        <p>Hold MUTE / FOH / IEM on any strip to arm its MIDI learn instantly. Click the mixer's logo area to fly in your own artwork — right-click restores the default.</p>
+      </div>
     </div>
 
     <!-- Dual Feature Media Showcase -->
@@ -911,7 +923,7 @@
       <div class="step-box">
         <div class="step-num">1</div>
         <div class="step-title">Background Build</div>
-        <div class="step-desc">SetlistManager triggers `RigBuilder` on a separate background worker thread.</div>
+        <div class="step-desc">SetlistManager triggers `RigBuilder` on a separate background worker thread. Every plugin builds in parallel, interleaved by engine — same-plugin instances serialize, and single-instance plugins restore on the GUI thread.</div>
       </div>
       <div class="step-box">
         <div class="step-num">2</div>
@@ -997,7 +1009,7 @@
     "MIDI FX module with Transposer, Arpeggiator pattern generator, and Octaver Harmonizer.",
     "8 One-Shot Pad Sampler with drag-and-drop WAV support and sample-accurate waveform splice handles.",
     "Active VST3 floating editor windows showing synth & sampler controls.",
-    "Arm-then-wiggle CC Assignment Manager for physical controller mapping."
+    "Arm-then-wiggle CC Assignment Manager, now with latch/toggle mode, per-strip mute toggles, long-press learn, and A/B instrument swapping."
   ];
 
   function switchTab(index) {

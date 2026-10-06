@@ -91,6 +91,15 @@ public:
                 continue;
             }
 
+            bool isFresh = (bool)loaded.rig.getProperty("freshBuild", false);
+            if (isFresh) {
+                // Setups marked freshBuild require clean-slate isolation (unloading prior plugins
+                // before build), so do not preload in the background while the active song plays.
+                isBuilding = false;
+                triggerChangeCallback();
+                continue;
+            }
+
             // Build with isPreload = true so instances are stored in preloadedPlugins
             auto buildResult = RigBuilder::build(*engine, loaded.rig, nullptr, true);
             if (threadShouldExit() || cancelFlag.load()) { isBuilding = false; continue; }

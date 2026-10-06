@@ -240,7 +240,7 @@ inline const char* getExceptionCodeDescription(DWORD code) {
   }
 }
 
-// Writes minidump FIRST before doing text processing, off OneDrive to %APPDATA%/OpenRig/Crashes/
+// Writes minidump FIRST before doing text processing, off OneDrive to %APPDATA%/Fanfare/Crashes/
 inline void writeCrashDumpHeapFree(void* exceptionInfo, const wchar_t* dmpPath) {
   HANDLE file = CreateFileW(dmpPath, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
   if (file != INVALID_HANDLE_VALUE) {
@@ -439,9 +439,11 @@ inline LONG WINAPI fanfareUnhandledExceptionFilter(PEXCEPTION_POINTERS ep) {
       uint32_t mainTid = g_mainThreadId.load();
 
       // Check if this exception occurred in a non-critical background worker thread
-      // (such as Kontakt 8 WINHTTP telemetry/license worker thread).
+      // (such as Kontakt 8 WINHTTP telemetry/license worker thread, MixBox worker, or HALion worker).
       // If so, terminate ONLY the faulting thread so the live audio and UI keep running!
-      if (currentTid != audioTid && currentTid != mainTid && audioTid != 0) {
+      bool isMain = (mainTid != 0 && currentTid == mainTid);
+      bool isAudio = (audioTid != 0 && currentTid == audioTid);
+      if (!isMain && !isAudio) {
         wchar_t appData[MAX_PATH] = {0};
         GetEnvironmentVariableW(L"APPDATA", appData, MAX_PATH);
         wchar_t crashDir[MAX_PATH] = {0};
@@ -453,6 +455,19 @@ inline LONG WINAPI fanfareUnhandledExceptionFilter(PEXCEPTION_POINTERS ep) {
         wchar_t dmpPath[MAX_PATH] = {0};
         wsprintfW(dmpPath, L"%s\\WorkerThreadFault_%04d%02d%02d_%02d%02d%02d.dmp", crashDir, st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
         writeCrashDumpHeapFree(ep, dmpPath);
+
+        // Also write a minimal text diagnostic report for the worker thread fault
+        wchar_t txtPath[MAX_PATH] = {0};
+        wsprintfW(txtPath, L"%s\\WorkerThreadFault_%04d%02d%02d_%02d%02d%02d.txt", crashDir, st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
+        HANDLE txtFile = CreateFileW(txtPath, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (txtFile != INVALID_HANDLE_VALUE) {
+          char buf[512];
+          int len = wsprintfA(buf, "Worker Thread Fault Intercepted\r\nTime: %04d-%02d-%02d %02d:%02d:%02d\r\nThread ID: %u\r\nException Code: 0x%08X (%s)\r\nAction: Terminated faulting background thread to protect host stability.\r\n",
+                              st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond, currentTid, code, getExceptionCodeDescription(code));
+          DWORD written = 0;
+          WriteFile(txtFile, buf, (DWORD)len, &written, nullptr);
+          CloseHandle(txtFile);
+        }
 
         // Terminate the background worker thread only
         ::ExitThread(1);

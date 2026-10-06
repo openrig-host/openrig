@@ -97,6 +97,32 @@ public:
             return;
         }
 
+        // Clean Slate (freshBuild): If requested by the setup, completely unload
+        // all existing plugins from the live rack first so that complex setups
+        // (multi-Omnisphere, Kontakt + Zenology, heavy VSTs) build with full isolation.
+        bool isFreshBuild = (bool)loaded.rig.getProperty("freshBuild", false);
+        if (isFreshBuild) {
+            logToFile("TRACE: RigTransitioner freshBuild=true detected. Unloading all current plugins before build.");
+            postProgress("Unloading previous rig (Clean Slate)...");
+            engine.clearStagingCache();
+            engine.clearPreloadedCache();
+
+            auto clearDone = std::make_shared<juce::WaitableEvent>();
+            juce::MessageManager::getInstance()->callAsync([this, clearDone]() {
+                engine.clearAllRacks();
+                clearDone->signal();
+            });
+            if (!clearDone->wait(30000)) {
+                logToFile("WARNING: clearAllRacks timed out (30s) waiting on message thread.");
+            }
+        }
+
+        if (threadShouldExit()) {
+            logToFile("TRACE: RigTransitioner exit requested after clear.");
+            postComplete(false, "Cancelled", 0);
+            return;
+        }
+
         // 2. Build on this worker thread (keeps UI responsive; heavy plugins
         //    like Kontakt won't freeze the app). Reuse-by-path ensures we
         //    never create a second instance of the same plugin. Exception
@@ -136,10 +162,10 @@ public:
             engine.applyRig(*sharedRig);
             doneEvent->signal();
         });
-        if (!doneEvent->wait(60000)) {
-            logToFile("ERROR: applyRig timed out (60s)");
+        if (!doneEvent->wait(120000)) {
+            logToFile("ERROR: applyRig timed out (120s)");
             engine.clearStagingCache();
-            postComplete(false, "Apply timed out (60s) — possible plugin hang", 0);
+            postComplete(false, "Apply timed out (120s) — possible plugin hang", 0);
             return;
         }
         logToFile("TRACE: RigTransitioner applyRig finished.");

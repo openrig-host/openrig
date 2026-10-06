@@ -86,6 +86,10 @@ bool RigSerializer::varToSong(const juce::var& rig, Song& out) {
             slot.highNote = cv.getProperty("highNote", 127);
             slot.fohCC = cv.getProperty("fohCC", -1);
             slot.iemCC = cv.getProperty("iemCC", -1);
+            slot.muteCC = cv.getProperty("muteCC", -1);
+            slot.swapCC = cv.getProperty("swapCC", -1);
+            slot.swapA = cv.getProperty("swapA", -1);
+            slot.swapB = cv.getProperty("swapB", -1);
             slot.midiChannelOverride = cv.getProperty("midiChannel", -1);
 
             juce::String ccList = cv.getProperty("allowedCCs", "64").toString();
@@ -165,6 +169,7 @@ bool RigSerializer::varToSong(const juce::var& rig, Song& out) {
                     cm.minValue = (float)mv.getProperty("minValue", 0.0);
                     cm.maxValue = (float)mv.getProperty("maxValue", 1.0);
                     cm.invert = mv.getProperty("invert", false);
+                    cm.toggle = mv.getProperty("toggle", false);
                     slot.ccMappings.push_back(cm);
                 }
             }
@@ -229,6 +234,7 @@ bool RigSerializer::varToSong(const juce::var& rig, Song& out) {
     out.activeNoteTabIndex = rig.getProperty("activeNoteTabIndex", 0);
     out.noteFontSize = (float)rig.getProperty("noteFontSize", 20.0);
     out.noteIsMonospace = (bool)rig.getProperty("noteIsMonospace", true);
+    out.freshBuild = (bool)rig.getProperty("freshBuild", false);
 
     return true;
 }
@@ -302,6 +308,10 @@ juce::var RigSerializer::songToVar(const Song& song) {
 
         st->setProperty("fohCC", s.fohCC);
         st->setProperty("iemCC", s.iemCC);
+        st->setProperty("muteCC", s.muteCC);
+        st->setProperty("swapCC", s.swapCC);
+        st->setProperty("swapA", s.swapA);
+        st->setProperty("swapB", s.swapB);
         st->setProperty("midiChannel", s.midiChannelOverride);
 
         auto* stripObj = new juce::DynamicObject();
@@ -384,6 +394,7 @@ juce::var RigSerializer::songToVar(const Song& song) {
             mo->setProperty("minValue", (double)m.minValue);
             mo->setProperty("maxValue", (double)m.maxValue);
             mo->setProperty("invert", m.invert);
+            mo->setProperty("toggle", m.toggle);
             ccMappingNodes.add(juce::var(mo));
         }
         st->setProperty("ccMappings", ccMappingNodes);
@@ -439,6 +450,7 @@ juce::var RigSerializer::songToVar(const Song& song) {
     rig->setProperty("activeNoteTabIndex", song.activeNoteTabIndex);
     rig->setProperty("noteFontSize", (double)song.noteFontSize);
     rig->setProperty("noteIsMonospace", song.noteIsMonospace);
+    rig->setProperty("freshBuild", song.freshBuild);
 
     return juce::var(rig);
 }
@@ -484,6 +496,10 @@ juce::String RigSerializer::serializeStrip(const SongSlot& slot) {
     st->setProperty("allowedCCs", ccList);
     st->setProperty("fohCC", slot.fohCC);
     st->setProperty("iemCC", slot.iemCC);
+    st->setProperty("muteCC", slot.muteCC);
+    st->setProperty("swapCC", slot.swapCC);
+    st->setProperty("swapA", slot.swapA);
+    st->setProperty("swapB", slot.swapB);
     st->setProperty("midiChannel", slot.midiChannelOverride);
 
     auto* stripObj = new juce::DynamicObject();
@@ -567,6 +583,7 @@ juce::String RigSerializer::serializeStrip(const SongSlot& slot) {
         mo->setProperty("minValue", (double)m.minValue);
         mo->setProperty("maxValue", (double)m.maxValue);
         mo->setProperty("invert", m.invert);
+        mo->setProperty("toggle", m.toggle);
         ccMappingNodes.add(juce::var(mo));
     }
     st->setProperty("ccMappings", ccMappingNodes);
@@ -621,6 +638,10 @@ bool RigSerializer::readStripFromFile(const juce::File& file, SongSlot& outSlot)
     outSlot.highNote = cv.getProperty("highNote", 127);
     outSlot.fohCC = cv.getProperty("fohCC", -1);
     outSlot.iemCC = cv.getProperty("iemCC", -1);
+    outSlot.muteCC = cv.getProperty("muteCC", -1);
+    outSlot.swapCC = cv.getProperty("swapCC", -1);
+    outSlot.swapA = cv.getProperty("swapA", -1);
+    outSlot.swapB = cv.getProperty("swapB", -1);
     outSlot.midiChannelOverride = cv.getProperty("midiChannel", -1);
 
     juce::String ccListStr = cv.getProperty("allowedCCs", "64").toString();
@@ -718,6 +739,7 @@ bool RigSerializer::readStripFromFile(const juce::File& file, SongSlot& outSlot)
             cm.minValue = (float)mv.getProperty("minValue", 0.0);
             cm.maxValue = (float)mv.getProperty("maxValue", 1.0);
             cm.invert = mv.getProperty("invert", false);
+            cm.toggle = mv.getProperty("toggle", false);
             outSlot.ccMappings.push_back(cm);
         }
     }

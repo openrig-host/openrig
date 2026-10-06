@@ -1,4 +1,4 @@
-// Windows MMCSS for real-time audio thread priority
+﻿// Windows MMCSS for real-time audio thread priority
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -10,6 +10,14 @@
 #include "RackSlotComponent.h"
 #include "ThemeManager.h"
 #include "FanfareLogoData.h"
+// Optional personal gig art. The file is deliberately gitignored — public
+// checkouts build without it and fall back to the committed OpenRig logo.
+#if __has_include("LastWaltzLogoData.h")
+  #include "LastWaltzLogoData.h"
+  #define OPENRIG_HAS_LW_LOGO 1
+#else
+  #define OPENRIG_HAS_LW_LOGO 0
+#endif
 
 namespace {
 // Procedurally renders a gear icon for the settings ImageButton (no asset dep).
@@ -63,7 +71,7 @@ public:
                        DocumentWindow::closeButton |
                            DocumentWindow::minimiseButton),
         pluginInstance(pi) {
-    setContentOwned(content, true);
+    setContentNonOwned(content, true);
     setResizable(true, false);
     setUsingNativeTitleBar(true);
     centreWithSize(content->getWidth(), content->getHeight());
@@ -92,6 +100,7 @@ public:
 MainComponent::MainComponent() {
 #ifdef _WIN32
   avrtModule = LoadLibraryA("avrt.dll");
+  restoreWindowsPowerMode();
   if (avrtModule != nullptr) {
     avSetMmThreadFn = (PAvSetMmThreadCharacteristicsA)GetProcAddress(avrtModule, "AvSetMmThreadCharacteristicsA");
   }
@@ -105,15 +114,18 @@ MainComponent::MainComponent() {
   }
 
   // Lock a generous working set minimum so Windows cannot page out VST sample
-  // libraries when other applications demand RAM. 512 MB min / 2 GB max keeps
-  // Kontakt/sample-based plugins resident through system activity spikes.
+  // libraries when other applications demand RAM. The 2 GB max we used before
+  // Oct 2026 starved massive rigs (many Kontakt multis) during state restore —
+  // Windows kept trimming sample data, making loads take minutes. 8 GB covers
+  // the biggest setups; the OS still trims beyond it if RAM is truly short.
   SIZE_T wsMin = 512ULL * 1024 * 1024;
-  SIZE_T wsMax = 2048ULL * 1024 * 1024;
+  SIZE_T wsMax = 8192ULL * 1024 * 1024;
   if (!SetProcessWorkingSetSize(GetCurrentProcess(), wsMin, wsMax)) {
-    LOG_WARN("Failed to lock process working set (512 MB - 2 GB)");
+    LOG_WARN("Failed to lock process working set (512 MB - 8 GB)");
   } else {
-    LOG_INFO("Process working set locked: min 512 MB, max 2 GB");
+    LOG_INFO("Process working set locked: min 512 MB, max 8 GB");
   }
+  configureWindowsPerformanceMode();
 #endif
   // Initialize MIDI collector with default rate
   midiCollector.reset(FanfareConstants::kDefaultSampleRate);
@@ -267,6 +279,91 @@ MainComponent::~MainComponent() {
 //==============================================================================
 // Setup Helper Methods (extracted from constructor for readability)
 //==============================================================================
+
+#ifdef _WIN32
+void MainComponent::configureWindowsPerformanceMode() {
+  // 1. Prevent system sleep and display turn-off while Fanfare is running
+  SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED);
+  LOG_INFO("Windows system sleep & display sleep disabled for live audio performance");
+
+  // 2. Check battery vs AC power status
+  SYSTEM_POWER_STATUS sps;
+  if (GetSystemPowerStatus(&sps)) {
+    if (sps.ACLineStatus == 0) { // 0 = Offline (Running on Battery)
+      int pct = (sps.BatteryLifePercent != 255) ? (int)sps.BatteryLifePercent : -1;
+      LOG_WARN("System is running on BATTERY (" + (pct >= 0 ? juce::String(pct) + "%" : "unknown charge") +
+               "). Connecting AC power is strongly recommended for live performance.");
+
+      juce::Timer::callAfterDelay(1500, [pct] {
+        juce::String msg = "The laptop is currently running on BATTERY" +
+                           (pct >= 0 ? " (" + juce::String(pct) + "% remaining).\n\n" : ".\n\n") +
+                           "Windows aggressively throttles CPU clock speeds on battery power, which can cause " +
+                           "audio buffer underruns, clicks, and dropouts during live performance.\n\n" +
+                           "Please plug in AC mains power.";
+        juce::AlertWindow::showMessageBoxAsync(
+            juce::MessageBoxIconType::WarningIcon,
+            "AC Power Disconnected",
+            msg,
+            "OK");
+      });
+    } else if (sps.ACLineStatus == 1) {
+      LOG_INFO("AC power verified: plugged into mains.");
+    }
+  }
+
+  // 3. Automatically force Windows into High Performance power mode
+  HMODULE powrprof = LoadLibraryA("powrprof.dll");
+  if (powrprof != nullptr) {
+    auto pfnGet = (DWORD(WINAPI*)(HKEY, GUID**))GetProcAddress(powrprof, "PowerGetActiveScheme");
+    auto pfnSet = (DWORD(WINAPI*)(HKEY, const GUID*))GetProcAddress(powrprof, "PowerSetActiveScheme");
+
+    if (pfnGet != nullptr && pfnSet != nullptr) {
+      GUID* activeGuid = nullptr;
+      if (pfnGet(NULL, &activeGuid) == ERROR_SUCCESS && activeGuid != nullptr) {
+        previousPowerSchemeGuid = *activeGuid;
+        previousPowerSchemeSaved = true;
+
+        static const GUID kHighPerfGuid = { 0x8c5e7fda, 0xe8bf, 0x4a96, { 0x9a, 0x85, 0xa6, 0xe2, 0x3a, 0x8c, 0x63, 0x5c } };
+        static const GUID kUltimatePerfGuid = { 0xe9a42b02, 0xd5df, 0x448d, { 0xaa, 0x00, 0x03, 0xf1, 0x47, 0x49, 0xeb, 0x61 } };
+
+        if (*activeGuid != kHighPerfGuid && *activeGuid != kUltimatePerfGuid) {
+          LOG_INFO("Active power scheme is not High Performance. Activating High Performance scheme...");
+          if (pfnSet(NULL, &kHighPerfGuid) == ERROR_SUCCESS) {
+            powerPlanForcedHigh = true;
+            LOG_INFO("Successfully activated Windows High Performance power scheme.");
+          } else {
+            WinExec("powercfg /setactive 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c", SW_HIDE);
+            powerPlanForcedHigh = true;
+            LOG_INFO("Dispatched powercfg /setactive High Performance.");
+          }
+        } else {
+          LOG_INFO("Windows is already running in High/Ultimate Performance power scheme.");
+        }
+        LocalFree(activeGuid);
+      }
+    }
+    FreeLibrary(powrprof);
+  }
+}
+
+void MainComponent::restoreWindowsPowerMode() {
+  // Restore normal system sleep and display timeout behavior
+  SetThreadExecutionState(ES_CONTINUOUS);
+
+  // Restore previous power scheme if we forced High Performance
+  if (previousPowerSchemeSaved && powerPlanForcedHigh) {
+    HMODULE powrprof = LoadLibraryA("powrprof.dll");
+    if (powrprof != nullptr) {
+      auto pfnSet = (DWORD(WINAPI*)(HKEY, const GUID*))GetProcAddress(powrprof, "PowerSetActiveScheme");
+      if (pfnSet != nullptr) {
+        pfnSet(NULL, &previousPowerSchemeGuid);
+        LOG_INFO("Restored original Windows power scheme on application exit.");
+      }
+      FreeLibrary(powrprof);
+    }
+  }
+}
+#endif
 
 void MainComponent::setupSlotComponents() {
   // Build input selector data
@@ -464,9 +561,10 @@ void MainComponent::setupSlotComponents() {
           comp->getNoteRangeButtonBounds(), this);
     };
 
-    // MIDI CC Dialog Callback (Advanced UI with Learn)
-    comp->onShowCCDialog = [this, slot, comp] {
-      auto *ccComp = new CCMappingComponent(*slot);
+    // MIDI CC Dialog Callback (Advanced UI with Learn). autoArmLearn:
+    // 0 = none, 1 = FOH fader, 2 = IEM fader, 3 = mute toggle (long-press).
+    comp->onShowCCDialog = [this, slot, comp](int autoArmLearn) {
+      auto *ccComp = new CCMappingComponent(*slot, autoArmLearn);
       ccComp->setSize(660, 510);
       auto &box = juce::CallOutBox::launchAsynchronously(
           std::unique_ptr<juce::Component>(ccComp),
@@ -557,6 +655,23 @@ void MainComponent::setupSlotComponents() {
       if (Fanfare::RigSerializer::readStripFromFile(file, loadedSlot))
         engine.loadSlotPreset(i, loadedSlot);
       comp->repaint();
+    };
+
+    // Scene-aware collapse & resize callbacks
+    comp->onCollapseChanged = [this](bool) {
+      resized();
+    };
+    comp->onBypassChanged = [this](bool) {
+      if (autoCollapseToggle.getToggleState())
+        updateStripCollapseStates();
+    };
+    comp->onStartDragWidth = [this]() {
+      dragBaseExpandedWidth = preferredExpandedWidth;
+    };
+    comp->onDragWidth = [this](int deltaX) {
+      preferredExpandedWidth = juce::jlimit(kMinExpandedWidth, kMaxExpandedWidth, dragBaseExpandedWidth + deltaX);
+      stripWidthSlider.setValue(preferredExpandedWidth, juce::dontSendNotification);
+      resized();
     };
 
     rackSlotComponents.add(comp);
@@ -740,7 +855,7 @@ void MainComponent::setupHeaderButtons() {
   aboutBtn.setVisible(false);
   aboutBtn.onClick = [this] { showAboutDialog(); };
 
-  // Settings gear button — centralizes the settings buttons into one overlay
+  // Settings gear button â€” centralizes the settings buttons into one overlay
   addAndMakeVisible(settingsGearBtn);
   auto gearImg = createGearImage(28, ThemeManager::get(Theme::Role::accent));
   settingsGearBtn.setImages(false, true, true, gearImg, 1.0f,
@@ -815,6 +930,7 @@ void MainComponent::setupHeaderButtons() {
 
             juce::String json = engine.exportRigToJson();
             if (Fanfare::RigSerializer::save(file, json)) {
+              currentRigFile = file;
               LOG_INFO("Rig saved to: " + file.getFullPathName());
             } else {
               LOG_ERROR("Failed to save rig to: " + file.getFullPathName());
@@ -900,6 +1016,58 @@ void MainComponent::setupHeaderButtons() {
   setupNameLabel.setColour(juce::Label::textColourId, ThemeManager::get(Theme::Role::accent));
   setupNameLabel.setJustificationType(juce::Justification::centredLeft);
 
+  addAndMakeVisible(freshBuildToggle);
+  freshBuildToggle.setColour(juce::ToggleButton::textColourId, ThemeManager::get(Theme::Role::accent));
+  freshBuildToggle.setTooltip("Clean Slate: When enabled, loading this setup unloads all prior plugins first and builds from the ground up.");
+  freshBuildToggle.onClick = [this] {
+    bool isFresh = freshBuildToggle.getToggleState();
+    engine.setCurrentRigFreshBuild(isFresh);
+
+    juce::File targetFile = currentRigFile;
+    if (!targetFile.existsAsFile()) {
+      targetFile = Fanfare::RigLibrary::getSongsDirectory().getChildFile(setupNameLabel.getText() + ".json");
+    }
+
+    if (targetFile.existsAsFile()) {
+      auto parsed = juce::JSON::parse(targetFile);
+      if (auto *obj = parsed.getDynamicObject()) {
+        obj->setProperty("freshBuild", isFresh);
+        Fanfare::RigSerializer::save(targetFile, juce::JSON::toString(parsed));
+        LOG_INFO("Setup flagged on disk: " + targetFile.getFileName() + " -> freshBuild=" + juce::String((int)isFresh));
+      }
+    }
+  };
+
+  addAndMakeVisible(autoCollapseToggle);
+  autoCollapseToggle.setToggleState(true, juce::dontSendNotification);
+  autoCollapseToggle.setColour(juce::ToggleButton::textColourId, ThemeManager::get(Theme::Role::accent));
+  autoCollapseToggle.setTooltip("Stage Compact: Automatically collapses muted/inactive strips to save screen space, expanding active channels.");
+  autoCollapseToggle.onClick = [this] {
+    if (autoCollapseToggle.getToggleState()) {
+      updateStripCollapseStates();
+    } else {
+      for (auto *c : rackSlotComponents)
+        c->setCollapsed(false);
+      resized();
+    }
+  };
+
+  addAndMakeVisible(stripWidthLabel);
+  stripWidthLabel.setFont(juce::FontOptions(10.0f, juce::Font::bold));
+  stripWidthLabel.setColour(juce::Label::textColourId, ThemeManager::get(Theme::Role::textDim));
+  stripWidthLabel.setJustificationType(juce::Justification::centredRight);
+
+  addAndMakeVisible(stripWidthSlider);
+  stripWidthSlider.setRange(kMinExpandedWidth, kMaxExpandedWidth, 2);
+  stripWidthSlider.setValue(preferredExpandedWidth, juce::dontSendNotification);
+  stripWidthSlider.setSliderStyle(juce::Slider::LinearHorizontal);
+  stripWidthSlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+  stripWidthSlider.setTooltip("Adjust expanded channel strip width (85px - 260px). You can also drag the right edge of any strip directly!");
+  stripWidthSlider.onValueChange = [this] {
+    preferredExpandedWidth = (int)stripWidthSlider.getValue();
+    resized();
+  };
+
   // Load embedded Fanfare white logo (for dark stage UI)
   logoImage = juce::ImageFileFormat::loadFrom(fanfare_logo_png, fanfare_logo_png_size);
   if (logoImage.isValid()) {
@@ -909,6 +1077,30 @@ void MainComponent::setupHeaderButtons() {
     logoComponent.addMouseListener(this, false);
     addAndMakeVisible(logoComponent);
   }
+
+  // Load The Last Waltz gig logo (shown beneath the aux return strips).
+  // Click the area to fly in a custom image; right-click restores this one.
+  lastWaltzLogoComponent.setMouseCursor(juce::MouseCursor::PointingHandCursor);
+  lastWaltzLogoComponent.setTooltip(
+      "Click: fly in your own logo image (PNG/JPG). Right-click: restore the "
+      "Last Waltz logo.");
+  lastWaltzLogoComponent.addMouseListener(this, false);
+  lastWaltzLogoComponent.setInterceptsMouseClicks(true, false);
+  addAndMakeVisible(lastWaltzLogoComponent);
+  lastWaltzLogoComponent.setVisible(false);
+  {
+    juce::Image embedded;
+#if OPENRIG_HAS_LW_LOGO
+    embedded = juce::ImageFileFormat::loadFrom(last_waltz_logo_png,
+                                               last_waltz_logo_png_size);
+#endif
+    if (!embedded.isValid())
+      embedded = juce::ImageFileFormat::loadFrom(fanfare_logo_png,
+                                                 fanfare_logo_png_size);
+    if (embedded.isValid())
+      setAuxLogoImage(embedded, false);
+  }
+  loadAuxLogoPreference();
 
   addAndMakeVisible(clockLabel);
   clockLabel.setFont(juce::FontOptions(13.0f, juce::Font::bold));
@@ -1067,6 +1259,7 @@ void MainComponent::refreshSceneButtons() {
         sceneButtons[j]->setActive(j == sceneIdx);
       if (webServer)
         webServer->notifySceneChanged(sceneIdx, engine.getSceneName(sceneIdx));
+      updateStripCollapseStates();
     };
 
     btn->onRightClicked = [this, sceneIdx](int, const juce::MouseEvent&) {
@@ -1137,6 +1330,7 @@ void MainComponent::refreshSceneButtons() {
     addAndMakeVisible(btn);
     sceneButtons.add(btn);
   }
+  updateStripCollapseStates();
   resized();
 }
 
@@ -1258,16 +1452,16 @@ void MainComponent::audioDeviceIOCallbackWithContext(
         mmcssRegistered = true;
         LOG_INFO("Audio thread registered with MMCSS Pro Audio characteristics");
       } else {
-        // MMCSS unavailable — use HIGHEST (not TIME_CRITICAL, which can starve
+        // MMCSS unavailable â€” use HIGHEST (not TIME_CRITICAL, which can starve
         // the OS when combined with the audio spin-wait barrier).
         SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_HIGHEST);
         mmcssRegistered = true;
-        LOG_WARN("MMCSS unavailable — audio thread set to THREAD_PRIORITY_HIGHEST");
+        LOG_WARN("MMCSS unavailable â€” audio thread set to THREAD_PRIORITY_HIGHEST");
       }
     } else {
       SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_HIGHEST);
       mmcssRegistered = true;
-      LOG_WARN("avrt.dll not loaded — audio thread set to THREAD_PRIORITY_HIGHEST");
+      LOG_WARN("avrt.dll not loaded â€” audio thread set to THREAD_PRIORITY_HIGHEST");
     }
   }
 #endif
@@ -1296,6 +1490,117 @@ void MainComponent::loadAudioSettings() {
   } else {
     deviceManager.initialiseWithDefaultDevices(0, 2);
   }
+}
+
+// Swap the logo area beneath the aux returns. Fully opaque images (JPEGs,
+// flattened posters) get their dark background luminance-keyed to
+// transparency; images with real alpha (transparent PNGs) are used as-is.
+void MainComponent::setAuxLogoImage(const juce::Image &loaded, bool animate) {
+  bool fullyOpaque = true;
+  {
+    juce::Image::BitmapData px(loaded, juce::Image::BitmapData::readOnly);
+    for (int y = 0; y < px.height && fullyOpaque; ++y)
+      for (int x = 0; x < px.width; ++x)
+        if (px.getPixelColour(x, y).getAlpha() < 250) {
+          fullyOpaque = false;
+          break;
+        }
+  }
+
+  juce::Image use = loaded;
+  if (fullyOpaque) {
+    use = juce::Image(juce::Image::ARGB, loaded.getWidth(), loaded.getHeight(),
+                      true);
+    {
+      juce::Graphics g(use);
+      g.drawImageAt(loaded, 0, 0);
+    }
+    juce::Image::BitmapData px(use, juce::Image::BitmapData::readWrite);
+    for (int y = 0; y < px.height; ++y)
+      for (int x = 0; x < px.width; ++x) {
+        auto c = px.getPixelColour(x, y);
+        float lum = juce::jmax(c.getRed(),
+                               juce::jmax(c.getGreen(), c.getBlue())) / 255.0f;
+        px.setPixelColour(
+            x, y, c.withAlpha((juce::uint8)juce::jlimit(
+                      0, 255, (int)((lum - 0.08f) * 1.6f * 255.0f))));
+      }
+  }
+
+  lastWaltzLogoImage = use;
+  lastWaltzLogoComponent.setImage(
+      lastWaltzLogoImage, juce::RectanglePlacement::onlyReduceInSize |
+                              juce::RectanglePlacement::xMid |
+                              juce::RectanglePlacement::yMid);
+  if (animate)
+    juce::Desktop::getInstance().getAnimator().fadeIn(&lastWaltzLogoComponent,
+                                                      250);
+}
+
+void MainComponent::chooseAuxLogoImage() {
+  fileChooser = std::make_unique<juce::FileChooser>(
+      "Choose a logo image...",
+      juce::File::getSpecialLocation(juce::File::userPicturesDirectory),
+      "*.png;*.jpg;*.jpeg");
+  fileChooser->launchAsync(
+      juce::FileBrowserComponent::openMode |
+          juce::FileBrowserComponent::canSelectFiles,
+      [this](const juce::FileChooser &fc) {
+        auto file = fc.getResult();
+        if (file == juce::File{})
+          return;
+        auto img = juce::ImageFileFormat::loadFrom(file);
+        if (!img.isValid()) {
+          juce::AlertWindow::showMessageBoxAsync(
+              juce::MessageBoxIconType::WarningIcon, "Couldn't load image",
+              "That file didn't decode as an image (PNG or JPG).");
+          return;
+        }
+        auxLogoUserPath = file.getFullPathName();
+        saveAuxLogoPreference();
+        setAuxLogoImage(img, true);
+      });
+}
+
+void MainComponent::resetAuxLogoImage() {
+  auxLogoUserPath = "";
+  saveAuxLogoPreference();
+  juce::Image embedded;
+#if OPENRIG_HAS_LW_LOGO
+  embedded = juce::ImageFileFormat::loadFrom(last_waltz_logo_png,
+                                             last_waltz_logo_png_size);
+#endif
+  if (!embedded.isValid())
+    embedded = juce::ImageFileFormat::loadFrom(fanfare_logo_png,
+                                               fanfare_logo_png_size);
+  if (embedded.isValid())
+    setAuxLogoImage(embedded, true);
+}
+
+void MainComponent::loadAuxLogoPreference() {
+  auto f = FanfareConstants::getAppDirectory().getChildFile("ui_settings.json");
+  if (!f.existsAsFile())
+    return;
+  auto v = juce::JSON::parse(f.loadFileAsString());
+  juce::String p = v.getProperty("auxLogoPath", "").toString();
+  if (p.isEmpty())
+    return;
+  juce::File imgFile(p);
+  if (!imgFile.existsAsFile())
+    return;
+  auto img = juce::ImageFileFormat::loadFrom(imgFile);
+  if (!img.isValid())
+    return;
+  auxLogoUserPath = p;
+  setAuxLogoImage(img, false);
+}
+
+void MainComponent::saveAuxLogoPreference() const {
+  auto *o = new juce::DynamicObject();
+  o->setProperty("auxLogoPath", auxLogoUserPath);
+  auto f = FanfareConstants::getAppDirectory().getChildFile("ui_settings.json");
+  f.getParentDirectory().createDirectory();
+  f.replaceWithText(juce::JSON::toString(juce::var(o)));
 }
 
 void MainComponent::resetAudioDevice() {
@@ -1637,7 +1942,11 @@ void MainComponent::resized() {
   if (logoComponent.isVisible()) {
     logoComponent.setBounds(stageHeader.removeFromLeft(40).reduced(2));
   }
-  setupNameLabel.setBounds(stageHeader.removeFromLeft(350).reduced(4));
+  setupNameLabel.setBounds(stageHeader.removeFromLeft(300).reduced(4));
+  freshBuildToggle.setBounds(stageHeader.removeFromLeft(120).reduced(2));
+  autoCollapseToggle.setBounds(stageHeader.removeFromLeft(130).reduced(2));
+  stripWidthLabel.setBounds(stageHeader.removeFromLeft(80).reduced(2, 6));
+  stripWidthSlider.setBounds(stageHeader.removeFromLeft(90).reduced(2, 6));
 
   // Right side: Setlist Navigation
   nextSetlistBtn.setBounds(stageHeader.removeFromRight(55).reduced(3));
@@ -1764,22 +2073,53 @@ void MainComponent::resized() {
   // Channel Strips (horizontal arrangement in center)
   int numMain = rackSlotComponents.size();
   int numReturns = auxReturnComponents.size();
-  int totalStrips = numMain + numReturns;
 
-  if (totalStrips > 0) {
-    int stripWidth = r.getWidth() / totalStrips;
+  if (numMain > 0 || numReturns > 0) {
+    const int collapsedWidth = 28;
+    int numCollapsed = 0;
+    int numExpanded = 0;
+
+    for (auto *c : rackSlotComponents) {
+      if (c->getIsCollapsed())
+        numCollapsed++;
+      else
+        numExpanded++;
+    }
+
+    int totalAvail = r.getWidth();
+    int returnWidth = (numExpanded > 0) ? juce::jlimit(60, 95, totalAvail / (numExpanded + numReturns + 2)) : 80;
+    int fixedWidths = (numCollapsed * collapsedWidth) + (numReturns * returnWidth);
+    
+    // Distribute remaining width, capped at preferredExpandedWidth (default 140px, max 260px)
+    int availForExpanded = totalAvail - fixedWidths;
+    int calcWidth = (numExpanded > 0) ? (availForExpanded / numExpanded) : preferredExpandedWidth;
+    int expandedWidth = juce::jlimit(kMinExpandedWidth, preferredExpandedWidth, calcWidth);
 
     // Draw regular slots first (skip monitor in at index 0)
-    for (int i = 1; i < rackSlotComponents.size(); ++i)
-      rackSlotComponents[i]->setBounds(r.removeFromLeft(stripWidth).reduced(2));
+    for (int i = 1; i < rackSlotComponents.size(); ++i) {
+      int w = rackSlotComponents[i]->getIsCollapsed() ? collapsedWidth : expandedWidth;
+      rackSlotComponents[i]->setBounds(r.removeFromLeft(juce::jmin(w, r.getWidth())).reduced(2));
+    }
 
     // Draw Monitor In (index 0) next to aux returns
-    if (rackSlotComponents.size() > 0)
-      rackSlotComponents[0]->setBounds(r.removeFromLeft(stripWidth).reduced(2));
+    if (rackSlotComponents.size() > 0) {
+      int w = rackSlotComponents[0]->getIsCollapsed() ? collapsedWidth : expandedWidth;
+      rackSlotComponents[0]->setBounds(r.removeFromLeft(juce::jmin(w, r.getWidth())).reduced(2));
+    }
 
-    // Draw aux returns last
-    for (auto *c : auxReturnComponents)
-      c->setBounds(r.removeFromLeft(stripWidth).reduced(2));
+    // Draw aux returns last — half height; the freed lower half of their
+    // columns hosts the gig logo (The Last Waltz)
+    juce::Rectangle<int> lwLogoArea;
+    for (auto *c : auxReturnComponents) {
+      auto col = r.removeFromLeft(juce::jmin(returnWidth, r.getWidth()));
+      int stripH = juce::jmax(240, col.getHeight() / 2); // keep strips usable
+      c->setBounds(col.removeFromTop(stripH).reduced(2));
+      lwLogoArea = lwLogoArea.isEmpty() ? col : lwLogoArea.getUnion(col);
+    }
+    lastWaltzLogoComponent.setVisible(lastWaltzLogoImage.isValid() &&
+                                      !lwLogoArea.isEmpty());
+    if (lastWaltzLogoComponent.isVisible())
+      lastWaltzLogoComponent.setBounds(lwLogoArea.reduced(2));
   }
 
   if (channelStripOverlay)
@@ -1796,6 +2136,35 @@ void MainComponent::resized() {
     resourceInspectorOverlay->centreWithSize(740, 520);
   if (stageRemoteOverlay)
     stageRemoteOverlay->setBounds(getLocalBounds());
+}
+
+void MainComponent::updateStripCollapseStates() {
+  if (!autoCollapseToggle.getToggleState())
+    return;
+
+  for (int i = 0; i < rackSlotComponents.size(); ++i) {
+    auto *comp = rackSlotComponents[i];
+    auto *slot = engine.getSlot(i);
+    if (!slot || !comp)
+      continue;
+
+    bool hasPlugins = false;
+    for (int c = 0; c < 3; ++c) {
+      if (slot->getPluginInstance(c) != nullptr || slot->isChainSlotMidiOut(c)) {
+        hasPlugins = true;
+        break;
+      }
+    }
+    bool hasInput = (slot->getInputChannelIndex() >= 0);
+    bool isBypassed = slot->isBypassed();
+
+    // Active if not muted/bypassed AND has plugins, hardware input, or is the dedicated monitor channel (slot 0)
+    bool isActive = !isBypassed && (hasPlugins || hasInput || i == 0);
+
+    comp->setCollapsed(!isActive);
+  }
+
+  resized();
 }
 
 void MainComponent::showResourceInspectorModal() {
@@ -1849,7 +2218,9 @@ void MainComponent::loadRigAsync(const juce::File &file, int buttonIndexForHighl
                 hideLoadingOverlay();
                 closeOrphanedPluginWindows();
                 if (ok) {
+                    currentRigFile = file;
                     setupNameLabel.setText(fileName, juce::dontSendNotification);
+                    freshBuildToggle.setToggleState(engine.isCurrentRigFreshBuild(), juce::dontSendNotification);
                     for (auto *comp : rackSlotComponents) {
                         comp->updateOutputSelector();
                         comp->repaint();
@@ -2255,6 +2626,13 @@ void MainComponent::setLoadingMessage(const juce::String &message) {
 void MainComponent::mouseDown(const juce::MouseEvent &e) {
   if (e.originalComponent == &logoComponent) {
     showAboutDialog();
+    return;
+  }
+  if (e.originalComponent == &lastWaltzLogoComponent) {
+    if (e.mods.isRightButtonDown())
+      resetAuxLogoImage();
+    else
+      chooseAuxLogoImage();
     return;
   }
   if (e.originalComponent == &ramLabel || e.originalComponent == &cpuLabel) {

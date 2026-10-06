@@ -64,7 +64,7 @@ public:
       } else if (i == 1) {
         slots.push_back(std::make_unique<RackSlot>("CK88"));
         slots.back()->setInputChannelIndex(FanfareConstants::kKeyboardInputChannel); // Hardware In 11 (CK88)
-      } else if (i == FanfareConstants::kNumSlots - 1) {
+      } else if (i == 11) {
         slots.push_back(std::make_unique<RackSlot>("Accordion"));
         slots.back()->setInputChannelIndex(12); // Hardware In 13 (Accordion)
       } else {
@@ -1222,6 +1222,7 @@ public:
     rig->setProperty("fohOutputOffset", (int)fohOutputOffset);
     rig->setProperty("iemOutputOffset", (int)iemOutputOffset);
     rig->setProperty("defaultMidiChannel", defaultMidiChannel.load());
+    rig->setProperty("freshBuild", currentRigFreshBuild.load());
 
     // Master FX
     juce::Array<juce::var> fohNodes;
@@ -1271,6 +1272,10 @@ public:
       // CC-controlled faders + per-slot MIDI channel override (new in v2)
       st->setProperty("fohCC", s->getFohCC());
       st->setProperty("iemCC", s->getIemCC());
+      st->setProperty("muteCC", s->getMuteCC());
+      st->setProperty("swapCC", s->getSwapCC());
+      st->setProperty("swapA", s->getSwapA());
+      st->setProperty("swapB", s->getSwapB());
       st->setProperty("midiChannel", s->getMidiChannelOverride());
       st->setProperty("outputTarget", s->getOutputTarget());
 
@@ -1349,6 +1354,7 @@ public:
         mapping->setProperty("minValue", (double)pair.second.minValue);
         mapping->setProperty("maxValue", (double)pair.second.maxValue);
         mapping->setProperty("invert", pair.second.invert);
+        mapping->setProperty("toggle", pair.second.toggle);
         ccMappingNodes.add(juce::var(mapping));
       }
       st->setProperty("ccMappings", ccMappingNodes);
@@ -1502,6 +1508,11 @@ public:
     iemOutputOffset = rig.getProperty("iemOutputOffset", 2);
     defaultMidiChannel.store(
         (int)rig.getProperty("defaultMidiChannel", FanfareConstants::kDefaultMidiChannel));
+    bool fresh = (bool)rig.getProperty("freshBuild", false);
+    currentRigFreshBuild.store(fresh);
+    if (fresh && !hasStagedPlugins()) {
+      clearAllRacks();
+    }
 
     // Master FX
     // Master FX - Smart Loading
@@ -1596,6 +1607,9 @@ public:
         // CC-controlled faders + per-slot MIDI channel override (v2)
         s->setFohCC(v.getProperty("fohCC", -1));
         s->setIemCC(v.getProperty("iemCC", -1));
+        s->setMuteCC(v.getProperty("muteCC", -1));
+        s->setSwapPair(v.getProperty("swapCC", -1), v.getProperty("swapA", -1),
+                       v.getProperty("swapB", -1));
         s->setMidiChannelOverride(v.getProperty("midiChannel", -1));
         s->setOutputTarget(v.getProperty("outputTarget", -1));
 
@@ -1676,7 +1690,8 @@ public:
             float minVal = (float)mv.getProperty("minValue", 0.0);
             float maxVal = (float)mv.getProperty("maxValue", 1.0);
             bool inv = mv.getProperty("invert", false);
-            s->mapCCToParameter(ccNum, chainIdx, paramId, paramIdx, minVal, maxVal, inv);
+            bool tog = mv.getProperty("toggle", false);
+            s->mapCCToParameter(ccNum, chainIdx, paramId, paramIdx, minVal, maxVal, inv, tog);
           }
         }
 
@@ -1975,6 +1990,10 @@ public:
         slot.allowedCCs = s->getAllowedCCs();
         slot.fohCC = s->getFohCC();
         slot.iemCC = s->getIemCC();
+        slot.muteCC = s->getMuteCC();
+        slot.swapCC = s->getSwapCC();
+        slot.swapA = s->getSwapA();
+        slot.swapB = s->getSwapB();
         slot.midiChannelOverride = s->getMidiChannelOverride();
 
         auto& strip = s->getStrip();
@@ -2025,6 +2044,7 @@ public:
             map.minValue = pair.second.minValue;
             map.maxValue = pair.second.maxValue;
             map.invert = pair.second.invert;
+            map.toggle = pair.second.toggle;
             slot.ccMappings.push_back(map);
         }
 
@@ -2117,6 +2137,10 @@ public:
     songSlot.allowedCCs = s->getAllowedCCs();
     songSlot.fohCC = s->getFohCC();
     songSlot.iemCC = s->getIemCC();
+    songSlot.muteCC = s->getMuteCC();
+    songSlot.swapCC = s->getSwapCC();
+    songSlot.swapA = s->getSwapA();
+    songSlot.swapB = s->getSwapB();
     songSlot.midiChannelOverride = s->getMidiChannelOverride();
 
     auto& stripData = s->getStrip();
@@ -2191,6 +2215,7 @@ public:
       map.minValue = pair.second.minValue;
       map.maxValue = pair.second.maxValue;
       map.invert = pair.second.invert;
+      map.toggle = pair.second.toggle;
       songSlot.ccMappings.push_back(map);
     }
 
@@ -2253,6 +2278,8 @@ public:
     s->setAllowedCCs(songSlot.allowedCCs);
     s->setFohCC(songSlot.fohCC);
     s->setIemCC(songSlot.iemCC);
+    s->setMuteCC(songSlot.muteCC);
+    s->setSwapPair(songSlot.swapCC, songSlot.swapA, songSlot.swapB);
     s->setMidiChannelOverride(songSlot.midiChannelOverride);
 
     auto& stripData = s->getStrip();
@@ -2320,7 +2347,7 @@ public:
     s->clearAllCCMappings();
     for (const auto& m : songSlot.ccMappings)
       s->mapCCToParameter(m.cc, m.chainIndex, m.paramId, m.parameterIndex,
-                          m.minValue, m.maxValue, m.invert);
+                          m.minValue, m.maxValue, m.invert, m.toggle);
 
     s->clearAllCCPassthroughs();
     for (const auto& pt : songSlot.ccPassthroughs)
@@ -2573,9 +2600,18 @@ public:
       });
 
       int waitedMs = 0;
-      while (! ctx->done.load(std::memory_order_acquire) && waitedMs < 40000) {
-        juce::Thread::sleep(100);
-        waitedMs += 100;
+      while (! ctx->done.load(std::memory_order_acquire) && waitedMs < 120000) {
+#ifdef _WIN32
+        if (juce::MessageManager::getInstance()->isThisTheMessageThread()) {
+          MSG msg;
+          while (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
+            TranslateMessage(&msg);
+            DispatchMessage(&msg);
+          }
+        }
+#endif
+        juce::Thread::sleep(50);
+        waitedMs += 50;
       }
 
       if (ctx->done.load(std::memory_order_acquire)) {
@@ -2583,7 +2619,7 @@ public:
         instance = std::move(ctx->inst);
       } else {
         ctx->abandoned.store(true, std::memory_order_release);
-        logToFile("WARNING: cold-path plugin build timed out (40s) for key " + key +
+        logToFile("WARNING: cold-path plugin build timed out (120s) for key " + key +
                   " — abandoning; the rig continues without it.");
         t.detach();
         return;
@@ -2712,6 +2748,24 @@ public:
       }
     }
   }
+
+  void clearAllRacks() {
+    juce::ScopedLock sl(lock);
+    for (auto &slot : slots) {
+      if (slot)
+        slot->clearChain();
+    }
+    for (auto &slot : auxReturns) {
+      if (slot)
+        slot->clearChain();
+    }
+    clearMasterChains();
+    lastAppliedPluginStates.clear();
+    logToFile("TRACE: clearAllRacks() completed - all slot and master plugins unloaded.");
+  }
+
+  bool isCurrentRigFreshBuild() const { return currentRigFreshBuild.load(); }
+  void setCurrentRigFreshBuild(bool fresh) { currentRigFreshBuild.store(fresh); }
 
   float getFohPeakL() const { return fohPeakL; }
   float getFohPeakR() const { return fohPeakR; }
@@ -2908,6 +2962,7 @@ private:
 
   std::atomic<int> fohOutputOffset{0}; // Hardware channels 1+2
   std::atomic<int> iemOutputOffset{2}; // Hardware channels 3+4
+  std::atomic<bool> currentRigFreshBuild{false};
 
   juce::CriticalSection lock;
 
@@ -3009,7 +3064,7 @@ public:
   // caller gets null — the rig survives.
   std::unique_ptr<juce::AudioPluginInstance> buildInstanceOffThread(
       const juce::PluginDescription &desc, juce::String &error,
-      int timeoutMs = 40000) {
+      int timeoutMs = 300000) {
     struct OffThreadBuild {
       FanfareEngine *engine;
       juce::PluginDescription desc;
@@ -3052,8 +3107,17 @@ public:
 
     int waitedMs = 0;
     while (! ctx->done.load(std::memory_order_acquire) && waitedMs < timeoutMs) {
-      juce::Thread::sleep(100);
-      waitedMs += 100;
+#ifdef _WIN32
+      if (juce::MessageManager::getInstance()->isThisTheMessageThread()) {
+        MSG msg;
+        while (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
+          TranslateMessage(&msg);
+          DispatchMessage(&msg);
+        }
+      }
+#endif
+      juce::Thread::sleep(50);
+      waitedMs += 50;
     }
 
     if (ctx->done.load(std::memory_order_acquire)) {
@@ -3391,6 +3455,10 @@ public:
   bool stagingHasKey(const juce::String &key) {
     juce::ScopedLock sl(stagingLock);
     return stagedPlugins.find(key) != stagedPlugins.end();
+  }
+  bool hasStagedPlugins() {
+    juce::ScopedLock sl(stagingLock);
+    return !stagedPlugins.empty();
   }
 
   bool isPluginStateIdentical(const juce::String &key, const juce::String &stateBase64) const {

@@ -122,13 +122,17 @@ public:
         assignMidiChannelsBtn.setToggleState(true, juce::dontSendNotification);
         addAndMakeVisible(assignMidiChannelsBtn);
 
+        freshBuildBtn.setButtonText("Clean Slate Load (Unload all plugins first)");
+        freshBuildBtn.setToggleState(false, juce::dontSendNotification);
+        addAndMakeVisible(freshBuildBtn);
+
         buildBtn.setButtonText("BUILD & LOAD SETUP");
         buildBtn.setColour(juce::TextButton::buttonColourId, ThemeManager::get(Theme::Role::accent));
         buildBtn.setColour(juce::TextButton::textColourOffId, ThemeManager::get(Theme::Role::textOnAccent));
         buildBtn.onClick = [this] { buildSetup(); };
         addAndMakeVisible(buildBtn);
 
-        setSize(400, 480);
+        setSize(400, 510);
     }
 
     int getNumRows() override {
@@ -189,6 +193,7 @@ public:
 
         area.removeFromTop(10);
         assignMidiChannelsBtn.setBounds(area.removeFromTop(24));
+        freshBuildBtn.setBounds(area.removeFromTop(24));
 
         area.removeFromTop(15);
         buildBtn.setBounds(area.removeFromTop(36).reduced(2, 0));
@@ -209,6 +214,7 @@ private:
     juce::TextEditor nameEditor;
 
     juce::ToggleButton assignMidiChannelsBtn;
+    juce::ToggleButton freshBuildBtn;
 
     juce::TextButton buildBtn;
 
@@ -268,6 +274,7 @@ private:
             }
         }
         root->setProperty("channels", channelsArr);
+        root->setProperty("freshBuild", freshBuildBtn.getToggleState());
 
         // Add standard master sections
         root->setProperty("fohFx", juce::Array<juce::var>{});

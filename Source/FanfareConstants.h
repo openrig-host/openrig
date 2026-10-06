@@ -8,7 +8,7 @@
 namespace FanfareConstants {
 
 // --- Slot Configuration ---
-constexpr int kNumSlots = 12;
+constexpr int kNumSlots = 24;
 constexpr int kNumFxSlotsPerBus = 3;
 constexpr int kNumSetupButtons = 10;
 
