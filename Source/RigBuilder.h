@@ -374,9 +374,12 @@ private:
         // the 2nd+ instance in a process deadlocks reliably (Last Waltz rig,
         // Oct 2026), while interactive message-thread loads of the same
         // instances work. Restores are sub-second when they work.
+        // Replika XT (Arturia): instantiation hangs off-thread in bulk loads
+        // (Oct 7 — stalled the whole rig build on its first aux-return save).
         bool requiresMessageThread =
             newPath.containsIgnoreCase("Super 8") ||
-            newPath.containsIgnoreCase("Kontakt");
+            newPath.containsIgnoreCase("Kontakt") ||
+            newPath.containsIgnoreCase("Replika");
 
         std::unique_ptr<juce::AudioPluginInstance> inst;
         juce::String err;
@@ -385,7 +388,7 @@ private:
         if (!requiresMessageThread) {
             // Serialize per path: wait out any earlier build of this same
             // plugin (possibly an abandoned one still restoring state).
-            Fanfare::waitForPathBuildGate(newPath, 600000);
+            Fanfare::waitForPathBuildGate(newPath, 120000);
             logToFile("TRACE: buildOne " + label + " building off-thread...");
             struct BuildThreadContext {
                 FanfareEngine* engine;
@@ -422,23 +425,26 @@ private:
                 bctx->done.store(true);
             });
 
-            // Wait up to 600 seconds for the background VST build to complete
-            // (monster Kontakt multis can legitimately restore for minutes).
+            // Wait up to 10 seconds for the background VST build. If it
+            // stalls (engines whose instantiation needs the host's message
+            // thread — UVI Sep 7, Replika XT Oct 7 — hang here forever),
+            // abandon the worker and fall through to the message-thread
+            // retry below, which is the proven cure. Without this the whole
+            // rig load blocks on one plugin until the 600s timeout.
             int waitCount = 0;
-            while (!bctx->done.load() && waitCount < 6000) {
+            while (!bctx->done.load() && waitCount < 100) {
                 juce::Thread::sleep(100);
                 waitCount++;
             }
 
             bool timedOut = false;
+            (void)timedOut;
             if (!bctx->done.load()) {
                 bctx->abandoned.store(true);
-                Fanfare::poisonPath(newPath);
-                logToFile("TRACE: buildOne " + label + " timed out (600s) on background build. Detaching thread...");
-                t.detach(); // Allow the thread to remain stuck in background without hanging OpenRig
+                logToFile("TRACE: buildOne " + label + " off-thread build stalled (10s) — abandoning worker, retrying on message thread...");
+                t.detach(); // the stuck worker destroys its instance when/if it returns
                 ok = false;
-                timedOut = true;
-                err = "build timed out (600s)";
+                err = "off-thread build stalled (10s)";
             } else {
                 t.join();
                 inst = std::move(bctx->inst);
@@ -448,14 +454,6 @@ private:
 
             if (!ok) {
                 logToFile("TRACE: buildOne off-thread build failed for " + label + ". Error: " + err);
-            }
-
-            if (timedOut) {
-                logToFile("WARNING: buildOne " + label + " background build timed out; skipping message-thread retry to avoid concurrent entry race.");
-                r.ok = false;
-                r.error = label + ": " + err;
-                r.failedEntries.push_back({key, pv});
-                return false;
             }
         }
 
@@ -480,10 +478,11 @@ private:
                     buildDone.signal();
                 });
 
-            if (!buildDone.wait(600000)) {
-                logToFile("TRACE: buildOne timed out (600s) on message-thread build/retry: " + label);
+            if (!buildDone.wait(60000)) {
+                Fanfare::poisonPath(newPath);
+                logToFile("TRACE: buildOne timed out (60s) on message-thread build/retry: " + label);
                 r.ok = false;
-                r.error = label + ": build timed out (600s)";
+                r.error = label + ": build timed out (60s)";
                 r.failedEntries.push_back({key, pv});
                 return false;
             }
@@ -541,18 +540,20 @@ private:
             return false;
         }
 
-        // Same NI rule as buildOne: Super 8 needs a message-thread build, and
+        // Same rule as buildOne: Super 8 needs a message-thread build, and
         // Kontakt state restores deadlock off-thread on the 2nd+ instance.
+        // Replika XT instantiation hangs off-thread in bulk loads (Oct 7).
         bool requiresMessageThread =
             newPath.containsIgnoreCase("Super 8") ||
-            newPath.containsIgnoreCase("Kontakt");
+            newPath.containsIgnoreCase("Kontakt") ||
+            newPath.containsIgnoreCase("Replika");
 
         std::unique_ptr<juce::AudioPluginInstance> inst;
         juce::String err;
         bool ok = false;
 
         if (!requiresMessageThread) {
-            Fanfare::waitForPathBuildGate(newPath, 600000);
+            Fanfare::waitForPathBuildGate(newPath, 120000);
             logToFile("TRACE: buildMaster " + label + " building off-thread...");
             struct BuildThreadContext {
                 FanfareEngine* engine;
@@ -589,22 +590,19 @@ private:
                 bctx->done.store(true);
             });
 
-            // Wait up to 600 seconds (see buildOne)
+            // Wait up to 10 seconds (see buildOne: stall → message-thread retry)
             int waitCount = 0;
-            while (!bctx->done.load() && waitCount < 6000) {
+            while (!bctx->done.load() && waitCount < 100) {
                 juce::Thread::sleep(100);
                 waitCount++;
             }
 
-            bool timedOut = false;
             if (!bctx->done.load()) {
                 bctx->abandoned.store(true);
-                Fanfare::poisonPath(newPath);
-                logToFile("TRACE: buildMaster " + label + " timed out (600s) on background build. Detaching thread...");
+                logToFile("TRACE: buildMaster " + label + " off-thread build stalled (10s) — abandoning worker, retrying on message thread...");
                 t.detach(); // Allow thread to remain stuck in background
                 ok = false;
-                timedOut = true;
-                err = "build timed out (600s)";
+                err = "off-thread build stalled (10s)";
             } else {
                 t.join();
                 inst = std::move(bctx->inst);
@@ -614,14 +612,6 @@ private:
 
             if (!ok) {
                 logToFile("TRACE: buildMaster off-thread build failed for " + label + ". Error: " + err);
-            }
-
-            if (timedOut) {
-                logToFile("WARNING: buildMaster " + label + " background build timed out; skipping message-thread retry to avoid concurrent entry race.");
-                r.ok = false;
-                r.error = label + ": " + err;
-                r.failedEntries.push_back({key, pv});
-                return false;
             }
         }
 
@@ -646,10 +636,11 @@ private:
                     buildDone.signal();
                 });
 
-            if (!buildDone.wait(600000)) {
-                logToFile("TRACE: buildMaster timed out (600s) on message-thread build/retry: " + label);
+            if (!buildDone.wait(60000)) {
+                Fanfare::poisonPath(newPath);
+                logToFile("TRACE: buildMaster timed out (60s) on message-thread build/retry: " + label);
                 r.ok = false;
-                r.error = label + ": build timed out (600s)";
+                r.error = label + ": build timed out (60s)";
                 r.failedEntries.push_back({key, pv});
                 return false;
             }

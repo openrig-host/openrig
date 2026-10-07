@@ -2674,7 +2674,7 @@ public:
       });
 
       int waitedMs = 0;
-      while (! ctx->done.load(std::memory_order_acquire) && waitedMs < 120000) {
+      while (! ctx->done.load(std::memory_order_acquire) && waitedMs < 60000) {
 #ifdef _WIN32
         if (juce::MessageManager::getInstance()->isThisTheMessageThread()) {
           MSG msg;
