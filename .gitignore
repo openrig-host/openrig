@@ -34,3 +34,14 @@ OpenRig_*.zip
 combined_headers.txt
 openrig-code.txt
 raw-soutce-openrig.txt
+
+# Local tooling & working docs (not part of the public repo)
+.kilo/
+Aug30Featurelist.MD
+latestchangesjul26.md
+roadmap-aug30-gemini.md
+add_to_vcxproj.ps1
+get_sources.ps1
+rename_to_openrig.ps1
+update_includes.ps1
+setup_projucer.bat
