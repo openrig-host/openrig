@@ -218,13 +218,18 @@ The `.exe` is fully standalone — no external asset files. SVG icons are embedd
 
 ### Hardware tested
 
+MIDI controllers:
 - **Yamaha CK88** (88-key controller with drawbars)
 - **Roland RD88** (controller, send only)
 - **Nektar LX61+** (compact primary controller)
 - **Arturia KeyLab 88 Essential**
-- A generic ASIO audio interface
 
-Other keyboards will work as MIDI sources, but the per-slot MIDI channel routing has only been exercised with these.
+Audio interfaces (ASIO):
+- **Behringer UMC204HD**
+- **Behringer UMC1820**
+- **AKAI EIE Pro**
+
+Other keyboards will work as MIDI sources, but the per-slot MIDI channel routing has only been exercised with these. Other class-compliant ASIO interfaces should work the same way the tested ones do.
 
 ---
 
