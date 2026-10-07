@@ -4,7 +4,7 @@
 
 ### The Sovereign Live Performance Engine
 
-[![Latest Release](https://img.shields.io/github/v/release/openrig-host/openrig?color=ed786a&label=Latest%20Release)](https://github.com/openrig-host/openrig/releases/latest)
+[![Latest Release](https://img.shields.io/github/v/release/openrig-host/openrig?sort=date&cacheSeconds=900&color=ed786a&label=Latest%20Release)](https://github.com/openrig-host/openrig/releases/latest)
 [![Platform](https://img.shields.io/badge/platform-Windows%20x64-blue.svg)](https://github.com/openrig-host/openrig/releases)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0.html)
 
