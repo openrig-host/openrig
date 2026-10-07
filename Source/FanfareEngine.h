@@ -1389,6 +1389,29 @@ public:
     }
     rig->setProperty("channels", channelNodes);
 
+    // Aux return strips (Aux 1 / Aux 2): their plugin chains and strip state
+    // previously were never saved, so returns lost their plugins on reload.
+    juce::Array<juce::var> auxReturnNodes;
+    for (auto &aux : auxReturns) {
+      auto *at = new juce::DynamicObject();
+      at->setProperty("mute", aux->isBypassed());
+      at->setProperty("level", (double)aux->getChannelLevel());
+      at->setProperty("foh", aux->isFohEnabled());
+      at->setProperty("iem", aux->isIemEnabled());
+
+      juce::Array<juce::var> auxChainNodes;
+      for (int pIdx = 0; pIdx < aux->getChainSize(); ++pIdx) {
+        auto plugin = aux->getPluginInstance(pIdx);
+        if (plugin)
+          auxChainNodes.add(getPluginVar(plugin));
+        else
+          auxChainNodes.add(juce::var());
+      }
+      at->setProperty("chain", auxChainNodes);
+      auxReturnNodes.add(juce::var(at));
+    }
+    rig->setProperty("auxReturns", auxReturnNodes);
+
     // Scenes (Presets)
     juce::Array<juce::var> sceneNodes;
     for (const auto &scene : scenes) {
@@ -1772,6 +1795,53 @@ public:
         s->clearAllCCMappings();
         s->clearAllCCPassthroughs();
       }
+    }
+
+    // Aux return strips: restore chains + strip state. Files saved before
+    // Oct 2026 have no "auxReturns" key — clear the chains so a rig load is
+    // a full replacement (matching how absent fohFx/iemFx clear the masters).
+    if (auto *auxArr = rig.getProperty("auxReturns", juce::var()).getArray()) {
+      for (int r = 0; r < (int)auxReturns.size() && r < auxArr->size(); ++r) {
+        auto *aux = auxReturns[r].get();
+        if (!aux)
+          continue;
+        auto av = auxArr->getReference(r);
+        if (!av.isObject())
+          continue;
+        aux->setBypass(av.getProperty("mute", false));
+        aux->setChannelLevel((float)av.getProperty("level", 0.8));
+        aux->setFohEnabled(av.getProperty("foh", true));
+        aux->setIemEnabled(av.getProperty("iem", true));
+
+        // Two-pass chain restore: keep live instances whose path matches
+        // (state-only update), replace the rest — same as channels.
+        std::set<int> pluginsToReuse;
+        if (auto *chainArr = av.getProperty("chain", juce::var()).getArray()) {
+          for (int p = 0; p < chainArr->size() && p < 3; ++p) {
+            auto pv = chainArr->getReference(p);
+            if (!pv.isObject())
+              continue;
+            juce::String newPath = pv.getProperty("path", "").toString();
+            juce::String curPath = aux->getPluginPath(p);
+            if (!curPath.isEmpty() &&
+                normalizePath(curPath) == normalizePath(newPath))
+              pluginsToReuse.insert(p);
+          }
+        }
+        aux->clearChainPreserve(pluginsToReuse);
+        if (auto *chainArr = av.getProperty("chain", juce::var()).getArray()) {
+          for (int p = 0; p < chainArr->size() && p < 3; ++p) {
+            auto pv = chainArr->getReference(p);
+            if (pv.isObject())
+              loadPluginFromVarSmart(100 + r, p, pv, true);
+          }
+        }
+        aux->revalidateCCMappings();
+      }
+    } else {
+      for (auto &aux : auxReturns)
+        if (aux)
+          aux->clearChain();
     }
 
     // Scenes (Presets)
@@ -2502,7 +2572,14 @@ public:
     juce::String currentPath;
     juce::AudioPluginInstance *currentPlugin = nullptr;
 
-    if (slotIdx >= 0) {
+    if (slotIdx >= 100) {
+      int r = slotIdx - 100;
+      if (r < (int)auxReturns.size()) {
+        currentPlugin = auxReturns[r]->getPluginInstance(chainIdx);
+        if (currentPlugin)
+          currentPath = auxReturns[r]->getPluginPath(chainIdx);
+      }
+    } else if (slotIdx >= 0) {
       currentPlugin = slots[slotIdx]->getPluginInstance(chainIdx);
       if (currentPlugin)
         currentPath = slots[slotIdx]->getPluginPath(chainIdx);
@@ -2623,7 +2700,11 @@ public:
       }
     }
 
-    if (slotIdx >= 0) {
+    if (slotIdx >= 100) {
+      int r = slotIdx - 100;
+      if (r < (int)auxReturns.size())
+        auxReturns[r]->setPluginInChain(chainIdx, std::move(instance));
+    } else if (slotIdx >= 0) {
       slots[slotIdx]->setPluginInChain(chainIdx, std::move(instance));
     } else {
       auto &chain = isFohOrChannel ? fohPluginChain : iemPluginChain;
@@ -3311,6 +3392,7 @@ public:
 
   struct PluginPathSnapshot {
     std::vector<juce::StringArray> slotChains; // [slotIdx] -> normalized paths (padded)
+    std::vector<juce::StringArray> auxChains;  // [auxIdx] -> normalized paths (padded)
     juce::StringArray fohChain;                // normalized master paths (padded)
     juce::StringArray iemChain;
   };
@@ -3325,6 +3407,13 @@ public:
         s.slotChains[i].add(normalizePath(slots[i]->getPluginPath(p)));
       while (s.slotChains[i].size() < 3)
         s.slotChains[i].add("");
+    }
+    s.auxChains.resize(auxReturns.size());
+    for (size_t i = 0; i < auxReturns.size(); ++i) {
+      for (int p = 0; p < auxReturns[i]->getChainSize(); ++p)
+        s.auxChains[i].add(normalizePath(auxReturns[i]->getPluginPath(p)));
+      while (s.auxChains[i].size() < 3)
+        s.auxChains[i].add("");
     }
     auto pad = [this](const std::vector<std::unique_ptr<juce::AudioPluginInstance>> &chain,
                       juce::StringArray &out, bool isFoh) {
@@ -3425,6 +3514,8 @@ public:
 
   // Staging cache: pre-built plugin instances keyed by rack location.
   static juce::String stagingKeyFor(int slotIdx, int chainIdx, bool isFoh) {
+    if (slotIdx >= 100)
+      return "A:" + juce::String(slotIdx - 100) + ":" + juce::String(chainIdx);
     if (slotIdx >= 0)
       return "S:" + juce::String(slotIdx) + ":" + juce::String(chainIdx);
     return isFoh ? ("F:" + juce::String(chainIdx))

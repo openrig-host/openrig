@@ -184,6 +184,31 @@ public:
             }
         }
 
+        // Aux return strips (slotIdx >= 100 convention)
+        if (auto *auxArr = rig.getProperty("auxReturns", juce::var()).getArray()) {
+            for (int a = 0; a < auxArr->size(); ++a) {
+                auto av = auxArr->getReference(a);
+                if (auto *chain = av.getProperty("chain", juce::var()).getArray()) {
+                    for (int p = 0; p < (int)chain->size() && p < 3; ++p) {
+                        auto pv = chain->getReference(p);
+                        if (!pv.isObject())
+                            continue;
+                        BuildEntry e;
+                        e.pv = pv;
+                        e.key = FanfareEngine::stagingKeyFor(100 + a, p, true);
+                        e.slotIdx = 100 + a;
+                        e.chainIdx = p;
+                        e.label = "Aux " + juce::String(a + 1) +
+                                  " chain " + juce::String(p + 1);
+                        e.name = entryName(pv);
+                        e.path = engine.normalizePath(
+                            pv.getProperty("path", "").toString());
+                        entries.push_back(std::move(e));
+                    }
+                }
+            }
+        }
+
         auto collectMasterFx = [&](const char *prop, bool isFoh,
                                    const juce::StringArray &masterPaths) {
             if (auto *fx = rig.getProperty(prop, juce::var()).getArray()) {
@@ -250,8 +275,9 @@ public:
                 if (onProgress)
                     onProgress("Loading " + e.name + "...");
                 if (e.slotIdx >= 0)
-                    buildOne(engine, e.pv, e.key, snap.slotChains, e.slotIdx,
-                             e.chainIdx, e.label, *res, isPreload);
+                    buildOne(engine, e.pv, e.key, snap.slotChains,
+                             snap.auxChains, e.slotIdx, e.chainIdx, e.label,
+                             *res, isPreload);
                 else
                     buildMaster(engine, e.pv, e.isFoh, e.masterIdx,
                                 e.isFoh ? snap.fohChain : snap.iemChain,
@@ -303,6 +329,7 @@ private:
     static bool buildOne(FanfareEngine &engine, const juce::var &pv,
                          const juce::String &key,
                          const std::vector<juce::StringArray> &slotPaths,
+                         const std::vector<juce::StringArray> &auxPaths,
                          int slotIdx, int chainIdx, const juce::String &label,
                          Result &r, bool isPreload = false) {
         if (isPreload ? engine.hasPreloadedPlugin(key) : engine.stagingHasKey(key)) {
@@ -315,8 +342,13 @@ private:
             return true; // empty slot, nothing to build
 
         juce::String curPath;
-        if (slotIdx < (int)slotPaths.size() && chainIdx < slotPaths[slotIdx].size())
+        if (slotIdx >= 100) {
+            int auxIdx = slotIdx - 100;
+            if (auxIdx < (int)auxPaths.size() && chainIdx < auxPaths[auxIdx].size())
+                curPath = auxPaths[auxIdx][chainIdx];
+        } else if (slotIdx < (int)slotPaths.size() && chainIdx < slotPaths[slotIdx].size()) {
             curPath = slotPaths[slotIdx][chainIdx];
+        }
 
         logToFile("TRACE: buildOne " + label + " (Key: " + key + "). curPath: " + curPath + ", newPath: " + newPath);
 
