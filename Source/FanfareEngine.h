@@ -2732,6 +2732,16 @@ public:
       return;
     }
 
+    // HALion 7 / HALion Sonic: forcing stereo + disabling aux output buses
+    // AVs the engine on the first processBlock (Aug 31 log: topology
+    // "SUCCESS" then SEH fault; HALion only ever worked here wrapped inside
+    // Komplete Kontrol, whose host negotiates buses natively). Same
+    // multi-bus-engine treatment as Omnisphere — leave its buses alone.
+    if (processor->getName().containsIgnoreCase("HALion")) {
+      logToFile("Skipping strict layout enforcement for HALion");
+      return;
+    }
+
     // 1. Get current layout to know how many buses exist
     auto layout = processor->getBusesLayout();
 
