@@ -376,10 +376,13 @@ private:
         // instances work. Restores are sub-second when they work.
         // Replika XT (Arturia): instantiation hangs off-thread in bulk loads
         // (Oct 7 — stalled the whole rig build on its first aux-return save).
+        // HALion 7 (Steinberg): off-thread instantiation is racy — hung once,
+        // built once (Oct 8) — and its worker AV'd when abandoned.
         bool requiresMessageThread =
             newPath.containsIgnoreCase("Super 8") ||
             newPath.containsIgnoreCase("Kontakt") ||
-            newPath.containsIgnoreCase("Replika");
+            newPath.containsIgnoreCase("Replika") ||
+            newPath.containsIgnoreCase("HALion");
 
         std::unique_ptr<juce::AudioPluginInstance> inst;
         juce::String err;
@@ -543,10 +546,12 @@ private:
         // Same rule as buildOne: Super 8 needs a message-thread build, and
         // Kontakt state restores deadlock off-thread on the 2nd+ instance.
         // Replika XT instantiation hangs off-thread in bulk loads (Oct 7).
+        // HALion 7 off-thread instantiation is racy (Oct 8).
         bool requiresMessageThread =
             newPath.containsIgnoreCase("Super 8") ||
             newPath.containsIgnoreCase("Kontakt") ||
-            newPath.containsIgnoreCase("Replika");
+            newPath.containsIgnoreCase("Replika") ||
+            newPath.containsIgnoreCase("HALion");
 
         std::unique_ptr<juce::AudioPluginInstance> inst;
         juce::String err;

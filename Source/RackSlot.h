@@ -264,7 +264,13 @@ public:
           try {
             bool isInstrument = (i < 3) ? chainIsInstrument[i].load() : plugin->getPluginDescription().isInstrument;
             if (isInstrument) {
-              int numCh = slotBuffer.getNumChannels();
+              // VST3 spec: the host must supply valid buffers for every
+              // ACTIVE output bus. Multi-output instruments (HALion) keep
+              // aux buses active, so process them into a scratch buffer as
+              // wide as the plugin asked for; only the stereo pair is summed
+              // into the strip below.
+              int numCh = juce::jmax(slotBuffer.getNumChannels(),
+                                     plugin->getTotalNumOutputChannels());
               int numSamp = slotBuffer.getNumSamples();
               if (scratchBuffer.getNumChannels() < numCh || scratchBuffer.getNumSamples() < numSamp)
                 scratchBuffer.setSize(numCh, numSamp, false, false, true);
