@@ -306,9 +306,10 @@ public:
                   plugin->processBlock(scratchBuffer, filteredMidiScratch);
                 }, "processBlock (" + plugin->getName() + ")");
 
-                // One-shot MIDI flow trace: proves notes are reaching this
-                // plugin's process call (or shows the filter ate them).
-                if (!midiTraceLogged.exchange(true)) {
+                // One-shot MIDI flow trace: fires on the first block that
+                // actually carries events, proving notes reach this plugin.
+                if (!midiTraceLogged.exchange(true) &&
+                    filteredMidiScratch.getNumEvents() > 0) {
                   logToFile("TRACE: MIDI -> slot '" + slotName + "' chain " +
                             juce::String(i) + " (" + plugin->getName() +
                             "): " +

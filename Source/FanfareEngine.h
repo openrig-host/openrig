@@ -2732,14 +2732,29 @@ public:
       return;
     }
 
-    // HALion 7 / HALion Sonic: forcing stereo + disabling aux output buses
-    // AVs the engine on the first processBlock (Aug 31 log: topology
-    // "SUCCESS" then SEH fault; HALion only ever worked here wrapped inside
-    // Komplete Kontrol, whose host negotiates buses natively). Same
-    // multi-bus-engine treatment as Omnisphere — leave its buses alone.
+    // HALion 7 / HALion Sonic: its main OUTPUT bus ships INACTIVE in JUCE's
+    // view (desc reports outCh=0), which makes the wrapper build process
+    // calls with no output buffers — no sound, and an AV on the first block
+    // (Oct 8). Negotiate: activate main stereo out, disable aux outs — but
+    // NEVER on a background thread (the Aug 31 crash was exactly that).
+    // HALion only builds on the message thread now (requiresMessageThread),
+    // so by the time we get here it's safe to negotiate.
     if (processor->getName().containsIgnoreCase("HALion")) {
-      logToFile("Skipping strict layout enforcement for HALion");
-      return;
+      auto layout = processor->getBusesLayout();
+      if (layout.outputBuses.size() > 0)
+        layout.outputBuses.getReference(0) = juce::AudioChannelSet::stereo();
+      for (int i = 1; i < layout.outputBuses.size(); ++i)
+        layout.outputBuses.getReference(i) = juce::AudioChannelSet::disabled();
+      if (layout.inputBuses.size() > 0)
+        layout.inputBuses.getReference(0) = juce::AudioChannelSet::stereo();
+      for (int i = 1; i < layout.inputBuses.size(); ++i)
+        layout.inputBuses.getReference(i) = juce::AudioChannelSet::disabled();
+      bool ok = processor->setBusesLayout(layout);
+      logToFile("HALion layout negotiation: " +
+                juce::String(ok ? "ACCEPTED" : "REFUSED") + " — outs now " +
+                juce::String(processor->getTotalNumOutputChannels()) + ", ins " +
+                juce::String(processor->getTotalNumInputChannels()));
+      return; // deliberately no setPlayConfigDetails for HALion
     }
 
     // 1. Get current layout to know how many buses exist
