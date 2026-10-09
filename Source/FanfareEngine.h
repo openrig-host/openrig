@@ -3278,6 +3278,48 @@ public:
 
     juce::PluginDescription desc = *descriptions[0];
     logToFile("Found: " + desc.name);
+    logToFile("desc: " + desc.name + " isInstrument=" +
+              juce::String(desc.isInstrument ? 1 : 0) + " inCh=" +
+              juce::String(desc.numInputChannels) + " outCh=" +
+              juce::String(desc.numOutputChannels));
+
+    // Engines that hang or AV when instantiated on a background MTA thread
+    // (see RigBuilder's requiresMessageThread) build synchronously right here
+    // on the message thread — the UI pauses for the build, which is what
+    // those engines need to come up reliably at all.
+    bool needsMessageThread =
+        pluginPath.containsIgnoreCase("Super 8") ||
+        pluginPath.containsIgnoreCase("Kontakt") ||
+        pluginPath.containsIgnoreCase("Replika") ||
+        pluginPath.containsIgnoreCase("HALion");
+    if (needsMessageThread) {
+      logToFile("Building " + desc.name + " on the message thread (interactive)...");
+      juce::String mtErr;
+      size_t ramBefore = FanfareLog::getMemoryStats().workingSetBytes;
+      auto instance = std::unique_ptr<juce::AudioPluginInstance>(
+          getFormatManager().createPluginInstance(desc, currentSampleRate,
+                                                  currentBlockSize, mtErr));
+      if (instance) {
+        configureStereoLayout(instance.get());
+        instance->prepareToPlay(currentSampleRate, currentBlockSize);
+        size_t ramAfter = FanfareLog::getMemoryStats().workingSetBytes;
+        if (ramAfter > ramBefore)
+          slotVec[realIdx]->setEstimatedRamBytes(ramAfter - ramBefore);
+        {
+          juce::ScopedLock sl(lock);
+          slotVec[realIdx]->clearChainSlotMidiOut(chainIndex);
+          slotVec[realIdx]->setPluginInChain(chainIndex, std::move(instance));
+          if (chainIndex == 0)
+            slotVec[realIdx]->setName(slotVec[realIdx]->getPluginName(0));
+        }
+        logToFile("Plugin loaded successfully (message thread)!");
+        callback(true, "");
+      } else {
+        logToFile("Load failed (message thread): " + mtErr);
+        callback(false, mtErr);
+      }
+      return;
+    }
 
     // Build on an MTA background thread with a bounded wait (see
     // buildInstanceOffThread): message-thread instantiation hangs for engines

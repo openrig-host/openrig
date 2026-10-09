@@ -456,16 +456,35 @@ inline LONG WINAPI fanfareUnhandledExceptionFilter(PEXCEPTION_POINTERS ep) {
         wsprintfW(dmpPath, L"%s\\WorkerThreadFault_%04d%02d%02d_%02d%02d%02d.dmp", crashDir, st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
         writeCrashDumpHeapFree(ep, dmpPath);
 
-        // Also write a minimal text diagnostic report for the worker thread fault
+        // Also write a text diagnostic report for the worker thread fault,
+        // including the faulting module so we know whose code it was.
         wchar_t txtPath[MAX_PATH] = {0};
         wsprintfW(txtPath, L"%s\\WorkerThreadFault_%04d%02d%02d_%02d%02d%02d.txt", crashDir, st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
         HANDLE txtFile = CreateFileW(txtPath, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
         if (txtFile != INVALID_HANDLE_VALUE) {
           char buf[512];
-          int len = wsprintfA(buf, "Worker Thread Fault Intercepted\r\nTime: %04d-%02d-%02d %02d:%02d:%02d\r\nThread ID: %u\r\nException Code: 0x%08X (%s)\r\nAction: Terminated faulting background thread to protect host stability.\r\n",
+          int len = wsprintfA(buf, "Worker Thread Fault Intercepted\r\nTime: %04d-%02d-%02d %02d:%02d:%02d\r\nThread ID: %u\r\nException Code: 0x%08X (%s)\r\n",
                               st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond, currentTid, code, getExceptionCodeDescription(code));
           DWORD written = 0;
           WriteFile(txtFile, buf, (DWORD)len, &written, nullptr);
+          if (ep != nullptr && ep->ExceptionRecord != nullptr) {
+            void* addr = ep->ExceptionRecord->ExceptionAddress;
+            HMODULE hMod = nullptr;
+            if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                                   (LPCWSTR)addr, &hMod) && hMod != nullptr) {
+              wchar_t modPath[MAX_PATH] = {0};
+              GetModuleFileNameW(hMod, modPath, MAX_PATH);
+              char asciiMod[MAX_PATH] = {0};
+              WideCharToMultiByte(CP_UTF8, 0, modPath, -1, asciiMod, MAX_PATH, nullptr, nullptr);
+              intptr_t modOffset = (intptr_t)addr - (intptr_t)hMod;
+              char modBuf[1024];
+              int mlen = wsprintfA(modBuf, "Faulting Module: %s (+0x%IX)\r\n", asciiMod, modOffset);
+              WriteFile(txtFile, modBuf, (DWORD)mlen, &written, nullptr);
+            }
+          }
+          char tailBuf[160];
+          int tlen = wsprintfA(tailBuf, "Action: Terminated faulting background thread to protect host stability.\r\n");
+          WriteFile(txtFile, tailBuf, (DWORD)tlen, &written, nullptr);
           CloseHandle(txtFile);
         }
 

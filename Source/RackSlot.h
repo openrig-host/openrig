@@ -306,6 +306,18 @@ public:
                   plugin->processBlock(scratchBuffer, filteredMidiScratch);
                 }, "processBlock (" + plugin->getName() + ")");
 
+                // One-shot MIDI flow trace: proves notes are reaching this
+                // plugin's process call (or shows the filter ate them).
+                if (!midiTraceLogged.exchange(true)) {
+                  logToFile("TRACE: MIDI -> slot '" + slotName + "' chain " +
+                            juce::String(i) + " (" + plugin->getName() +
+                            "): " +
+                            juce::String(filteredMidiScratch.getNumEvents()) +
+                            " event(s) this block, noteWindow " +
+                            juce::String(low) + "-" + juce::String(high) +
+                            ", inst=" +
+                            juce::String(chainIsInstrument[i].load() ? 1 : 0));
+                }
                 scratchBuffer.applyGain(instGain);
 
                 // Swap drain: fade the disabled instrument to silence so a
@@ -667,6 +679,7 @@ public:
     if (chainIndex < 0 || chainIndex >= 3)
       return;
 
+    midiTraceLogged.store(false); // re-arm the one-shot MIDI trace
     invalidateCachedCCParams(chainIndex);
 
     bool isInst = newPlugin ? newPlugin->getPluginDescription().isInstrument : false;
@@ -1208,6 +1221,7 @@ private:
   std::atomic<bool> fohEnabled{true};
   std::atomic<bool> iemEnabled{true};
   std::atomic<bool> bypassed{false};
+  std::atomic<bool> midiTraceLogged{false}; // one-shot MIDI flow trace
   std::atomic<bool> fadersLinked{true}; // Faders move together by default
 
   std::atomic<int> fohCC{-1};   // CC for FOH level
