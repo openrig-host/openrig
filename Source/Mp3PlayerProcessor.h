@@ -12,6 +12,43 @@
 #include <atomic>
 #include <cmath>
 
+// Serves pre-decoded PCM straight from RAM. The audio callback does a pure
+// memcpy per block — no codec, no disk, no cache misses, no decode spikes at
+// tight buffer sizes (tracks are decoded once at load; RAM is abundant).
+class InMemAudioReader : public juce::AudioFormatReader {
+public:
+    explicit InMemAudioReader(juce::AudioBuffer<float>* src, double sr)
+        : juce::AudioFormatReader(nullptr, "InMemPCM"), source(src) {
+        sampleRate = sr > 0.0 ? sr : 44100.0;
+        numChannels = (unsigned int)juce::jmax(1, src->getNumChannels());
+        bitsPerSample = 32;
+        lengthInSamples = (juce::int64)src->getNumSamples();
+        usesFloatingPointData = true;
+    }
+
+    bool readSamples(int* const* destSamples, int numDestChannels, int startOffsetInDest,
+                     juce::int64 startSampleInFile, int numSamplesToRead) override {
+        if (source == nullptr)
+            return false;
+        const juce::int64 total = source->getNumSamples();
+        const int srcChans = source->getNumChannels();
+        for (int ch = 0; ch < numDestChannels; ++ch) {
+            if (destSamples[ch] == nullptr)
+                continue;
+            float* dst = reinterpret_cast<float*>(destSamples[ch]) + startOffsetInDest;
+            const float* srcData = source->getReadPointer(juce::jmin(ch, srcChans - 1));
+            for (int i = 0; i < numSamplesToRead; ++i) {
+                juce::int64 pos = startSampleInFile + i;
+                dst[i] = (pos >= 0 && pos < total) ? srcData[(int)pos] : 0.0f;
+            }
+        }
+        return true;
+    }
+
+private:
+    juce::AudioBuffer<float>* source;
+};
+
 class Mp3PlayerProcessor {
 public:
     enum class LoopMode { Off, RepeatTrack, RepeatAll };
@@ -87,6 +124,8 @@ public:
         std::unique_ptr<juce::AudioFormatReaderSource> rawSource;
         juce::AudioTransportSource transportSource;
         juce::MemoryBlock trackMemory;
+        juce::AudioBuffer<float> decodedPCM; // full track as PCM (decoded at load)
+        double decodedSR = 44100.0;
         TrackInfo trackInfo;
 
         TimeStretcher timeStretcher;
@@ -124,6 +163,8 @@ public:
             transportSource.stop();
             transportSource.setSource(nullptr);
             rawSource.reset();
+            decodedPCM.setSize(0, 0, false, false, true);
+            decodedSR = 44100.0;
             trackMemory.setSize(0);
             trackInfo = TrackInfo();
         }
@@ -498,10 +539,41 @@ public:
             if (reader != nullptr) {
                 double srcRate = (reader->sampleRate > 0.0) ? reader->sampleRate : currentSampleRate;
                 targetDeck.sourceSampleRate = srcRate;
-                targetDeck.rawSource = std::make_unique<juce::AudioFormatReaderSource>(reader.release(), true);
-                
-                // AudioTransportSource provides high-quality polyphase anti-aliased resampling + thread buffering
-                targetDeck.transportSource.setSource(targetDeck.rawSource.get(), 65536, &bufferThread, srcRate, 2);
+
+                // Decode the whole track to RAM before wiring the transport:
+                // the file is already fully in trackMemory so decode runs at
+                // ~50-100x realtime, and afterwards the audio thread serves
+                // pure PCM with no codec in its path. Cap at ~20 minutes
+                // (~420 MB PCM); longer files fall back to streaming.
+                juce::int64 len = reader->lengthInSamples;
+                bool decoded = false;
+                if (len > 0 && len <= 52800000) {
+                    targetDeck.decodedPCM.setSize(
+                        juce::jmax(2, (int)reader->numChannels), (int)len,
+                        false, false, true);
+                    if (reader->read(&targetDeck.decodedPCM, 0, (int)len, 0, true, true)) {
+                        targetDeck.decodedSR = srcRate;
+                        decoded = true;
+                        logToFile("Mp3 deck: decoded " + juce::String(len) +
+                                  " samples to RAM (" +
+                                  juce::String((int)(targetDeck.decodedPCM.getNumSamples() * targetDeck.decodedPCM.getNumChannels() * 4 / 1024 / 1024)) +
+                                  " MB) — audio thread is codec-free.");
+                    } else {
+                        targetDeck.decodedPCM.setSize(0, 0, false, false, true);
+                    }
+                }
+
+                if (decoded) {
+                    auto memReader = std::make_unique<InMemAudioReader>(&targetDeck.decodedPCM, srcRate);
+                    targetDeck.rawSource = std::make_unique<juce::AudioFormatReaderSource>(memReader.release(), true);
+                    // Pure-RAM source: no read-ahead thread, no BufferingAudioReader,
+                    // no cache misses — reads are memcpys.
+                    targetDeck.transportSource.setSource(targetDeck.rawSource.get(), 0, nullptr, srcRate, 2);
+                } else {
+                    // Fallback for oversized tracks: legacy streaming path
+                    targetDeck.rawSource = std::make_unique<juce::AudioFormatReaderSource>(reader.release(), true);
+                    targetDeck.transportSource.setSource(targetDeck.rawSource.get(), 65536, &bufferThread, srcRate, 2);
+                }
                 targetDeck.transportSource.prepareToPlay(4096, currentSampleRate);
 
                 juce::SpinLock::ScopedLockType al(audioLock);
