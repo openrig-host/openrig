@@ -119,11 +119,11 @@ MainComponent::MainComponent() {
   // Windows kept trimming sample data, making loads take minutes. 8 GB covers
   // the biggest setups; the OS still trims beyond it if RAM is truly short.
   SIZE_T wsMin = 512ULL * 1024 * 1024;
-  SIZE_T wsMax = 8192ULL * 1024 * 1024;
+  SIZE_T wsMax = 16384ULL * 1024 * 1024;
   if (!SetProcessWorkingSetSize(GetCurrentProcess(), wsMin, wsMax)) {
-    LOG_WARN("Failed to lock process working set (512 MB - 8 GB)");
+    LOG_WARN("Failed to lock process working set (512 MB - 16 GB)");
   } else {
-    LOG_INFO("Process working set locked: min 512 MB, max 8 GB");
+    LOG_INFO("Process working set locked: min 512 MB, max 16 GB");
   }
   configureWindowsPerformanceMode();
 #endif
