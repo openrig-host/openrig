@@ -232,6 +232,7 @@ private:
   juce::Image logoImage;
   juce::ImageComponent lastWaltzLogoComponent;
   juce::Image lastWaltzLogoImage;
+  juce::TextButton mp3DeckBtn{"MP3"};
   juce::String auxLogoUserPath; // empty = embedded Last Waltz art
   juce::Label clockLabel{"clockLabel", ""};
   juce::Label preloadStatusLabel{"preloadStatusLabel", ""};
