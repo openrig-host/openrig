@@ -428,14 +428,14 @@ private:
                 bctx->done.store(true);
             });
 
-            // Wait up to 10 seconds for the background VST build. If it
+            // Wait up to 60 seconds for the background VST build (cold-start builds legitimately take 10-30s). If it
             // stalls (engines whose instantiation needs the host's message
             // thread — UVI Sep 7, Replika XT Oct 7 — hang here forever),
             // abandon the worker and fall through to the message-thread
             // retry below, which is the proven cure. Without this the whole
             // rig load blocks on one plugin until the 600s timeout.
             int waitCount = 0;
-            while (!bctx->done.load() && waitCount < 100) {
+            while (!bctx->done.load() && waitCount < 600) {
                 juce::Thread::sleep(100);
                 waitCount++;
             }
@@ -444,10 +444,10 @@ private:
             (void)timedOut;
             if (!bctx->done.load()) {
                 bctx->abandoned.store(true);
-                logToFile("TRACE: buildOne " + label + " off-thread build stalled (10s) — abandoning worker, retrying on message thread...");
+                logToFile("TRACE: buildOne " + label + " off-thread build stalled (60s) — abandoning worker, retrying on message thread...");
                 t.detach(); // the stuck worker destroys its instance when/if it returns
                 ok = false;
-                err = "off-thread build stalled (10s)";
+                err = "off-thread build stalled (60s)";
             } else {
                 t.join();
                 inst = std::move(bctx->inst);
@@ -595,19 +595,19 @@ private:
                 bctx->done.store(true);
             });
 
-            // Wait up to 10 seconds (see buildOne: stall → message-thread retry)
+            // Wait up to 60 seconds (see buildOne: stall → message-thread retry)
             int waitCount = 0;
-            while (!bctx->done.load() && waitCount < 100) {
+            while (!bctx->done.load() && waitCount < 600) {
                 juce::Thread::sleep(100);
                 waitCount++;
             }
 
             if (!bctx->done.load()) {
                 bctx->abandoned.store(true);
-                logToFile("TRACE: buildMaster " + label + " off-thread build stalled (10s) — abandoning worker, retrying on message thread...");
+                logToFile("TRACE: buildMaster " + label + " off-thread build stalled (60s) — abandoning worker, retrying on message thread...");
                 t.detach(); // Allow thread to remain stuck in background
                 ok = false;
-                err = "off-thread build stalled (10s)";
+                err = "off-thread build stalled (60s)";
             } else {
                 t.join();
                 inst = std::move(bctx->inst);
