@@ -541,6 +541,16 @@ void MainComponent::setupSlotComponents() {
       samplerOverlay->centreWithSize(720, 600);
     };
 
+    // MP3 Player Dialog
+    comp->onShowMp3Player = [this, slot] {
+      mp3Overlay.reset(new Mp3PlayerComponent(slot->getMp3Player(), [this] {
+        mp3Overlay.reset();
+        resized();
+      }));
+      addAndMakeVisible(mp3Overlay.get());
+      mp3Overlay->centreWithSize(780, 580);
+    };
+
     // Note Range Dialog (CallOutBox)
     comp->onShowNoteRangeDialog = [this, slot, comp] {
       auto *nrComp = new NoteRangeComponent(*slot);
@@ -854,25 +864,6 @@ void MainComponent::setupHeaderButtons() {
                             1.0f, juce::Colours::white.withAlpha(0.5f));
   settingsGearBtn.onClick = [this] { showConfigOverlay(); };
   settingsGearBtn.setTooltip("Settings");
-
-  // Break-Music DJ deck: global utility docked at the far right of the rack
-  // (moved out of slot 11 — the deck is app-global, not a strip feature).
-  // It drives slot 11's Mp3PlayerProcessor, where deck playlists persist.
-  addAndMakeVisible(mp3DeckBtn);
-  mp3DeckBtn.setButtonText("MP3");
-  mp3DeckBtn.setColour(juce::TextButton::buttonColourId,
-                       ThemeManager::get(Theme::Role::accent).darker(0.3f));
-  mp3DeckBtn.setTooltip("Break-Music DJ Player: dual decks, playlist, YouTube grab.");
-  mp3DeckBtn.onClick = [this] {
-    if (auto *deckSlot = engine.getSlot(10)) {
-      mp3Overlay.reset(new Mp3PlayerComponent(deckSlot->getMp3Player(), [this] {
-        mp3Overlay.reset();
-        resized();
-      }));
-      addAndMakeVisible(mp3Overlay.get());
-      mp3Overlay->centreWithSize(780, 580);
-    }
-  };
 
   // The individual settings buttons are now surfaced through the gear overlay.
   // Their handlers are retained so the overlay can invoke them.
@@ -2129,17 +2120,6 @@ void MainComponent::resized() {
                                       !lwLogoArea.isEmpty());
     if (lastWaltzLogoComponent.isVisible())
       lastWaltzLogoComponent.setBounds(lwLogoArea.reduced(2));
-
-    // MP3 deck button: slim full-height pill docked past the aux returns
-    if (r.getWidth() > 30) {
-      auto mp3Col = r.removeFromLeft(juce::jmin(34, r.getWidth()));
-      mp3DeckBtn.setVisible(true);
-      mp3DeckBtn.setBounds(mp3Col.reduced(2));
-    } else {
-      mp3DeckBtn.setVisible(false);
-    }
-  } else {
-    mp3DeckBtn.setVisible(false);
   }
 
   if (channelStripOverlay)
