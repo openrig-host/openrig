@@ -1072,7 +1072,8 @@ void RackSlotComponent::resized() {
   // MP3 deck button on every full strip: each strip has its own deck
   // processor (idle decks cost nothing), so any strip can volunteer as the
   // break-music strip — fader, dynamics, aux sends and chain all apply.
-  mp3Button.setVisible(!isReturn && !isMonitorIn);
+  // (Bisect switch: hidden entirely while kMp3DecksEnabled is false.)
+  mp3Button.setVisible(kMp3DecksEnabled && !isReturn && !isMonitorIn);
   mp3Button.setBounds(2, centerY + 32, sideWidth, 24);
 
   saveStripBtn.setBounds(rightX, centerY - 24, sideWidth, 24);

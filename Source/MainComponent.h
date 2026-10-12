@@ -210,13 +210,24 @@ private:
   juce::Label latencyLabel{"latencyLabel", "LAT: --"};
   juce::Label xrunsLabel{"xrunsLabel", "XRUNS: 0"};
   std::atomic<int> audioUnderrunCount{0};
+  std::atomic<int> engineStallCount{0}; // worker-stall silence blocks (engine-side pathway)
   std::atomic<juce::int64> lastAudioCallbackTicks{0};
   std::atomic<double> lastGlitchStallMs{0.0};
   std::atomic<double> pendingGlitchActualMs{0.0};
   std::atomic<double> pendingGlitchExpectedMs{0.0};
+  // Duration of the previous audio callback (entry -> processAudio returned).
+  // On a glitch this splits "the driver called us late" (small duration) from
+  // "our own callback blocked" (duration ≈ the gap).
+  std::atomic<double> lastCallbackDurationMs{0.0};
+  std::atomic<double> pendingGlitchDurationMs{0.0};
   std::atomic<bool> hasPendingGlitchLog{false};
-  void logAudioGlitch(double actualMs, double expectedMs);
+  void logAudioGlitch(double actualMs, double expectedMs, double cbDurationMs);
   void logAudioNanSpike(int channel, int sampleIndex, float badVal);
+  // Glitch log batching: entries accumulate in memory and flush to disk at
+  // most once per second — storm bursts no longer open the file per entry.
+  juce::String pendingGlitchLogText;
+  juce::CriticalSection glitchLogLock;
+  void flushGlitchLog();
 
   juce::Label setupNameLabel{"setupNameLabel", "No rig loaded"};
   juce::File currentRigFile;
@@ -241,7 +252,14 @@ private:
 
   juce::MidiMessageCollector midiCollector;
 
-  bool mmcssRegistered = false; // Windows MMCSS audio thread priority flag
+  // Windows MMCSS audio thread priority: attempted once per audio thread
+  // (device restarts create new threads — MMCSS may succeed on a retry even
+  // if it failed for an earlier thread). Tracks the thread id, not a bool.
+  DWORD mmcssThreadId = 0;
+  // CPU-0 shelter mask (constructor excludes the interrupt-dump core). Some
+  // ASIO drivers re-expand the process affinity during init, so every new
+  // audio thread re-applies it — see the audio callback.
+  DWORD_PTR shelteredAffinityMask = 0;
 #ifdef _WIN32
   HMODULE avrtModule = nullptr;
   typedef HANDLE(WINAPI * PAvSetMmThreadCharacteristicsA)(LPCSTR, LPDWORD);

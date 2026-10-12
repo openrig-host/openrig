@@ -440,18 +440,21 @@ public:
       juce::ScopedNoDenormals noDenormals;
 
 #ifdef _WIN32
-      // Boost worker thread to Pro Audio priority
-      thread_local bool mmcssApplied = false;
-      if (!mmcssApplied) {
-        bool boosted = false;
-        if (engine.avSetMmThread != nullptr) {
-          DWORD taskIndex = 0;
-          if (engine.avSetMmThread(L"Pro Audio", &taskIndex))
-            boosted = true;
+      // Boost worker thread to Pro Audio priority (flag-gated for the
+      // Gen 3 bisect — MinHost runs no MMCSS on its workers and is clean).
+      if constexpr (FanfareConstants::kMmcssEnabled) {
+        thread_local bool mmcssApplied = false;
+        if (!mmcssApplied) {
+          bool boosted = false;
+          if (engine.avSetMmThread != nullptr) {
+            DWORD taskIndex = 0;
+            if (engine.avSetMmThread(L"Pro Audio", &taskIndex))
+              boosted = true;
+          }
+          if (!boosted)
+            SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_HIGHEST);
+          mmcssApplied = true;
         }
-        if (!boosted)
-          SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_HIGHEST);
-        mmcssApplied = true;
       }
 #endif
 
@@ -3306,7 +3309,13 @@ public:
         pluginPath.containsIgnoreCase("Super 8") ||
         pluginPath.containsIgnoreCase("Kontakt") ||
         pluginPath.containsIgnoreCase("Replika") ||
-        pluginPath.containsIgnoreCase("HALion");
+        pluginPath.containsIgnoreCase("HALion") ||
+        // Toontrack (EZkeys 2, Oct 10): builds "fine" off-thread but its
+        // engine reports "cannot initiate audio engine" — engine init probes
+        // COM audio endpoints, which fail on an unpumped MTA thread.
+        pluginPath.containsIgnoreCase("EZkeys") ||
+        pluginPath.containsIgnoreCase("EZdrummer") ||
+        pluginPath.containsIgnoreCase("EZbass");
     if (needsMessageThread) {
       logToFile("Building " + desc.name + " on the message thread (interactive)...");
       juce::String mtErr;

@@ -1,11 +1,59 @@
 #pragma once
 
+// Per-build bisect overrides (generated before each test build; optional).
+#if __has_include("FanfareBisectFlags.h")
+#include "FanfareBisectFlags.h"
+#endif
+
 // ==============================================================================
 // Fanfare Constants
 // Central location for all magic numbers and configuration values
 // ==============================================================================
 
 namespace FanfareConstants {
+
+// ===== BISECT FLAGS (Oct 12, T14 Gen 3 storm investigation) =====
+// Naked Fanfare (all off + MP3 off) runs clean where the fully-hardened
+// build stormed. Each mechanism is individually switchable so test builds
+// can isolate the guilty one. Build scripts override these via
+// FanfareBisectFlags.h (generated per build); defaults are all OFF.
+//
+// VERDICT (Oct 12, cold-tested): FANFARE_MMCSS was the storm trigger — and
+// the lesson is: MMCSS "Pro Audio" is a priority BAND reserved for THE one
+// render thread. Enrolling the engine's DSP worker threads into it made
+// workers equal to the ASIO callback, erasing the ordering that protects
+// audio; the callback then lost to its own workers during sample streaming.
+// In an ASIO host the driver registers its own callback thread anyway
+// (AvSetMmThreadCharacteristics returns 1552 = "already joined"). If MMCSS
+// is ever revisited: render thread only, AvRevert on teardown, workers stay
+// at normal priority — or better, don't: a host needs none of it.
+// Shipped defaults (v1.1.2): full hardening MINUS MMCSS — see the verdict
+// note above. These values ARE the release configuration; source builds
+// match the published binary.
+#ifndef FANFARE_PRIORITY_ELEVATION
+#define FANFARE_PRIORITY_ELEVATION 1
+#endif
+#ifndef FANFARE_WORKING_SET_LOCK
+#define FANFARE_WORKING_SET_LOCK 1
+#endif
+#ifndef FANFARE_CPU_SHELTER
+#define FANFARE_CPU_SHELTER 1
+#endif
+#ifndef FANFARE_MMCSS
+#define FANFARE_MMCSS 0
+#endif
+#ifndef FANFARE_EXEC_STATE_LOCK
+#define FANFARE_EXEC_STATE_LOCK 1
+#endif
+#ifndef FANFARE_POWER_SCHEME_MGMT
+#define FANFARE_POWER_SCHEME_MGMT 0
+#endif
+inline constexpr bool kPriorityElevationEnabled = FANFARE_PRIORITY_ELEVATION != 0;
+inline constexpr bool kWorkingSetLockEnabled = FANFARE_WORKING_SET_LOCK != 0;
+inline constexpr bool kCpuShelterEnabled = FANFARE_CPU_SHELTER != 0;
+inline constexpr bool kMmcssEnabled = FANFARE_MMCSS != 0;
+inline constexpr bool kExecStateLockEnabled = FANFARE_EXEC_STATE_LOCK != 0;
+inline constexpr bool kPowerSchemeMgmtEnabled = FANFARE_POWER_SCHEME_MGMT != 0;
 
 // --- Slot Configuration ---
 constexpr int kNumSlots = 24;

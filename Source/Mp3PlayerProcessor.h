@@ -12,6 +12,12 @@
 #include <atomic>
 #include <cmath>
 
+// ===== BISECT SWITCH (Oct 12): MP3 machinery disabled for the T14 Gen 3
+// storm investigation. The per-slot constructors were spinning up 2
+// high-priority threads + SQLite + bank-folder probing x25 instances at
+// every launch. Flip to true to restore everything.
+inline constexpr bool kMp3DecksEnabled = true;
+
 // Serves pre-decoded PCM straight from RAM. The audio callback does a pure
 // memcpy per block — no codec, no disk, no cache misses, no decode spikes at
 // tight buffer sizes (tracks are decoded once at load; RAM is abundant).
@@ -94,6 +100,7 @@ public:
     std::function<void()> onBanksChanged;
 
     Mp3PlayerProcessor() {
+        if (!kMp3DecksEnabled) return;
         formatManager.registerBasicFormats();
         formatManager.registerFormat(new juce::FlacAudioFormat(), true);
         formatManager.registerFormat(new juce::OggVorbisAudioFormat(), true);
@@ -206,6 +213,7 @@ public:
 
     // --- Audio Preparation & Processing ---
     void prepare(double sampleRate, int maxBlockSize = 8192) {
+        if (!kMp3DecksEnabled) return;
         currentSampleRate = sampleRate > 0.0 ? sampleRate : 44100.0;
         int allocSize = juce::jmax(maxBlockSize, 16384);
 
@@ -223,6 +231,7 @@ public:
     }
 
     void processBlock(juce::AudioBuffer<float>& outBuffer) {
+        if (!kMp3DecksEnabled) return;
         if (!playing.load() || isShuttingDown.load()) return;
 
         int numSamples = outBuffer.getNumSamples();
@@ -516,6 +525,7 @@ public:
     }
 
     bool loadTrackIntoDeck(int deckId, const juce::File& file, const TrackInfo& info) {
+        if (!kMp3DecksEnabled) return false;
         if (!file.existsAsFile()) return false;
 
         Deck& targetDeck = (deckId == 0) ? deckA : deckB;
@@ -845,6 +855,7 @@ public:
     }
 
     void addFile(const juce::File& file) {
+        if (!kMp3DecksEnabled) return;
         if (!file.existsAsFile()) return;
         setLastFolder(file);
         juce::String ext = file.getFileExtension().toLowerCase();

@@ -99,12 +99,37 @@ public:
 //==============================================================================
 MainComponent::MainComponent() {
 #ifdef _WIN32
+  // Per-mechanism bisect flags — see FanfareConstants.h. Each test build
+  // turns exactly one back on; the startup log line records the combo.
   avrtModule = LoadLibraryA("avrt.dll");
-  restoreWindowsPowerMode();
+  if constexpr (FanfareConstants::kPowerSchemeMgmtEnabled)
+    restoreWindowsPowerMode();
   if (avrtModule != nullptr) {
     avSetMmThreadFn = (PAvSetMmThreadCharacteristicsA)GetProcAddress(avrtModule, "AvSetMmThreadCharacteristicsA");
   }
 
+  if constexpr (FanfareConstants::kCpuShelterEnabled) {
+  // Shelter the process from CPU 0: ACPI/EC interrupts target core 0 by design
+  // (LatencyMon Oct 10: 145k DPCs on CPU0, single DPC up to 1.66ms), and when
+  // the ASIO callback thread lands there during a burst, that one core is
+  // buried while the other cores idle — 10-24ms audio gaps at ~5% global CPU.
+  // Excluding CPU0 from the process affinity costs nothing and keeps the audio
+  // thread (and every other thread) off the interrupt-dump core.
+  {
+    DWORD_PTR procMask = 0, sysMask = 0;
+    if (GetProcessAffinityMask(GetCurrentProcess(), &procMask, &sysMask) &&
+        procMask) {
+      DWORD_PTR sheltered = procMask & ~(DWORD_PTR)1;
+      if (sheltered &&
+          SetProcessAffinityMask(GetCurrentProcess(), sheltered)) {
+        shelteredAffinityMask = sheltered;
+        LOG_INFO("Process affinity sheltered from CPU 0 (interrupt-dump core)");
+      }
+    }
+  }
+  }
+
+  if constexpr (FanfareConstants::kPriorityElevationEnabled) {
   // Elevate process priority so Windows scheduler doesn't preempt audio
   // processing when other programs launch or perform heavy I/O
   if (!SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS)) {
@@ -112,7 +137,9 @@ MainComponent::MainComponent() {
   } else {
     LOG_INFO("Process elevated to HIGH_PRIORITY_CLASS");
   }
+  }
 
+  if constexpr (FanfareConstants::kWorkingSetLockEnabled) {
   // Lock a generous working set minimum so Windows cannot page out VST sample
   // libraries when other applications demand RAM. The 2 GB max we used before
   // Oct 2026 starved massive rigs (many Kontakt multis) during state restore —
@@ -125,7 +152,17 @@ MainComponent::MainComponent() {
   } else {
     LOG_INFO("Process working set locked: min 512 MB, max 16 GB");
   }
-  configureWindowsPerformanceMode();
+  }
+  if constexpr (FanfareConstants::kPowerSchemeMgmtEnabled)
+    configureWindowsPerformanceMode();
+
+  LOG_INFO(juce::String("Bisect build flags: mp3=") +
+           (kMp3DecksEnabled ? "1" : "0") +
+           " priority=" + (FanfareConstants::kPriorityElevationEnabled ? "1" : "0") +
+           " wslock=" + (FanfareConstants::kWorkingSetLockEnabled ? "1" : "0") +
+           " shelter=" + (FanfareConstants::kCpuShelterEnabled ? "1" : "0") +
+           " mmcss=" + (FanfareConstants::kMmcssEnabled ? "1" : "0") +
+           " execstate=" + (FanfareConstants::kExecStateLockEnabled ? "1" : "0"));
 #endif
   // Initialize MIDI collector with default rate
   midiCollector.reset(FanfareConstants::kDefaultSampleRate);
@@ -251,6 +288,7 @@ MainComponent::~MainComponent() {
     webServer->stopServer();
   removeKeyListener (this);
   stopTimer();
+  flushGlitchLog(); // land any batched glitch entries before we vanish
   if (transitioner)
     transitioner->stopTransition();
   activePluginWindows.clear();
@@ -283,7 +321,8 @@ MainComponent::~MainComponent() {
 #ifdef _WIN32
 void MainComponent::configureWindowsPerformanceMode() {
   // 1. Prevent system sleep and display turn-off while Fanfare is running
-  SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED);
+  if constexpr (FanfareConstants::kExecStateLockEnabled)
+    SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED);
   LOG_INFO("Windows system sleep & display sleep disabled for live audio performance");
 
   // 2. Check battery vs AC power status
@@ -1393,27 +1432,24 @@ void MainComponent::setupMasterSection() {
   }
 }
 
-void MainComponent::logAudioGlitch(double actualMs, double expectedMs) {
-  auto appData = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory).getChildFile("Fanfare");
-  if (!appData.exists()) appData.createDirectory();
-  auto logFile = appData.getChildFile("audio_underrun_log.txt");
-
+void MainComponent::logAudioGlitch(double actualMs, double expectedMs,
+                                   double cbDurationMs) {
   juce::String timeStr = juce::Time::getCurrentTime().formatted("%H:%M:%S.");
   timeStr += juce::String(juce::Time::getCurrentTime().getMilliseconds()).paddedLeft('0', 3);
 
   juce::String entry = "[" + timeStr + "] [AUDIO UNDERRUN GLITCH] Buffer stall: " +
                        juce::String(actualMs, 2) + "ms (expected " +
-                       juce::String(expectedMs, 2) + "ms) | CPU: " +
+                       juce::String(expectedMs, 2) + "ms) | callback took: " +
+                       juce::String(cbDurationMs, 2) + "ms | CPU: " +
                        cpuLabel.getText() + " | RAM: " + ramLabel.getText() + "\n";
 
-  logFile.appendText(entry);
+  // Batched: appends collect in memory and flush to disk at most once per
+  // second (glitchMonitorTimer). During a storm this replaces ~13 file
+  // opens/second with a single append — the message thread stays responsive.
+  pendingGlitchLogText += entry;
 }
 
 void MainComponent::logAudioNanSpike(int channel, int sampleIndex, float badVal) {
-  auto appData = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory).getChildFile("Fanfare");
-  if (!appData.exists()) appData.createDirectory();
-  auto logFile = appData.getChildFile("audio_underrun_log.txt");
-
   juce::String timeStr = juce::Time::getCurrentTime().formatted("%H:%M:%S.");
   timeStr += juce::String(juce::Time::getCurrentTime().getMilliseconds()).paddedLeft('0', 3);
 
@@ -1421,7 +1457,22 @@ void MainComponent::logAudioNanSpike(int channel, int sampleIndex, float badVal)
                        juce::String(channel) + " Sample " + juce::String(sampleIndex) +
                        " Value: " + juce::String(badVal) + "\n";
 
-  logFile.appendText(entry);
+  pendingGlitchLogText += entry;
+}
+
+void MainComponent::flushGlitchLog() {
+  if (pendingGlitchLogText.isEmpty())
+    return;
+  auto appData = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory).getChildFile("Fanfare");
+  if (!appData.exists()) appData.createDirectory();
+  auto logFile = appData.getChildFile("audio_underrun_log.txt");
+  juce::String batch;
+  {
+    juce::ScopedLock sl(glitchLogLock);
+    batch = pendingGlitchLogText;
+    pendingGlitchLogText.clear();
+  }
+  logFile.appendText(batch);
 }
 
 void MainComponent::audioDeviceIOCallbackWithContext(
@@ -1439,37 +1490,72 @@ void MainComponent::audioDeviceIOCallbackWithContext(
       lastGlitchStallMs.store(elapsedMs);
       pendingGlitchActualMs.store(elapsedMs);
       pendingGlitchExpectedMs.store(expectedMs);
+      pendingGlitchDurationMs.store(lastCallbackDurationMs.load());
       hasPendingGlitchLog.store(true);
     }
   }
 
-  // Boost audio thread to Pro Audio priority on first callback (Windows only)
+  // Per-thread hardening, flag-gated per mechanism (bisect — MinHost runs
+  // no MMCSS and no shelter, and is clean where Fanfare storms).
 #ifdef _WIN32
-  if (!mmcssRegistered) {
+  if constexpr (FanfareConstants::kCpuShelterEnabled) {
+    // Re-assert the CPU-0 shelter: ASIO driver init has been observed
+    // re-expanding the process affinity to all cores after our constructor
+    // set it (Oct 10: threads measured at 0xFFFFFFFF post-init). Re-apply
+    // once per audio thread and log what it had become.
+    if (shelteredAffinityMask != 0) {
+      DWORD_PTR procMask = 0, sysMask = 0;
+      if (GetProcessAffinityMask(GetCurrentProcess(), &procMask, &sysMask) &&
+          procMask != shelteredAffinityMask) {
+        LOG_WARN("Process affinity was re-expanded to 0x" +
+                 juce::String::toHexString((juce::int64)procMask) +
+                 " — re-sheltering from CPU 0");
+        SetProcessAffinityMask(GetCurrentProcess(), shelteredAffinityMask);
+      }
+    }
+  }
+  if constexpr (FanfareConstants::kMmcssEnabled) {
+  if (mmcssThreadId != ::GetCurrentThreadId()) {
     if (avSetMmThreadFn != nullptr) {
       DWORD taskIndex = 0;
       if (HANDLE h = avSetMmThreadFn("Pro Audio", &taskIndex)) {
-        mmcssRegistered = true;
+        mmcssThreadId = ::GetCurrentThreadId();
         LOG_INFO("Audio thread registered with MMCSS Pro Audio characteristics");
       } else {
-        // MMCSS unavailable â€” use HIGHEST (not TIME_CRITICAL, which can starve
-        // the OS when combined with the audio spin-wait barrier).
-        SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_HIGHEST);
-        mmcssRegistered = true;
-        LOG_WARN("MMCSS unavailable â€” audio thread set to THREAD_PRIORITY_HIGHEST");
+        // Log the reason — MMCSS refusals were previously invisible.
+        DWORD err = ::GetLastError();
+        if (err == 1552 /* ERROR_INVALID_THREAD_ID: "already joining a task" */) {
+          // Not a failure: ASIO drivers like Yamaha Steinberg USB join their
+          // callback thread to the MMCSS Pro Audio task before we run, so the
+          // thread already has Pro Audio priority. Don't touch it.
+          mmcssThreadId = ::GetCurrentThreadId();
+          LOG_INFO("Audio thread already MMCSS-registered by the audio driver — Pro Audio priority active");
+        } else {
+          // Fallback HIGHEST, not TIME_CRITICAL — TIME_CRITICAL can starve
+          // the OS when combined with the audio spin-wait barrier.
+          SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_HIGHEST);
+          mmcssThreadId = ::GetCurrentThreadId();
+          LOG_WARN("MMCSS unavailable (error " + juce::String((int)err) +
+                   ") — audio thread set to THREAD_PRIORITY_HIGHEST");
+        }
       }
     } else {
       SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_HIGHEST);
-      mmcssRegistered = true;
-      LOG_WARN("avrt.dll not loaded â€” audio thread set to THREAD_PRIORITY_HIGHEST");
+      mmcssThreadId = ::GetCurrentThreadId();
+      LOG_WARN("avrt.dll not loaded — audio thread set to THREAD_PRIORITY_HIGHEST");
     }
   }
+  } // end kMmcssEnabled (bisect)
 #endif
 
   juce::MidiBuffer incomingMidi;
   midiCollector.removeNextBlockOfMessages(incomingMidi, numSamples);
   engine.processAudio(inputChannelData, numInputChannels, outputChannelData,
                       numOutputChannels, numSamples, incomingMidi);
+
+  lastCallbackDurationMs.store(
+      juce::Time::highResolutionTicksToSeconds(
+          juce::Time::getHighResolutionTicks() - nowTicks) * 1000.0);
 }
 
 void MainComponent::saveAudioSettings() {
@@ -1875,6 +1961,10 @@ void MainComponent::audioDeviceAboutToStart(juce::AudioIODevice *device) {
   midiCollector.reset(device->getCurrentSampleRate());
   engine.prepareToPlay(device->getCurrentBufferSizeSamples(),
                        device->getCurrentSampleRate());
+  // Forget the previous device session's last callback time: otherwise the
+  // first callback of the new session measures a gap against a stale
+  // timestamp and logs a giant false "glitch" (the 800ms log entries).
+  lastAudioCallbackTicks.store(0);
 }
 
 void MainComponent::audioDeviceStopped() {}
@@ -2359,28 +2449,46 @@ void MainComponent::timerCallback() {
     latencyLabel.setText("LAT: --", juce::dontSendNotification);
   }
 
-  // Surface any audio underruns
+  // Surface any audio underruns: callback-gap count + engine-side stalls,
+  // tallied separately so the meter matches what the ears hear while the
+  // two pathways stay distinguishable.
   int xruns = audioUnderrunCount.load();
-  if (xruns > 0) {
-    xrunsLabel.setText("XRUNS: " + juce::String(xruns) + " [" + juce::String(lastGlitchStallMs.load(), 1) + "ms]", juce::dontSendNotification);
+  int stalls = engineStallCount.load();
+  if (xruns + stalls > 0) {
+    juce::String txt = "XRUNS: " + juce::String(xruns + stalls);
+    if (stalls > 0)
+      txt += " (" + juce::String(xruns) + " gap / " + juce::String(stalls) + " stall)";
+    txt += " [" + juce::String(lastGlitchStallMs.load(), 1) + "ms]";
+    xrunsLabel.setText(txt, juce::dontSendNotification);
     xrunsLabel.setColour(juce::Label::textColourId, ThemeManager::get(Theme::Role::warn));
   } else {
     xrunsLabel.setText("XRUNS: 0", juce::dontSendNotification);
     xrunsLabel.setColour(juce::Label::textColourId, ThemeManager::get(Theme::Role::ok));
   }
 
-  if (engine.consumeAudioUnderrun())
+  if (engine.consumeAudioUnderrun()) {
+    // Engine-side stall (worker didn't finish, rack mid-transition): the block
+    // was genuinely silent — count it in XRUNS so the meter matches the ears,
+    // but tally it separately from callback-gap underruns.
+    engineStallCount++;
     FanfareLog::log(FanfareLog::Level::Warning,
                     "Audio underrun: a block emitted silence "
                     "(worker stall or rack not prepared).");
+  }
 
   if (hasPendingGlitchLog.exchange(false)) {
     double actual = pendingGlitchActualMs.exchange(0.0);
     double expected = pendingGlitchExpectedMs.exchange(0.0);
+    double cbDur = pendingGlitchDurationMs.exchange(0.0);
     if (actual > 0.0) {
-      logAudioGlitch(actual, expected);
+      logAudioGlitch(actual, expected, cbDur);
     }
   }
+
+  // Flush batched glitch-log appends at most once per second (this timer's
+  // cadence). During a storm the entries pile up in memory and land as one
+  // file append instead of one open/write per glitch.
+  flushGlitchLog();
 
   // Update live performance clock
   auto now = juce::Time::getCurrentTime();

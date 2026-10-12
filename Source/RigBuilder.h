@@ -378,11 +378,17 @@ private:
         // (Oct 7 — stalled the whole rig build on its first aux-return save).
         // HALion 7 (Steinberg): off-thread instantiation is racy — hung once,
         // built once (Oct 8) — and its worker AV'd when abandoned.
+        // Toontrack (EZkeys 2, Oct 10): instantiates off-thread but its
+        // engine reports "cannot initiate audio engine" — engine init needs
+        // the message thread (COM audio-endpoint probing).
         bool requiresMessageThread =
             newPath.containsIgnoreCase("Super 8") ||
             newPath.containsIgnoreCase("Kontakt") ||
             newPath.containsIgnoreCase("Replika") ||
-            newPath.containsIgnoreCase("HALion");
+            newPath.containsIgnoreCase("HALion") ||
+            newPath.containsIgnoreCase("EZkeys") ||
+            newPath.containsIgnoreCase("EZdrummer") ||
+            newPath.containsIgnoreCase("EZbass");
 
         std::unique_ptr<juce::AudioPluginInstance> inst;
         juce::String err;
@@ -547,11 +553,15 @@ private:
         // Kontakt state restores deadlock off-thread on the 2nd+ instance.
         // Replika XT instantiation hangs off-thread in bulk loads (Oct 7).
         // HALion 7 off-thread instantiation is racy (Oct 8).
+        // Toontrack (EZkeys 2, Oct 10): engine needs a message-thread build.
         bool requiresMessageThread =
             newPath.containsIgnoreCase("Super 8") ||
             newPath.containsIgnoreCase("Kontakt") ||
             newPath.containsIgnoreCase("Replika") ||
-            newPath.containsIgnoreCase("HALion");
+            newPath.containsIgnoreCase("HALion") ||
+            newPath.containsIgnoreCase("EZkeys") ||
+            newPath.containsIgnoreCase("EZdrummer") ||
+            newPath.containsIgnoreCase("EZbass");
 
         std::unique_ptr<juce::AudioPluginInstance> inst;
         juce::String err;
