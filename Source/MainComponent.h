@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "AssetLoader.h"
 #include "BoutiqueLookAndFeel.h"
@@ -11,6 +11,7 @@
 #include "GigNotepadWindow.h"
 #include "SetupMidiTriggers.h"
 #include "LoadingOverlay.h"
+#include "MissingPluginsToast.h"
 #include "SetupBuilderOverlay.h"
 #include "Logger.h"
 #include "LibraryPanel.h"
@@ -112,6 +113,7 @@ private:
   std::unique_ptr<SamplerComponent> samplerOverlay;
   std::unique_ptr<Mp3PlayerComponent> mp3Overlay;
   std::unique_ptr<LoadingOverlay> loadingOverlay;
+  std::unique_ptr<MissingPluginsToast> missingPluginsToast;
   std::unique_ptr<ConfigModalOverlay> configOverlay;
   std::unique_ptr<LibraryPanel> libraryPanel;
   std::unique_ptr<SetupBuilderOverlay> setupBuilderOverlay;
@@ -177,6 +179,8 @@ private:
   void showLoadingOverlay(const juce::String &title, const juce::String &message);
   void setLoadingMessage(const juce::String &message);
   void hideLoadingOverlay();
+  void showMissingPluginsWarning(const std::vector<Fanfare::RigBuilder::FailedEntry>& failed);
+  void updateMissingPluginsToastBounds();
 
   // Begin an async (non-freezing) rig load from a file.
   void loadRigAsync(const juce::File &file, int buttonIndexForHighlight = -1, int targetSetlistIndex = -1);
@@ -217,14 +221,14 @@ private:
   std::atomic<double> pendingGlitchExpectedMs{0.0};
   // Duration of the previous audio callback (entry -> processAudio returned).
   // On a glitch this splits "the driver called us late" (small duration) from
-  // "our own callback blocked" (duration ≈ the gap).
+  // "our own callback blocked" (duration � the gap).
   std::atomic<double> lastCallbackDurationMs{0.0};
   std::atomic<double> pendingGlitchDurationMs{0.0};
   std::atomic<bool> hasPendingGlitchLog{false};
   void logAudioGlitch(double actualMs, double expectedMs, double cbDurationMs);
   void logAudioNanSpike(int channel, int sampleIndex, float badVal);
   // Glitch log batching: entries accumulate in memory and flush to disk at
-  // most once per second — storm bursts no longer open the file per entry.
+  // most once per second � storm bursts no longer open the file per entry.
   juce::String pendingGlitchLogText;
   juce::CriticalSection glitchLogLock;
   void flushGlitchLog();
@@ -253,12 +257,12 @@ private:
   juce::MidiMessageCollector midiCollector;
 
   // Windows MMCSS audio thread priority: attempted once per audio thread
-  // (device restarts create new threads — MMCSS may succeed on a retry even
+  // (device restarts create new threads � MMCSS may succeed on a retry even
   // if it failed for an earlier thread). Tracks the thread id, not a bool.
   DWORD mmcssThreadId = 0;
   // CPU-0 shelter mask (constructor excludes the interrupt-dump core). Some
   // ASIO drivers re-expand the process affinity during init, so every new
-  // audio thread re-applies it — see the audio callback.
+  // audio thread re-applies it � see the audio callback.
   DWORD_PTR shelteredAffinityMask = 0;
 #ifdef _WIN32
   HMODULE avrtModule = nullptr;
@@ -307,7 +311,7 @@ private:
       }
     }
 
-    // Scene MIDI trigger learn â€” intercept next PC if armed
+    // Scene MIDI trigger learn — intercept next PC if armed
     if (msg.isProgramChange() && sceneMidiLearnArmed >= 0) {
       int learnedPC = msg.getProgramChangeNumber();
       int learnedCh = msg.getChannel();

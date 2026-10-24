@@ -34,7 +34,7 @@ public:
         // Invoked on the message thread.
         std::function<void(juce::String)> onProgress;
         // Invoked on the message thread when the transition finishes.
-        std::function<void(bool ok, juce::String message, int builtCount)> onComplete;
+        std::function<void(bool ok, juce::String message, int builtCount, const std::vector<RigBuilder::FailedEntry>& failedPlugins)> onComplete;
     };
 
     RigTransitioner(FanfareEngine &e)
@@ -119,7 +119,7 @@ public:
 
         if (threadShouldExit()) {
             logToFile("TRACE: RigTransitioner exit requested after clear.");
-            postComplete(false, "Cancelled", 0);
+            postComplete(false, "Cancelled", 0, {});
             return;
         }
 
@@ -147,7 +147,7 @@ public:
 
         if (threadShouldExit()) {
             logToFile("TRACE: RigTransitioner exit requested before apply.");
-            postComplete(false, "Cancelled", 0);
+            postComplete(false, "Cancelled", 0, {});
             return;
         }
 
@@ -165,7 +165,7 @@ public:
         if (!doneEvent->wait(120000)) {
             logToFile("ERROR: applyRig timed out (120s)");
             engine.clearStagingCache();
-            postComplete(false, "Apply timed out (120s) — possible plugin hang", 0);
+            postComplete(false, "Apply timed out (120s) - possible plugin hang", 0, {});
             return;
         }
         logToFile("TRACE: RigTransitioner applyRig finished.");
@@ -176,7 +176,7 @@ public:
         juce::String msg = "Loaded (" + juce::String(build.builtCount) + " built, " +
                            juce::String(build.reusedCount) + " reused)";
         logToFile("TRACE: RigTransitioner completed successfully: " + msg);
-        postComplete(true, msg, total);
+        postComplete(true, msg, total, build.failedEntries);
     }
 
 private:
@@ -187,11 +187,11 @@ private:
         }
     }
 
-    void postComplete(bool ok, const juce::String &msg, int builtCount) {
+    void postComplete(bool ok, const juce::String &msg, int builtCount, const std::vector<RigBuilder::FailedEntry>& failed = {}) {
         if (callbacks.onComplete) {
             auto cb = callbacks.onComplete;
-            juce::MessageManager::callAsync([cb, ok, msg, builtCount]() {
-                cb(ok, msg, builtCount);
+            juce::MessageManager::callAsync([cb, ok, msg, builtCount, failed]() {
+                cb(ok, msg, builtCount, failed);
             });
         }
     }

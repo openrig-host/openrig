@@ -388,7 +388,12 @@ private:
             newPath.containsIgnoreCase("HALion") ||
             newPath.containsIgnoreCase("EZkeys") ||
             newPath.containsIgnoreCase("EZdrummer") ||
-            newPath.containsIgnoreCase("EZbass");
+            newPath.containsIgnoreCase("EZbass") ||
+            newPath.containsIgnoreCase("Omnisphere") ||
+            newPath.containsIgnoreCase("Keyscape") ||
+            newPath.containsIgnoreCase("Trilian") ||
+            newPath.containsIgnoreCase("Stylus RMX") ||
+            newPath.containsIgnoreCase("Spectrasonics");
 
         std::unique_ptr<juce::AudioPluginInstance> inst;
         juce::String err;
@@ -407,6 +412,7 @@ private:
                 bool ok = false;
                 std::atomic<bool> done{false};
                 std::atomic<bool> abandoned{false};
+                std::atomic<bool> gateReleased{false};
             };
             auto bctx = std::make_shared<BuildThreadContext>();
             bctx->engine = &engine;
@@ -430,7 +436,8 @@ private:
 #ifdef _WIN32
                 ::CoUninitialize();
 #endif
-                Fanfare::releasePathBuildGate(gatePath);
+                if (!bctx->gateReleased.exchange(true))
+                    Fanfare::releasePathBuildGate(gatePath);
                 bctx->done.store(true);
             });
 
@@ -450,6 +457,8 @@ private:
             (void)timedOut;
             if (!bctx->done.load()) {
                 bctx->abandoned.store(true);
+                if (!bctx->gateReleased.exchange(true))
+                    Fanfare::releasePathBuildGate(gatePath);
                 logToFile("TRACE: buildOne " + label + " off-thread build stalled (60s) — abandoning worker, retrying on message thread...");
                 t.detach(); // the stuck worker destroys its instance when/if it returns
                 ok = false;
@@ -561,7 +570,12 @@ private:
             newPath.containsIgnoreCase("HALion") ||
             newPath.containsIgnoreCase("EZkeys") ||
             newPath.containsIgnoreCase("EZdrummer") ||
-            newPath.containsIgnoreCase("EZbass");
+            newPath.containsIgnoreCase("EZbass") ||
+            newPath.containsIgnoreCase("Omnisphere") ||
+            newPath.containsIgnoreCase("Keyscape") ||
+            newPath.containsIgnoreCase("Trilian") ||
+            newPath.containsIgnoreCase("Stylus RMX") ||
+            newPath.containsIgnoreCase("Spectrasonics");
 
         std::unique_ptr<juce::AudioPluginInstance> inst;
         juce::String err;
@@ -578,6 +592,7 @@ private:
                 bool ok = false;
                 std::atomic<bool> done{false};
                 std::atomic<bool> abandoned{false};
+                std::atomic<bool> gateReleased{false};
             };
             auto bctx = std::make_shared<BuildThreadContext>();
             bctx->engine = &engine;
@@ -601,7 +616,8 @@ private:
 #ifdef _WIN32
                 ::CoUninitialize();
 #endif
-                Fanfare::releasePathBuildGate(gatePath);
+                if (!bctx->gateReleased.exchange(true))
+                    Fanfare::releasePathBuildGate(gatePath);
                 bctx->done.store(true);
             });
 
@@ -614,6 +630,8 @@ private:
 
             if (!bctx->done.load()) {
                 bctx->abandoned.store(true);
+                if (!bctx->gateReleased.exchange(true))
+                    Fanfare::releasePathBuildGate(gatePath);
                 logToFile("TRACE: buildMaster " + label + " off-thread build stalled (60s) — abandoning worker, retrying on message thread...");
                 t.detach(); // Allow thread to remain stuck in background
                 ok = false;

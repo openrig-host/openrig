@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.15)
-project(Fanfare VERSION 1.1.4 LANGUAGES C CXX)
+project(Fanfare VERSION 1.1.5 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

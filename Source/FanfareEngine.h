@@ -891,8 +891,9 @@ public:
       }
     }
 
-    if (slotsWithPlugins <= 3) {
-      // Process sequentially inline on the audio thread for small setups
+    // Process sequentially inline directly on the audio thread for all rigs.
+    // Eliminates thread-pool mutex contention, thread scheduling jitter, and 14ms spin-wait timeouts.
+    if (true /* Always process sequentially inline on the audio thread */) {
       aux1Bus.clear();
       aux2Bus.clear();
       for (int i = 0; i < numActiveSlots; ++i) {
@@ -3358,12 +3359,14 @@ public:
         pluginPath.containsIgnoreCase("Kontakt") ||
         pluginPath.containsIgnoreCase("Replika") ||
         pluginPath.containsIgnoreCase("HALion") ||
-        // Toontrack (EZkeys 2, Oct 10): builds "fine" off-thread but its
-        // engine reports "cannot initiate audio engine" — engine init probes
-        // COM audio endpoints, which fail on an unpumped MTA thread.
         pluginPath.containsIgnoreCase("EZkeys") ||
         pluginPath.containsIgnoreCase("EZdrummer") ||
-        pluginPath.containsIgnoreCase("EZbass");
+        pluginPath.containsIgnoreCase("EZbass") ||
+        pluginPath.containsIgnoreCase("Omnisphere") ||
+        pluginPath.containsIgnoreCase("Keyscape") ||
+        pluginPath.containsIgnoreCase("Trilian") ||
+        pluginPath.containsIgnoreCase("Stylus RMX") ||
+        pluginPath.containsIgnoreCase("Spectrasonics");
     if (needsMessageThread) {
       logToFile("Building " + desc.name + " on the message thread (interactive)...");
       juce::String mtErr;

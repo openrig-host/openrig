@@ -1,4 +1,4 @@
-ï»¿// Windows MMCSS for real-time audio thread priority
+// Windows MMCSS for real-time audio thread priority
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -10,7 +10,7 @@
 #include "RackSlotComponent.h"
 #include "ThemeManager.h"
 #include "FanfareLogoData.h"
-// Optional personal gig art. The file is deliberately gitignored â€” public
+// Optional personal gig art. The file is deliberately gitignored — public
 // checkouts build without it and fall back to the committed OpenRig logo.
 #if __has_include("LastWaltzLogoData.h")
   #include "LastWaltzLogoData.h"
@@ -99,7 +99,7 @@ public:
 //==============================================================================
 MainComponent::MainComponent() {
 #ifdef _WIN32
-  // Per-mechanism bisect flags â€” see FanfareConstants.h. Each test build
+  // Per-mechanism bisect flags — see FanfareConstants.h. Each test build
   // turns exactly one back on; the startup log line records the combo.
   avrtModule = LoadLibraryA("avrt.dll");
   if constexpr (FanfareConstants::kPowerSchemeMgmtEnabled)
@@ -112,7 +112,7 @@ MainComponent::MainComponent() {
   // Shelter the process from CPU 0: ACPI/EC interrupts target core 0 by design
   // (LatencyMon Oct 10: 145k DPCs on CPU0, single DPC up to 1.66ms), and when
   // the ASIO callback thread lands there during a burst, that one core is
-  // buried while the other cores idle â€” 10-24ms audio gaps at ~5% global CPU.
+  // buried while the other cores idle — 10-24ms audio gaps at ~5% global CPU.
   // Excluding CPU0 from the process affinity costs nothing and keeps the audio
   // thread (and every other thread) off the interrupt-dump core.
   {
@@ -142,7 +142,7 @@ MainComponent::MainComponent() {
   if constexpr (FanfareConstants::kWorkingSetLockEnabled) {
   // Lock a generous working set minimum so Windows cannot page out VST sample
   // libraries when other applications demand RAM. The 2 GB max we used before
-  // Oct 2026 starved massive rigs (many Kontakt multis) during state restore â€”
+  // Oct 2026 starved massive rigs (many Kontakt multis) during state restore —
   // Windows kept trimming sample data, making loads take minutes. 8 GB covers
   // the biggest setups; the OS still trims beyond it if RAM is truly short.
   SIZE_T wsMin = 512ULL * 1024 * 1024;
@@ -894,7 +894,7 @@ void MainComponent::setupHeaderButtons() {
   aboutBtn.setVisible(false);
   aboutBtn.onClick = [this] { showAboutDialog(); };
 
-  // Settings gear button Ã¢â‚¬â€ centralizes the settings buttons into one overlay
+  // Settings gear button â€” centralizes the settings buttons into one overlay
   addAndMakeVisible(settingsGearBtn);
   auto gearImg = createGearImage(28, ThemeManager::get(Theme::Role::accent));
   settingsGearBtn.setImages(false, true, true, gearImg, 1.0f,
@@ -1445,7 +1445,7 @@ void MainComponent::logAudioGlitch(double actualMs, double expectedMs,
 
   // Batched: appends collect in memory and flush to disk at most once per
   // second (glitchMonitorTimer). During a storm this replaces ~13 file
-  // opens/second with a single append â€” the message thread stays responsive.
+  // opens/second with a single append — the message thread stays responsive.
   pendingGlitchLogText += entry;
 }
 
@@ -1495,7 +1495,7 @@ void MainComponent::audioDeviceIOCallbackWithContext(
     }
   }
 
-  // Per-thread hardening, flag-gated per mechanism (bisect â€” MinHost runs
+  // Per-thread hardening, flag-gated per mechanism (bisect — MinHost runs
   // no MMCSS and no shelter, and is clean where Fanfare storms).
 #ifdef _WIN32
   if constexpr (FanfareConstants::kCpuShelterEnabled) {
@@ -1509,7 +1509,7 @@ void MainComponent::audioDeviceIOCallbackWithContext(
           procMask != shelteredAffinityMask) {
         LOG_WARN("Process affinity was re-expanded to 0x" +
                  juce::String::toHexString((juce::int64)procMask) +
-                 " â€” re-sheltering from CPU 0");
+                 " — re-sheltering from CPU 0");
         SetProcessAffinityMask(GetCurrentProcess(), shelteredAffinityMask);
       }
     }
@@ -1522,27 +1522,27 @@ void MainComponent::audioDeviceIOCallbackWithContext(
         mmcssThreadId = ::GetCurrentThreadId();
         LOG_INFO("Audio thread registered with MMCSS Pro Audio characteristics");
       } else {
-        // Log the reason â€” MMCSS refusals were previously invisible.
+        // Log the reason — MMCSS refusals were previously invisible.
         DWORD err = ::GetLastError();
         if (err == 1552 /* ERROR_INVALID_THREAD_ID: "already joining a task" */) {
           // Not a failure: ASIO drivers like Yamaha Steinberg USB join their
           // callback thread to the MMCSS Pro Audio task before we run, so the
           // thread already has Pro Audio priority. Don't touch it.
           mmcssThreadId = ::GetCurrentThreadId();
-          LOG_INFO("Audio thread already MMCSS-registered by the audio driver â€” Pro Audio priority active");
+          LOG_INFO("Audio thread already MMCSS-registered by the audio driver — Pro Audio priority active");
         } else {
-          // Fallback HIGHEST, not TIME_CRITICAL â€” TIME_CRITICAL can starve
+          // Fallback HIGHEST, not TIME_CRITICAL — TIME_CRITICAL can starve
           // the OS when combined with the audio spin-wait barrier.
           SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_HIGHEST);
           mmcssThreadId = ::GetCurrentThreadId();
           LOG_WARN("MMCSS unavailable (error " + juce::String((int)err) +
-                   ") â€” audio thread set to THREAD_PRIORITY_HIGHEST");
+                   ") — audio thread set to THREAD_PRIORITY_HIGHEST");
         }
       }
     } else {
       SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_HIGHEST);
       mmcssThreadId = ::GetCurrentThreadId();
-      LOG_WARN("avrt.dll not loaded â€” audio thread set to THREAD_PRIORITY_HIGHEST");
+      LOG_WARN("avrt.dll not loaded — audio thread set to THREAD_PRIORITY_HIGHEST");
     }
   }
   } // end kMmcssEnabled (bisect)
@@ -2197,7 +2197,7 @@ void MainComponent::resized() {
       rackSlotComponents[0]->setBounds(r.removeFromLeft(juce::jmin(w, r.getWidth())).reduced(2));
     }
 
-    // Draw aux returns last â€” half height; the freed lower half of their
+    // Draw aux returns last — half height; the freed lower half of their
     // columns hosts the gig logo (The Last Waltz)
     juce::Rectangle<int> lwLogoArea;
     for (auto *c : auxReturnComponents) {
@@ -2226,6 +2226,8 @@ void MainComponent::resized() {
     resourceInspectorOverlay->centreWithSize(740, 520);
   if (stageRemoteOverlay)
     stageRemoteOverlay->setBounds(getLocalBounds());
+  if (missingPluginsToast)
+    updateMissingPluginsToastBounds();
 }
 
 void MainComponent::updateStripCollapseStates() {
@@ -2282,6 +2284,8 @@ void MainComponent::showGigNotepadWindow() {
 void MainComponent::hideLoadingOverlay() { loadingOverlay.reset(); }
 
 void MainComponent::loadRigAsync(const juce::File &file, int buttonIndexForHighlight, int targetSetlistIndex) {
+  if (missingPluginsToast)
+    missingPluginsToast.reset();
   if (!transitioner || transitioner->isBusy()) {
     juce::AlertWindow::showMessageBoxAsync(
         juce::MessageBoxIconType::InfoIcon, "Transition Busy",
@@ -2304,7 +2308,7 @@ void MainComponent::loadRigAsync(const juce::File &file, int buttonIndexForHighl
     transitioner->transitionToFile(file,
         Fanfare::RigTransitioner::Callbacks{
             [this](juce::String progress) { setLoadingMessage(progress); },
-            [this, highlight, file, targetSetlistIndex, fileName = file.getFileNameWithoutExtension()](bool ok, juce::String message, int) {
+            [this, highlight, file, targetSetlistIndex, fileName = file.getFileNameWithoutExtension()](bool ok, juce::String message, int builtCount, const std::vector<Fanfare::RigBuilder::FailedEntry>& failed) {
                 hideLoadingOverlay();
                 closeOrphanedPluginWindows();
                 if (ok) {
@@ -2319,8 +2323,12 @@ void MainComponent::loadRigAsync(const juce::File &file, int buttonIndexForHighl
                     refreshSceneButtons();
                     // Active-queue highlighting is driven by updatePreloadStatus()
                     // via the SetlistManager change broadcaster (setActiveIndex).
-                    midiMonitorLabel.setText("RIG: " + message,
+midiMonitorLabel.setText("RIG: " + message,
                                              juce::dontSendNotification);
+
+                    if (!failed.empty()) {
+                        showMissingPluginsWarning(failed);
+                    }
 
                     // Update active index in SetlistManager if this file belongs to the setlist
                     auto& sm = Fanfare::SetlistManager::getInstance();
@@ -2468,7 +2476,7 @@ void MainComponent::timerCallback() {
 
   if (engine.consumeAudioUnderrun()) {
     // Engine-side stall (worker didn't finish, rack mid-transition): the block
-    // was genuinely silent â€” count it in XRUNS so the meter matches the ears,
+    // was genuinely silent — count it in XRUNS so the meter matches the ears,
     // but tally it separately from callback-gap underruns.
     engineStallCount++;
     FanfareLog::log(FanfareLog::Level::Warning,
@@ -2729,6 +2737,73 @@ void MainComponent::showLoadingOverlay(const juce::String &title, const juce::St
 void MainComponent::setLoadingMessage(const juce::String &message) {
   if (loadingOverlay)
     loadingOverlay->setMessage(message);
+}
+
+void MainComponent::showMissingPluginsWarning(const std::vector<Fanfare::RigBuilder::FailedEntry>& failed) {
+  std::vector<MissingPluginInfo> missing;
+  for (const auto& fe : failed) {
+    MissingPluginInfo info;
+    info.name = fe.pluginVar.getProperty("name", "").toString();
+    info.path = fe.pluginVar.getProperty("path", "").toString();
+    if (info.name.isEmpty() && info.path.isNotEmpty()) {
+      info.name = juce::File(info.path).getFileNameWithoutExtension();
+    }
+    if (info.name.isEmpty())
+      info.name = "Unknown Plugin";
+
+    if (fe.key.startsWith("S:")) {
+      int slotIdx = fe.key.fromFirstOccurrenceOf("S:", false, false)
+                          .upToFirstOccurrenceOf(":", false, false)
+                          .getIntValue();
+      juce::String slotName;
+      if (slotIdx >= 0 && slotIdx < (int)engine.getSlots().size()) {
+        if (auto* s = engine.getSlot(slotIdx))
+          slotName = s->getName();
+      }
+      if (slotName.isNotEmpty() && !slotName.startsWithIgnoreCase("Slot "))
+        info.location = slotName + " (Slot " + juce::String(slotIdx + 1) + ")";
+      else
+        info.location = "Slot " + juce::String(slotIdx + 1);
+    } else if (fe.key.startsWith("A:")) {
+      int auxIdx = fe.key.fromFirstOccurrenceOf("A:", false, false)
+                         .upToFirstOccurrenceOf(":", false, false)
+                         .getIntValue();
+      info.location = (auxIdx == 0 ? "Aux 1 Return" : "Aux 2 Return");
+    } else if (fe.key.startsWith("F:")) {
+      info.location = "Master FOH";
+    } else if (fe.key.startsWith("I:")) {
+      info.location = "Master IEM";
+    } else {
+      info.location = fe.key;
+    }
+    missing.push_back(info);
+  }
+
+  if (!missing.empty()) {
+    missingPluginsToast = std::make_unique<MissingPluginsToast>(missing, [this]() {
+      missingPluginsToast.reset();
+    });
+    addAndMakeVisible(missingPluginsToast.get());
+    updateMissingPluginsToastBounds();
+    missingPluginsToast->toFront(true);
+
+    juce::String logMsg = "Setup loaded with " + juce::String((int)missing.size()) + " uninstalled plugin(s): ";
+    for (size_t i = 0; i < missing.size(); ++i) {
+      if (i > 0) logMsg += ", ";
+      logMsg += missing[i].name + " [" + missing[i].location + "]";
+    }
+    LOG_WARN(logMsg);
+  }
+}
+
+void MainComponent::updateMissingPluginsToastBounds() {
+  if (missingPluginsToast) {
+    int w = juce::jmin(520, getWidth() - 40);
+    int h = missingPluginsToast->getDesiredHeight();
+    int x = (getWidth() - w) / 2;
+    int y = 76;
+    missingPluginsToast->setBounds(x, y, w, h);
+  }
 }
 
 void MainComponent::mouseDown(const juce::MouseEvent &e) {
