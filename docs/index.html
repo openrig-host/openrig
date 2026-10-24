@@ -5,10 +5,10 @@
 -->
 <html>
 	<head>
-		<title>Fanfare — Live VST3 Performance Host</title>
+		<title>Fanfare: Live VST3 Host for Keyboard Players</title>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
-		<meta name="description" content="Fanfare is a rack-based VST3 host built for live keyboardists. Atomic song switching, dual-bus mixing, MIDI learn, setlist preloading, and instant panic recovery." />
+		<meta name="description" content="Fanfare is a rack-based VST3 host for keyboard players who gig. Clean song changes, separate FOH and IEM mixes, MIDI learn, setlist preloading, and a panic button that works." />
 		<link rel="stylesheet" href="assets/css/main.css" />
 		<noscript><link rel="stylesheet" href="assets/css/noscript.css" /></noscript>
 		<style>
@@ -111,9 +111,8 @@
 						<div class="content">
 							<div class="inner">
 								<h1>Fanfare</h1>
-								<p>Built for the stage. Zero stuck notes. Zero dropouts.<br />
-								A rack-based VST3 host for live keyboardists — atomic song switching,<br />
-								dual-bus mixing, MIDI learn, setlist preloading, instant panic recovery.</p>
+								<p>No stuck notes. No dropouts. No failed song changes.<br />
+								A rack-based VST3 host for keyboard players who gig.</p>
 							</div>
 						</div>
 						<nav>
@@ -137,14 +136,14 @@
 								<a href="https://github.com/openrig-host/openrig/releases/latest" id="latest-release-badge" class="release-badge" target="_blank" rel="noopener">
 									<span id="badge-release-text">Latest Release &middot; Windows VST3 Host</span>
 								</a>
-								<p><strong>Fanfare</strong> is built with one mission: make setting up your live rig an absolute breeze, then completely get out of your way on stage — so you can perform music, not run an IT desk.</p>
-								<p>Splits. Sample triggering. Arpeggiators, octaves and harmonizers. Set it, and forget it. While you're playing, it preloads the next setup in the background so the switch happens seamlessly. Nobody waits around.</p>
+								<p><strong>Fanfare</strong> makes your rig easy to set up and then stays out of your way on stage. You play music. You don't run an IT desk.</p>
+								<p>Splits, sample triggers, arpeggiators, octaves, harmonizers. Set them up once. While you play, the next song loads in the background, so when you call it, it's already there.</p>
 								<ul class="actions">
 									<li><a href="https://github.com/openrig-host/openrig/releases/latest" class="button primary icon solid fa-download" target="_blank" rel="noopener">Download for Windows</a></li>
 									<li><a href="https://github.com/openrig-host/openrig" class="button" target="_blank" rel="noopener">Source Code</a></li>
 								</ul>
 								<span class="image main"><img src="vu_meters_detail.png" alt="Analog peak VU metering and dual FOH/IEM bus faders" /></span>
-								<p>Independent master faders and analog-style peak VU meters for <strong>FOH</strong> (front of house) and <strong>IEM</strong> (in-ear monitors) — route the two buses separately and crank your stage mix without touching what the venue hears.</p>
+								<p>Separate master faders and VU meters for <strong>FOH</strong> (front of house) and <strong>IEM</strong> (in-ear monitors). Turn up your ears without touching what the room hears.</p>
 							</article>
 
 						<!-- Features -->
@@ -153,43 +152,43 @@
 								<div class="feature-grid">
 									<div>
 										<h3>Songs, Scenes &amp; Setlists</h3>
-										<p>Complete patch snapshots stored as clean, versioned JSON. Jump between song sections via MIDI triggers, and preload the next song while you play.</p>
+										<p>Every song is a plain JSON file. Jump between sections with MIDI, and the next song loads while you play.</p>
 									</div>
 									<div>
 										<h3>Channel Strip DSP &amp; Musette</h3>
-										<p>Noise gate, graphic EQ, compressor, chorus, space reverb, convolution IR, and specialized accordion micro-pitch detuning with 2-Reed MM, 3-Reed MMM, and the wild &ldquo;TEMU Musette&rdquo; setting.</p>
+										<p>Gate, EQ, compressor, chorus, reverb, and convolution on every slot. Plus an accordion detuner with 2-reed MM, 3-reed MMM, and &ldquo;TEMU Musette&rdquo;, which is exactly as out of tune as it sounds.</p>
 									</div>
 									<div>
-										<h3>Discrete Direct Hardware Outs</h3>
-										<p>Direct Hardware Outputs (Out 5, 6, 7, 8) alongside independent FOH and IEM mixes. Send a vocal mic or dry instrument directly to the house board without leaking into monitor buses.</p>
+										<h3>Direct Outs</h3>
+										<p>Send any slot straight to outputs 5 through 8, on top of the FOH and IEM mixes. Your vocal mic goes to the board on its own channel, and only where you send it.</p>
 									</div>
 									<div>
-										<h3>Latch, Toggle &amp; Swap From MIDI</h3>
-										<p>Press-on/press-off parameter toggles, per-strip mute toggles, and A/B swaps between loaded instruments. Swaps fade out with an all-notes-off drain — zero stuck notes by design.</p>
+										<h3>Latch, Toggle &amp; Swap</h3>
+										<p>Turn any button into an on/off switch for a parameter or a mute, or flip between two loaded instruments. Swaps fade out and release every held note, so nothing hangs.</p>
 									</div>
 									<div>
-										<h3>Parallel, Hang-Proof Loading</h3>
-										<p>Every plugin builds concurrently, interleaved by engine. Same-plugin instances serialize safely; NI plugins restore on the GUI thread like interactive loads. One misbehaving plugin can't stall the rig.</p>
+										<h3>Fast, Safe Loading</h3>
+										<p>Plugins load at the same time instead of one by one. The fussy ones, like Native Instruments, get handled the way they need. One bad plugin can't hold up the rest.</p>
 									</div>
 									<div>
 										<h3>Long-Press Learn</h3>
-										<p>Hold MUTE / FOH / IEM on any strip to arm its MIDI learn instantly, or arm-then-wiggle in the CC Assignment Manager.</p>
+										<p>Hold MUTE, FOH, or IEM on any strip and move a knob to map it. Or do it from the CC Assignment Manager.</p>
 									</div>
 									<div>
 										<h3>Sampler &amp; Waveform Editor</h3>
-										<p>Internal sample player with sample-accurate trim handles, root-key mapping, drag-and-drop WAVs, and octave shifting.</p>
+										<p>Drag in a WAV, trim it to the sample, set the root key, and shift octaves.</p>
 									</div>
 									<div>
-										<h3>Break-Music DJ Player</h3>
-										<p>Dual-deck player with YouTube grab, BPM display and smart arranging — between-set music without leaving the rig.</p>
+										<h3>Break Music Player</h3>
+										<p>Two decks, YouTube downloads, BPM display, and playlist arranging. Set break music lives in the same app as your rig.</p>
 									</div>
 									<div>
-										<h3>Atomic File System</h3>
-										<p>Saves write to temp files first with auto-rotated backups. Power loss or crashes never corrupt your setlists.</p>
+										<h3>Safe Saves</h3>
+										<p>Every save writes to a temp file first and keeps a backup. Pull the plug mid-save and your setlist is still fine.</p>
 									</div>
 									<div>
-										<h3>Data Sovereignty</h3>
-										<p>No cloud sync, no accounts, no telemetry. Your patches are human-readable JSON files you fully control.</p>
+										<h3>Your Files</h3>
+										<p>No cloud, no account, no telemetry. Your patches are text files you can open, copy, and back up however you want.</p>
 									</div>
 								</div>
 							</article>
@@ -246,22 +245,22 @@
 									<div class="step-box">
 										<div class="step-num">1</div>
 										<div class="step-title">Background Build</div>
-										<div class="step-desc">Song switches trigger the builder on a background thread. Every plugin builds in parallel, interleaved by engine; same-plugin instances serialize, and single-instance plugins restore on the GUI thread.</div>
+										<div class="step-desc">When you change songs, the new rig loads on a background thread, with plugins loading side by side.</div>
 									</div>
 									<div class="step-box">
 										<div class="step-num">2</div>
 										<div class="step-title">Silent Validation</div>
-										<div class="step-desc">New instances are validated with a silent processBlock before they're trusted.</div>
+										<div class="step-desc">Each new plugin runs a silent test block before it goes live.</div>
 									</div>
 									<div class="step-box">
 										<div class="step-num">3</div>
-										<div class="step-title">Atomic Pointer Swap</div>
-										<div class="step-desc">Pointers swap under callback lock in under a millisecond — no allocation on the audio thread.</div>
+										<div class="step-title">Instant Swap</div>
+										<div class="step-desc">The old rig and the new rig trade places in under a millisecond. The audio thread never allocates memory.</div>
 									</div>
 									<div class="step-box">
 										<div class="step-num">4</div>
-										<div class="step-title">Rollback Safety</div>
-										<div class="step-desc">If a background build fails, the swap never happens and the current rig stays live.</div>
+										<div class="step-title">Nothing Breaks</div>
+										<div class="step-desc">If anything fails to load, the swap doesn't happen and the current song keeps playing.</div>
 									</div>
 								</div>
 								<span class="image main"><img src="channel_strip_dsp.png" alt="Channel strip dynamics and EQ interface" /></span>
@@ -270,7 +269,7 @@
 						<!-- Download -->
 							<article id="download">
 								<h2 class="major">Download</h2>
-								<p style="text-align:center;">Standalone VST3 host binary with native ASIO &amp; WASAPI support. No installer required.</p>
+								<p style="text-align:center;">One .exe with ASIO and WASAPI. No installer.</p>
 								<ul class="pills">
 									<li class="ok">Windows 10/11 x64</li>
 									<li class="ok">VST3 Host</li>
@@ -310,12 +309,12 @@
 			<script>
 				const captions = [
 					"Full live mixer interface with setlist manager, dual FOH/IEM mixes, and peak VU metering.",
-					"Integrated channel strip DSP: noise gate, graphic EQ, compressor, space FX, convolution and aux sends.",
+					"Channel strip: noise gate, EQ, compressor, reverb, convolution, and aux sends.",
 					"MIDI FX module with transposer, arpeggiator patterns, and harmonizer.",
 					"8 one-shot pad sampler with drag-and-drop WAV support and sample-accurate splice handles.",
 					"Active VST3 floating editor windows showing synth and sampler controls.",
 					"CC Assignment Manager with latch/toggle mode, per-strip mute toggles, long-press learn, and A/B instrument swapping.",
-					"Dual-deck break-music player: YouTube grab (MP3 192k), BPM display, smart arranging, and per-deck gain."
+					"Break music player with two decks, YouTube downloads (MP3 192k), BPM display, playlist arranging, and gain per deck."
 				];
 
 				function switchTab(index) {
