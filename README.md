@@ -2,15 +2,15 @@
 
 # Fanfare
 
-### The Sovereign Live Performance Engine
+### A live performance host for keyboard players
 
 [![Latest Release](https://img.shields.io/github/v/release/openrig-host/openrig?sort=date&cacheSeconds=900&color=ed786a&label=Latest%20Release)](https://github.com/openrig-host/openrig/releases/latest)
 [![Platform](https://img.shields.io/badge/platform-Windows%20x64-blue.svg)](https://github.com/openrig-host/openrig/releases)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0.html)
 
-A rack-based VST3 host and MIDI router for live performance — built to keep your set moving without dropouts, stuck notes, or failed song changes.
+A rack-based VST3 host and MIDI router for playing live. No dropouts, no stuck notes, no failed song changes.
 
-[Download](#download) · [Getting Started](GETTING_STARTED.md) · [Features](#features) · [How It Works](#how-it-works) · [VST3 Compatibility](#production-proven-vst3-ecosystem) · [Make It Yours](#make-it-yours)
+[Download](#download) · [Getting Started](GETTING_STARTED.md) · [Features](#features) · [How It Works](#how-it-works) · [VST3 Plugins](#vst3-plugins) · [Make It Yours](#make-it-yours)
 
 <br/>
 
@@ -18,112 +18,111 @@ A rack-based VST3 host and MIDI router for live performance — built to keep yo
 
 </div>
 
-> ### ⚡ Built for the Arena, Hardened for the Stage
+> ### Made for the gig
 >
-> **Fanfare is engineered from the ground up for zero-tolerance live performance environments.** 
-> While traditional DAWs bloat your CPU with timelines, background indexing, and fragile graph routing, Fanfare treats your computer like high-end rack hardware: dedicated linear channels, lock-free real-time audio threads, pre-allocated memory buffers, and atomic song transitions with rollback-by-construction. 
+> Fanfare runs your rig like a rack of hardware. Fixed channels, real-time audio threads that never wait on a lock, memory allocated up front, and song changes that either finish completely or don't happen at all.
 >
-> When you hit the stage, you don't need an audio sketchbook. You need an impenetrable tank.
+> DAWs are for writing. This is for playing.
 
 ---
 
 ## What is Fanfare?
 
-Fanfare is a Windows desktop application that hosts VST3 instruments and effects in a fixed, predictable linear rack — the way hardware works. No virtual patch cables. No node graphs. No drag-the-wires-around confusion.
+Fanfare is a Windows app that hosts VST3 instruments and effects in a fixed rack, the way hardware works. No virtual patch cables, no node graphs, no wires to drag around.
 
-It is built for the realities of live keyboard performance:
+What it does on stage:
 
-- **Splits, sample triggers, arpeggiators, octaves, and harmonizers** — set them once and trust them on stage.
-- **Song changes happen in the background.** Switching is atomic, with rollback if anything goes wrong.
-- **FOH and IEM are separate by design.** Every slot can send independently to both mixes.
-- **A stuck note cannot end the show.** The panic button kills all MIDI in one audio block. Instrument swaps fade the old sound out and drain held notes cleanly.
-- **Your mod wheel should hit only the right plugin.** Per-slot MIDI channel routing, CC remapping, and arm-then-wiggle CC learn keep control exactly where you want it.
-- **A button should behave like a switch.** Any CC binding can latch for parameters, mutes, or A/B swaps.
-- **Some sounds belong in hardware.** Any slot can send MIDI OUT to an external synth or module instead of hosting a VST.
-- **The next song should be ready before you call it.** Setlists preload the next rig on a worker thread while you keep playing.
-- **Break music is part of the show.** A dual-deck player handles playlisting, BPM display, YouTube grabs, and cue trimming.
+- **Splits, sample triggers, arpeggiators, octaves, and harmonizers.** Set them up once and forget about them.
+- **Song changes load in the background.** The switch is atomic. If anything goes wrong, the current song keeps playing.
+- **FOH and IEM are separate mixes.** Every slot sends to each one independently.
+- **No stuck notes.** The panic button kills all MIDI within one audio block. Instrument swaps fade the old sound and release held notes cleanly.
+- **Your mod wheel only hits the plugin you want.** Per-slot MIDI channel routing, CC remapping, and arm-then-wiggle CC learn.
+- **Buttons can act like switches.** Any CC binding can latch, for parameters, mutes, or A/B swaps.
+- **Hardware synths are welcome.** Any slot can send MIDI out to an external module instead of hosting a VST.
+- **The next song is ready before you call it.** Setlists preload the next rig while you play.
+- **Break music is handled.** A dual-deck player with playlists, BPM display, YouTube downloads, and cue trimming.
 
-This is not a DAW. It is a stage instrument.
+It's not a DAW. It's an instrument.
 
 ---
 
 ## Quick Start
 
-1. **Download the latest release**: Grab `Fanfare.exe` from [GitHub Releases](https://github.com/openrig-host/openrig/releases/latest) — no installer required.
-2. **Configure audio and MIDI**: Open `Settings`, choose your **ASIO** driver (or WASAPI), and enable your primary MIDI controller.
-3. **Load a rig or build a slot**: Click **LOAD RIG** to open a setlist or song, or click **[EMPTY]** on any strip slot to load a VST3 plugin.
-4. **Set up key range and MIDI learn**: Click **NR** on a strip to set the key split range via play-to-learn, or **CC** to open the CC Assignment Manager and map your hardware controls.
+1. **Download the latest release.** Grab `Fanfare.exe` from [GitHub Releases](https://github.com/openrig-host/openrig/releases/latest). No installer.
+2. **Set up audio and MIDI.** Open `Settings`, pick your **ASIO** driver (or WASAPI), and enable your MIDI controller.
+3. **Load a rig or fill a slot.** Click **LOAD RIG** to open a setlist or song, or click **[EMPTY]** on any slot to load a VST3.
+4. **Set key ranges and MIDI mappings.** Click **NR** on a strip to set a split by playing the notes, or **CC** to open the CC Assignment Manager.
 
-> For a full step-by-step walkthrough, see **[GETTING_STARTED.md](GETTING_STARTED.md)**.
+> The full walkthrough is in **[GETTING_STARTED.md](GETTING_STARTED.md)**.
 
 ---
 
 ## Features
 
 ### The Rack
-- **Fixed 24-slot layout** — one instrument per slot, always in a known order.
-- **Dual-bus mixing & Direct Outs** — independent FOH (1-2) and IEM (3-4) levels, mutes, and enables on every slot, plus dedicated discrete Direct Hardware Outputs (Outputs 5, 6, 7, 8) for isolated feeds like vocal mics or dry sends.
-- **Input Channel Mode Switch** — instantly cycle slots between Stereo, Mono (L+R sum), Mono (Left), and Mono (Right).
-- **Per-slot MIDI routing** — global default plus per-slot override.
-- **Per-instrument stacking** — multiple instances of the same plugin in a slot, each with its own level, note range, and enable state.
-- **Polished dark UI** — skeuomorphic controls, glassy panels, and no virtual-cable clutter.
+- **24 fixed slots.** One instrument per slot, always in the same order.
+- **FOH, IEM, and direct outs.** Separate FOH (1-2) and IEM (3-4) levels, mutes, and enables on every slot, plus direct hardware outputs (5, 6, 7, 8) for things like a vocal mic or a dry send.
+- **Input channel modes.** Switch any slot between Stereo, Mono (L+R), Mono (Left), and Mono (Right).
+- **Per-slot MIDI routing.** A global default, overridable per slot.
+- **Instrument stacking.** Several instances of the same plugin in one slot, each with its own level, note range, and on/off.
+- **Dark UI.** Hardware-style controls and no cable clutter.
 
 ### Songs, Scenes, and Setlists
-- **Songs (Rigs)** — complete patches saved as versioned JSON.
-- **Scenes** — verse / chorus / bridge variations that can be recalled or triggered by MIDI.
-- **Setlists** — ordered queues of songs with one-click load and automatic preload of the next rig.
-- **Atomic transitions** — new rigs are built and validated off-thread, then swapped in under lock.
-- **Rollback by construction** — if anything fails, the current rig keeps playing.
-- **Clean-slate mode** — fully unload the old rig before building a heavier one.
+- **Songs (Rigs).** Full patches saved as versioned JSON.
+- **Scenes.** Verse, chorus, and bridge variations you can recall by hand or by MIDI.
+- **Setlists.** Ordered song lists with one-click load and automatic preload of the next song.
+- **Atomic transitions.** New rigs are built and checked off-thread, then swapped in all at once.
+- **Automatic rollback.** If a load fails, the current rig keeps playing.
+- **Clean-slate mode.** Fully unload the old rig before loading a heavy one.
 
 ### MIDI
-- **Arm-then-wiggle CC learn** — click Learn, move the control, and bind it.
-- **Latch mode (TOG)** — turn any binding into a toggle.
-- **Per-strip mute toggles** — bind mutes to a CC with the same press-edge behavior.
-- **Instrument swap** — switch between two loaded chain slots without unloading either one.
-- **Long-press learn** — hold MUTE / FOH / IEM to arm the matching learn immediately.
-- **Scene MIDI triggers** — assign Program Change and channel to any scene.
-- **MIDI monitor** — see exactly what your controller is sending.
-- **MIDI OUT slots** — route filtered MIDI to hardware instead of a plugin.
+- **Arm-then-wiggle CC learn.** Click Learn, move a control, done.
+- **Latch mode (TOG).** Turn any binding into a toggle.
+- **Mute toggles.** Bind strip mutes to a CC.
+- **Instrument swap.** Flip between two loaded instruments without unloading either.
+- **Long-press learn.** Hold MUTE, FOH, or IEM to start learning that control.
+- **Scene triggers.** Assign a Program Change and channel to any scene.
+- **MIDI monitor.** See exactly what your controller is sending.
+- **MIDI out slots.** Send filtered MIDI to hardware instead of a plugin.
 
 ### DSP and Effects
 ![Channel Strip DSP](docs/channel_strip_dsp.png)
 
-- **Per-slot channel strip** — noise gate, EQ, compressor, chorus, and convolution IR reverb.
-- **Musette Detuner & Accordion Physics** — authentic MM (2-Reed) and MMM (3-Reed) detuning with dry-transient preservation and wet-path pre-filtering, plus the raucous **"TEMU Musette"** setting for extreme, unhinged bargain-bin comedic wobble.
-- **Discrete Direct Hardware Outs** — route individual slots directly to interface outputs (e.g. UMC1820 Out 5) while maintaining independent control over FOH and IEM sends.
-- **Sampler with waveform splice editor** — load a WAV and trim it with sample-accurate handles.
-- **Arpeggiator** — Up, Down, Up-Down, and Random patterns with BPM-locked timing.
-- **Octave harmonizer** — generate sub and upper octaves with mode shaping.
-- **MIDI effects** — transposer and related tools, per slot.
-- **Master FX buses** — global reverb, EQ, and compression before the outputs.
+- **Channel strip on every slot.** Noise gate, EQ, compressor, chorus, and convolution reverb.
+- **Musette detuner.** Accordion-style MM (2-reed) and MMM (3-reed) detuning that keeps the attack dry, plus **"TEMU Musette"**, a deliberately cheap, wildly out-of-tune setting for when the song needs it.
+- **Direct hardware outs.** Send a slot straight to an interface output (for example, Out 5 on a UMC1820) while keeping its FOH and IEM sends independent.
+- **Sampler with waveform editor.** Load a WAV and trim it to the sample.
+- **Arpeggiator.** Up, Down, Up-Down, and Random, locked to BPM.
+- **Octave harmonizer.** Add sub and upper octaves.
+- **MIDI effects.** Transposer and more, per slot.
+- **Master FX.** Reverb, EQ, and compression on the main buses.
 
 ### Between Sets
-- **Dual-deck break-music player** — BPM display, gain control, cue trimming, and smart playlist arrangement.
-- **YouTube grab** — paste a link and download MP3s directly into the playlist.
-- **Music library database** — embedded SQLite with CSV, JSON, and M3U export.
-- **Gig Notepad** — per-show notes alongside the rig.
-- **Web companion** — remote control from a phone or tablet on the same network.
+- **Dual-deck break music player.** BPM display, gain, cue trimming, and playlist arranging.
+- **YouTube grab.** Paste a link and the MP3 lands in your playlist.
+- **Music library.** Built-in SQLite database with CSV, JSON, and M3U export.
+- **Gig notepad.** Notes for each show, right next to the rig.
+- **Web remote.** Control it from a phone or tablet on the same network.
 
-### Live Reliability
-- **Panic button** — sends All Notes Off to every plugin in the next audio block.
-- **Parallel, hang-proof loading** — plugins build concurrently, with per-path serialization and GUI-thread restore where needed.
-- **Atomic JSON persistence with .bak** — saves are written safely and backed up automatically.
-- **SEH-protected message loop** — a bad VST3 should not take down the show.
-- **Per-plugin exception isolation** — one plugin failing does not kill the audio thread.
-- **Versioned rig migration** — old rigs upgrade automatically; unknown future formats are rejected safely.
+### Reliability
+- **Panic button.** All Notes Off to every plugin in the next audio block.
+- **Parallel loading.** Plugins load at the same time, with safe handling for plugins that need it.
+- **Safe saves.** Files are written atomically and backed up automatically.
+- **Crash containment.** A misbehaving VST3 doesn't take down the show.
+- **Per-plugin isolation.** One plugin failing doesn't stop the audio.
+- **Rig migration.** Older rig files upgrade automatically. Files from newer versions are refused instead of half-loaded.
 
-### Persistence
-All data lives under `%APPDATA%/Fanfare/`:
+### Where your data lives
+Everything is under `%APPDATA%/Fanfare/`:
 
 | Folder | Contents |
 |---|---|
 | `songs/` | Rig files (`.json`) |
 | `sets/` | Setlists |
-| `backups/` | Auto-rotated `.bak` copies of rigs |
-| `settings/` | User preferences and MIDI maps |
+| `backups/` | Rotating `.bak` copies of rigs |
+| `settings/` | Preferences and MIDI maps |
 
-The `.exe` is fully standalone — no external asset files. SVG icons are embedded.
+The `.exe` is self-contained. Icons are built in, so there are no extra files to keep track of.
 
 ---
 
@@ -149,136 +148,132 @@ The `.exe` is fully standalone — no external asset files. SVG icons are embedd
            FOH Out        IEM Out
 ```
 
-**Switching a song:**
+**What happens when you change songs:**
 
 1. `SetlistManager` calls `RigTransitioner::transitionToFile(nextSong)`.
-2. `RigBuilder` gathers the plugins for the new rig and builds them in parallel on worker threads.
-3. Each new instance is validated with a silent `processBlock`.
-4. The transitioner takes the callback lock, swaps pointers only, and signals the message loop.
-5. The old rig is unloaded. The new rig is live.
-6. If a build fails, the lock is never taken. The current rig keeps playing.
+2. `RigBuilder` loads the new rig's plugins in parallel on worker threads.
+3. Each new plugin is tested with a silent `processBlock`.
+4. The transitioner takes the lock, swaps pointers, and lets go.
+5. The old rig unloads. The new one is live.
+6. If anything failed along the way, the swap never happens and the current rig keeps playing.
 
 ---
 
-## Production-Proven VST3 Ecosystem
+## VST3 Plugins
 
-Fanfare features an intelligent multi-threaded plug-in engine with built-in fault containment, automatic GUI-thread state synchronization (Native Instruments, Roland), and thread-safe instantiation pipelines. The following industry-standard instruments and processors are verified and certified for mission-critical stage use:
+Fanfare handles the quirks of the big plugin makers for you: Native Instruments and Roland plugins restore on the GUI thread, plugins that throw during load are caught and skipped, and plugins that hang are timed out. These are in the built-in plugin list and are used on stage:
 
-### Certified Stage-Ready Plugins
-
-| Plugin | Vendor | Type / Role |
+| Plugin | Vendor | Type |
 |---|---|---|
-| **Hammond B-3X** | Hammond / SkyLabs | Tonewheel Organ (integrated split/pedal note-range filters) |
-| **Kontakt 8** | Native Instruments | Flagship Multi-Sampler (thread-safe GUI state restoration) |
-| **Super 8** | Native Instruments | Modern Polyphonic Synthesizer |
-| **Supercharger GT** | Native Instruments | Bus Tube Compressor |
-| **Omnisphere** | Spectrasonics | Power Synth & Multi-Timbral Rompler |
-| **UVI Workstation** | UVI | Advanced Sample Engine |
-| **Syntronik 2** | IK Multimedia | Legendary Vintage Synth Rompler |
-| **JUNO-106** | Roland Cloud | DCO Polyphonic Synthesizer |
-| **ZENOLOGY** | Roland Cloud | Advanced ZEN-Core Synthesizer |
-| **XV-5080** | Roland Cloud | Classic PCM Rompler Workhorse |
-| **Jun-6 V** | Arturia | Classic Chorus Polyphonic Synth |
-| **Replika XT** | Native Instruments | Studio Multi-Mode Delay |
-| **Chorus JUN-6** | Arturia | Analog Stereo Bucket-Brigade Chorus |
-| **Pre 1973** | Arturia | British Vintage Preamplifier |
-| **Pre TridA** | Arturia | Trident A-Range Console Preamp |
-| **Bus EXCITER-104** | Arturia | High-End Harmonic Enhancer |
-| **Bus FORCE** | Arturia | Parallel Master Bus Processor |
-| **Bus PEAK** | Arturia | Precision Limiter / Clipper |
-| **MixBox** | IK Multimedia | Modular 500-Series Channel Strip |
-| **Blue3 Organ** | Cherry Audio | Authentic Tonewheel & Rotary Speaker |
-| **PolyMax** | Universal Audio | Vintage Analog Modeling Synthesizer |
-| **bx_meter (VU)** | Brainworx | True Peak / Dynamic Range Metering |
-| **bx_console Focusrite SC** | Brainworx | Studio Console Channel Strip |
-| **TR5 Metering** | IK Multimedia | Broadcast & Loudness Telemetry |
-| **TR5 British Channel** | IK Multimedia | Classic Solid-State Channel Strip |
-| **TR5 White Channel** | IK Multimedia | Modern VCA Channel Strip |
-| **EZkeys 2** | Toontrack | Acoustic & Electric Pianos |
+| **Hammond B-3X** | Hammond / SkyLabs | Tonewheel organ, with split and pedal note-range filters |
+| **Kontakt 8** | Native Instruments | Sampler |
+| **Super 8** | Native Instruments | Polysynth |
+| **Supercharger GT** | Native Instruments | Tube compressor |
+| **Omnisphere** | Spectrasonics | Synth |
+| **UVI Workstation** | UVI | Sampler |
+| **Syntronik 2** | IK Multimedia | Vintage synth collection |
+| **JUNO-106** | Roland Cloud | Polysynth |
+| **ZENOLOGY** | Roland Cloud | ZEN-Core synth |
+| **XV-5080** | Roland Cloud | PCM rompler |
+| **Jun-6 V** | Arturia | Polysynth |
+| **Replika XT** | Native Instruments | Delay |
+| **Chorus JUN-6** | Arturia | Chorus |
+| **Pre 1973** | Arturia | Preamp |
+| **Pre TridA** | Arturia | Preamp |
+| **Bus EXCITER-104** | Arturia | Exciter |
+| **Bus FORCE** | Arturia | Bus processor |
+| **Bus PEAK** | Arturia | Limiter |
+| **MixBox** | IK Multimedia | Channel strip and multi-FX |
+| **Blue3 Organ** | Cherry Audio | Tonewheel organ |
+| **PolyMax** | Universal Audio | Polysynth |
+| **bx_meter (VU)** | Brainworx | Metering |
+| **bx_console Focusrite SC** | Brainworx | Channel strip |
+| **TR5 Metering** | IK Multimedia | Metering |
+| **TR5 British Channel** | IK Multimedia | Channel strip |
+| **TR5 White Channel** | IK Multimedia | Channel strip |
+| **EZkeys 2** | Toontrack | Pianos |
 
-### Hardware Validation
+### Hardware
 
-Fanfare is continuously battle-tested with professional stage controllers and multi-channel low-latency ASIO interfaces:
+Used on stage with:
 
-- **MIDI Controllers**: Yamaha CK88, Roland RD-88, Nektar LX61+, Arturia KeyLab 88 Essential, and all USB-MIDI class-compliant keyboards.
-- **Audio Interfaces (ASIO)**: Behringer UMC1820 & UMC204HD, Focusrite Scarlett series, AKAI EIE Pro, and all professional multi-out ASIO interfaces.
+- **MIDI controllers:** Yamaha CK88, Roland RD-88, Nektar LX61+, Arturia KeyLab 88 Essential. Any class-compliant USB MIDI keyboard works.
+- **Audio interfaces (ASIO):** Behringer UMC1820, Behringer UMC204HD, AKAI EIE Pro. Any interface with an ASIO driver works.
 
 ---
 
 ## Download
 
-Pre-built Windows binaries with **ASIO support** are on the [Releases page](https://github.com/openrig-host/openrig/releases). The download is a ready-to-run `Fanfare.exe` — no installer, no build step.
+Windows builds with **ASIO support** are on the [Releases page](https://github.com/openrig-host/openrig/releases). It's a single `Fanfare.exe`. Download it and run it.
 
-> Production binaries are compiled with hardware-optimized ASIO driver support and distributed directly via GitHub Releases. (Public cloud CI runners cannot distribute ASIO binaries due to Steinberg's proprietary SDK licensing agreements).
+> Releases are built with ASIO enabled and uploaded to GitHub directly. There's no CI build because Steinberg's ASIO SDK license doesn't allow it to live in a public repo or on a public build server.
 
 **Latest release:** https://github.com/openrig-host/openrig/releases/latest
 
 ### Requirements
-- Windows 10 / 11 (64-bit)
-- A VST3-compatible sound card or audio interface
-- An **ASIO driver** for your interface, recommended for live use. Without one, the engine falls back to WASAPI.
+- Windows 10 or 11 (64-bit)
+- An audio interface or sound card
+- An **ASIO driver** for your interface (recommended for live use). Without one, Fanfare uses WASAPI.
 
-### Compiling it yourself
+### Building it yourself
 
-> ⚠️ **ASIO SDK licensing:** the Steinberg ASIO SDK headers **cannot be bundled** in this repository. Before building with ASIO, download the SDK yourself from the official [Steinberg Developer Portal](https://www.steinberg.net/developers/), then place the headers in:
+> **ASIO SDK licensing:** The Steinberg ASIO SDK can't be included in this repo. To build with ASIO, download the SDK from the [Steinberg Developer Portal](https://www.steinberg.net/developers/) and put the headers here:
 > ```
 > C:\JUCE\modules\juce_audio_devices\native\asio\
 > ```
-> This exact path is required — it is where the project's `AppConfig.h` looks. This is also why there is no auto-build: the ASIO SDK cannot live in a public repo or run on CI.
+> It has to be that exact path, because that's where the project's `AppConfig.h` looks for it.
 
-To build, you need:
-1. **Visual Studio 2022+** with the "Desktop development with C++" workload
+You'll need:
+1. **Visual Studio 2022 or later** with the "Desktop development with C++" workload
 2. **[JUCE 8](https://juce.com)** installed at `C:\JUCE`
-3. **Steinberg ASIO SDK** — downloaded and placed as above for the Visual Studio ASIO build
+3. **Steinberg ASIO SDK**, placed as described above
 
-Then open `Builds\VisualStudio2026\Fanfare.sln` in Visual Studio, set **Release / x64**, and build. The output is `Fanfare.exe`.
+Open `Builds\VisualStudio2026\Fanfare.sln`, set **Release / x64**, and build. You'll get `Fanfare.exe`.
 
-For the full walkthrough, including the CMake no-ASIO path, troubleshooting, and the command-line MSBuild equivalent, see **[BUILDING.md](BUILDING.md)**.
+For the CMake build without ASIO, command-line MSBuild, and troubleshooting, see **[BUILDING.md](BUILDING.md)**.
 
 ---
 
 ## Make It Yours
 
-**The whole source tree is here. Fork it, modify it, and ship your own version.**
+**All the source is here. Fork it, change it, ship your own version.**
 
-This codebase was developed end-to-end with advanced AI coding tools — [Antigravity](https://antigravity.dev) and KiloCode, powered by Gemini, Claude, Minimax, Zai, and Xiaomi. That is not a marketing claim; it is simply how the project was built.
+Fanfare was built with AI coding tools: [Antigravity](https://antigravity.dev) and KiloCode, using Gemini, Claude, Minimax, Zai, and Xiaomi models. You can keep going the same way.
 
-1. **Download the source** using the green "Code" button → "Download ZIP", or `git clone`.
-2. **Unzip it on your machine.**
-3. **Point Antigravity at the folder** — or use any AI coding agent that can read a C++/JUCE codebase.
+1. **Get the source.** Use the green "Code" button and "Download ZIP", or `git clone`.
+2. **Unzip it.**
+3. **Open the folder in Antigravity**, or any AI coding agent that can work with C++ and JUCE.
 4. **Ask for what you want.** For example:
    - *"Add a new VST to the plugin registry in FanfareEngine.h."*
    - *"Add VST2 hosting alongside VST3."*
-   - *"Add a transpose-offset knob to the channel strip."*
-   - *"Migrate the JUCE 8 code to JUCE 9 when it ships."*
-   - *"Add a new hardware controller profile."*
-5. **Iterate.** The agent has the full source — types, comments, architecture docs, and everything else it needs to make real changes, not just stubs.
+   - *"Add a transpose knob to the channel strip."*
+   - *"Port this to JUCE 9 when it comes out."*
+   - *"Add support for my controller."*
+5. **Keep going.** The agent sees the whole codebase, so it can make real changes.
 
-Antigravity is the recommended environment for AI-assisted iteration, but any environment that understands JUCE 8 / C++17 will excel. You will need the build environment described in [BUILDING.md](BUILDING.md) — Visual Studio, JUCE, and the ASIO SDK for ASIO builds.
+You'll need the build setup from [BUILDING.md](BUILDING.md): Visual Studio, JUCE, and the ASIO SDK if you want ASIO.
 
-**If you build something useful, a PR back is welcome but not required** — unless you distribute your modified version, in which case the [GPL v3](LICENSE) requires you to publish your changes and make the corresponding source available.
+**Pull requests are welcome but not required.** If you distribute a modified version, though, the [GPL v3](LICENSE) requires you to publish your source.
 
 ---
 
 ## Philosophy
 
-A few principles drove every design decision:
-
-1. **Predictability over flexibility.** A stage rig is not a sketchbook. Slots are fixed. Routing is fixed. You know exactly what sound comes out of which key, every time.
-2. **The worst-case failure must be a no-op.** A song switch that fails should leave the current rig playing. A plugin crash should leave the other slots playing. A panic button must work in the next audio block.
-3. **Background work, foreground feel.** Plugin loading, preloading, MIDI mapping, and persistence should not block the audio thread, and should block the message thread as little as possible.
-4. **Own your data.** Rigs are JSON. Backups are automatic. There is no cloud, no account, and no telemetry. Your setlist is a folder of files you can read, edit, version-control, and back up with any tool you like.
+1. **Predictable beats flexible.** Slots are fixed. Routing is fixed. The same key makes the same sound every time.
+2. **When something fails, nothing changes.** A failed song switch leaves the current rig playing. A crashed plugin leaves the other slots playing. The panic button works in the next audio block.
+3. **Heavy lifting happens in the background.** Loading, preloading, and saving stay off the audio thread and out of your way.
+4. **Your files are yours.** Rigs are JSON. Backups are automatic. No cloud, no account, no telemetry. Your setlist is a folder you can open, edit, and back up however you like.
 
 ---
 
 ## Roadmap
 
-- [x] **Theme engine** — 5 selectable themes, including a light theme
-- [x] **Parallel plugin loading** with per-path serialization and GUI-thread restore for NI plugins
-- [x] **CC latch/toggle mode, mute toggles, long-press learn, instrument swap**
-- [ ] **DPI-aware layout** for HiDPI stage displays
-- [ ] **Out-of-process plugin sandboxing** (advancing our real-time SEH containment to isolated process rings)
-- [ ] **Touch-friendly mode** for tablet second screens
+- [x] **Themes.** Five to choose from, including a light theme
+- [x] **Parallel plugin loading**, with GUI-thread restore for NI plugins
+- [x] **CC latch and toggle, mute toggles, long-press learn, instrument swap**
+- [ ] **HiDPI layout** for high-resolution stage screens
+- [ ] **Out-of-process plugin hosting**, so each plugin runs in its own process
+- [ ] **Touch mode** for a tablet as a second screen
 
 ---
 
@@ -286,15 +281,15 @@ A few principles drove every design decision:
 
 **Fanfare is licensed under the [GNU General Public License v3.0](LICENSE).**
 
-The GPL v3 was chosen deliberately: the Steinberg ASIO SDK — which Fanfare links for low-latency audio — is offered under GPL v3 as an alternative to its proprietary license. By licensing Fanfare under GPL v3, the project remains compatible with that model.
+GPL v3 was picked on purpose. Steinberg offers the ASIO SDK under GPL v3 as an alternative to its proprietary license, so licensing Fanfare the same way keeps the ASIO builds legal to share.
 
-What that means in practice:
-- You're free to use, study, modify, and redistribute Fanfare, including the ASIO builds.
-- If you **distribute** a modified version, binary or source, you must release your changes under GPL v3 and make the corresponding source available.
-- The ASIO SDK itself still may not be redistributed in this repo — builders download it themselves per [BUILDING.md](BUILDING.md).
+In practice:
+- You can use, study, change, and share Fanfare, including the ASIO builds.
+- If you **distribute** a modified version, as a binary or as source, you have to release your changes under GPL v3 too.
+- The ASIO SDK itself still can't be included in this repo. Download it yourself as described in [BUILDING.md](BUILDING.md).
 
 ## Credits
 
 Built with [JUCE 8](https://juce.com).
 
-Created with [Antigravity](https://antigravity.dev) and KiloCode, powered by [Gemini](https://deepmind.google/technologies/gemini/), [Claude](https://anthropic.com), Minimax, Zai, and Xiaomi.
+Made with [Antigravity](https://antigravity.dev) and KiloCode, using [Gemini](https://deepmind.google/technologies/gemini/), [Claude](https://anthropic.com), Minimax, Zai, and Xiaomi.
