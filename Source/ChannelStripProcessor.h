@@ -3,6 +3,7 @@
 #include "FanfareConstants.h"
 #include "JuceHeader.h"
 #include <juce_dsp/juce_dsp.h>
+#include "MusetteDetuner.h"
 #include <atomic>
 #include <cmath>
 
@@ -476,6 +477,17 @@ public:
   std::atomic<bool> irEnabled{false};
   std::atomic<float> irMix{0.3f};
 
+  // Musette Detuner (Wet MM/MMM accordion emulation)
+  MusetteDetuner musette;
+  std::atomic<bool> musetteEnabled{false};
+  std::atomic<float> musetteCents{6.0f};
+  std::atomic<int> musetteMode{0}; // 0 = 2-Reed MM, 1 = 3-Reed MMM, 2 = TEMU Musette
+  std::atomic<bool> musette3Reed{false};
+  std::atomic<float> musetteMix{0.25f};
+
+  // Input Channel Mode: 0 = Stereo, 1 = Mono (L+R), 2 = Mono (Left), 3 = Mono (Right)
+  std::atomic<int> channelMode{0};
+
   // Cached parameter state to prevent per-block coefficient recomputation
   bool cachedGateEnabled = false;
   float cachedGateThresh = -999.0f;
@@ -505,6 +517,7 @@ public:
     chorusR.prepare(sampleRate);
     reverb.setSampleRate(sampleRate);
     irReverb.prepare(sampleRate, 4096);
+    musette.prepare(sampleRate);
   }
 
   void processBlock(juce::AudioBuffer<float> &buffer) {
@@ -521,6 +534,11 @@ public:
     bool choEnabled = chorusEnabled.load();
     float choRate = chorusRate.load();
     float choMix = chorusMix.load();
+
+    bool musEnabled = musetteEnabled.load();
+    float musCents = musetteCents.load();
+    int musMode = musetteMode.load();
+    float musMix = musetteMix.load();
 
     if (gEnabled != cachedGateEnabled || gThresh != cachedGateThresh) {
       cachedGateEnabled = gEnabled;
@@ -581,6 +599,25 @@ public:
     auto *L = buffer.getWritePointer(0);
     auto *R = buffer.getNumChannels() > 1 ? buffer.getWritePointer(1) : nullptr;
 
+    if (R != nullptr) {
+      int mode = channelMode.load(std::memory_order_relaxed);
+      if (mode == 1) { // Mono (L+R)
+        for (int i = 0; i < numSamples; ++i) {
+          float m = 0.5f * (L[i] + R[i]);
+          L[i] = m;
+          R[i] = m;
+        }
+      } else if (mode == 2) { // Mono (Left)
+        for (int i = 0; i < numSamples; ++i) {
+          R[i] = L[i];
+        }
+      } else if (mode == 3) { // Mono (Right)
+        for (int i = 0; i < numSamples; ++i) {
+          L[i] = R[i];
+        }
+      }
+    }
+
     for (int i = 0; i < numSamples; ++i) {
       L[i] = gateL.process(L[i]);
       if (R)
@@ -593,6 +630,13 @@ public:
       L[i] = compL.process(L[i]);
       if (R)
         R[i] = compR.process(R[i]);
+
+      if (musEnabled && musMix > 0.0001f) {
+        if (R)
+          musette.process(L[i], R[i], true, musCents, musMode, musMix);
+        else
+          musette.processMono(L[i], musCents, musMode, musMix);
+      }
 
       L[i] = chorusL.process(L[i], 0.0f);
       if (R)

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.15)
-project(Fanfare VERSION 1.0.0 LANGUAGES C CXX)
+project(Fanfare VERSION 1.1.3 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -72,4 +72,12 @@ target_link_libraries(Fanfare PRIVATE
 
 if(WIN32)
     set_property(TARGET Fanfare PROPERTY VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
+
+    # Deploy latest binary to Google Drive shared folder if present
+    add_custom_command(TARGET Fanfare POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E echo "Checking for Google Drive deployment folder..."
+        COMMAND cmd /c "if exist \"E:\\My Drive\\Fanfare - Latest versions\" (copy /Y \"$<TARGET_FILE:Fanfare>\" \"E:\\My Drive\\Fanfare - Latest versions\\Fanfare.exe\")"
+        COMMENT "Deploying latest binary to E:/My Drive/Fanfare - Latest versions"
+    )
 endif()
+

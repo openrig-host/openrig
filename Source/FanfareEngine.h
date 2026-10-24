@@ -885,7 +885,7 @@ public:
 
     bool hasSubgroups = false;
     for (int i = 0; i < numActiveSlots; ++i) {
-      if (slots[i]->getOutputTarget() >= 0) {
+      if (slots[i]->isSubgroupTarget() && slots[i]->getOutputTarget() < numActiveSlots) {
         hasSubgroups = true;
         break;
       }
@@ -901,13 +901,13 @@ public:
         preallocatedJobs[i]->runJob();
 
         int target = slots[i]->getOutputTarget();
-        if (target >= 0 && target < numActiveSlots && target > i) {
+        if (slots[i]->isSubgroupTarget() && target < numActiveSlots && target > i) {
           slots[i]->sumToSubgroup(scratchBuffers[i], scratchBuffers[target], aux1Bus, aux2Bus);
           slots[i]->sumToIemBus(scratchBuffers[i], iemBus);
         } else {
           bool isSubgroupTarget = false;
           for (int k = 0; k < numActiveSlots; ++k) {
-            if (slots[k]->getOutputTarget() == i) { isSubgroupTarget = true; break; }
+            if (slots[k]->isSubgroupTarget() && slots[k]->getOutputTarget() == i) { isSubgroupTarget = true; break; }
           }
           if (isSubgroupTarget) {
             slots[i]->sumToFohBusOnly(scratchBuffers[i], fohBus, aux1Bus, aux2Bus);
@@ -946,7 +946,7 @@ public:
       for (int i = 0; i < numActiveSlots; ++i) {
         bool isTgt = false;
         for (int k = 0; k < numActiveSlots; ++k) {
-          if (slots[k]->getOutputTarget() == i) { isTgt = true; break; }
+          if (slots[k]->isSubgroupTarget() && slots[k]->getOutputTarget() == i) { isTgt = true; break; }
         }
         preallocatedJobs[i]->seedOnly = isTgt;
         threadPool.addJob(preallocatedJobs[i], false);
@@ -991,7 +991,7 @@ public:
         aux2Bus.clear();
         for (int i = 0; i < (int)slots.size(); ++i) {
           int target = slots[i]->getOutputTarget();
-          if (target >= 0 && target < (int)slots.size() && target > i) {
+          if (slots[i]->isSubgroupTarget() && target < (int)slots.size() && target > i) {
             slots[i]->sumToSubgroup(scratchBuffers[i], scratchBuffers[target], aux1Bus, aux2Bus);
             slots[i]->sumToIemBus(scratchBuffers[i], iemBus);
           }
@@ -1001,7 +1001,7 @@ public:
         for (int i = 0; i < (int)slots.size(); ++i) {
           bool isSubgroupTarget = false;
           for (int k = 0; k < (int)slots.size(); ++k) {
-            if (slots[k]->getOutputTarget() == i) { isSubgroupTarget = true; break; }
+            if (slots[k]->isSubgroupTarget() && slots[k]->getOutputTarget() == i) { isSubgroupTarget = true; break; }
           }
           if (isSubgroupTarget) {
             // Use the slot's own MIDI buffer for parity with the sequential path
@@ -1013,13 +1013,13 @@ public:
         // Step 3: Sum to buses (subgroup targets sum to FOH only to avoid IEM double-feeding)
         for (int i = 0; i < (int)slots.size(); ++i) {
           int target = slots[i]->getOutputTarget();
-          if (target >= 0 && target < (int)slots.size() && target > i) {
+          if (slots[i]->isSubgroupTarget() && target < (int)slots.size() && target > i) {
             // Upstream slots already summed to subgroup & IEM above
             continue;
           }
           bool isSubgroupTarget = false;
           for (int k = 0; k < (int)slots.size(); ++k) {
-            if (slots[k]->getOutputTarget() == i) { isSubgroupTarget = true; break; }
+            if (slots[k]->isSubgroupTarget() && slots[k]->getOutputTarget() == i) { isSubgroupTarget = true; break; }
           }
           if (isSubgroupTarget) {
             slots[i]->sumToFohBusOnly(scratchBuffers[i], fohBus, aux1Bus, aux2Bus);
@@ -1168,6 +1168,42 @@ public:
         if (iemOff + 1 < numOutputs && outputData[iemOff + 1] != nullptr)
           juce::FloatVectorOperations::copy(outputData[iemOff + 1],
                                             iemBus.getReadPointer(1), numSamples);
+      }
+
+      // Route Direct Hardware Outputs from individual slots
+      for (size_t i = 0; i < slots.size(); ++i) {
+        if (!slots[i]->isBypassed() && slots[i]->isDirectHardwareOut()) {
+          int dirCh = slots[i]->getDirectHardwareOutChannel();
+          if (dirCh >= 0 && dirCh < numOutputs && outputData[dirCh] != nullptr) {
+            float fohBase = slots[i]->getFohLevel();
+            if (slots[i]->isDirectHardwareOutStereo()) {
+              if (scratchBuffers[i].getNumChannels() > 0)
+                juce::FloatVectorOperations::addWithMultiply(
+                    outputData[dirCh], scratchBuffers[i].getReadPointer(0),
+                    fohBase, numSamples);
+              if (dirCh + 1 < numOutputs && outputData[dirCh + 1] != nullptr &&
+                  scratchBuffers[i].getNumChannels() > 1)
+                juce::FloatVectorOperations::addWithMultiply(
+                    outputData[dirCh + 1], scratchBuffers[i].getReadPointer(1),
+                    fohBase, numSamples);
+            } else {
+              // Mono direct out: sum L + R * 0.5f if 2 channels, or L if 1 channel
+              if (scratchBuffers[i].getNumChannels() >= 2) {
+                const float *l = scratchBuffers[i].getReadPointer(0);
+                const float *r = scratchBuffers[i].getReadPointer(1);
+                float *dst = outputData[dirCh];
+                float gain = fohBase * 0.5f;
+                for (int s = 0; s < numSamples; ++s) {
+                  dst[s] += (l[s] + r[s]) * gain;
+                }
+              } else if (scratchBuffers[i].getNumChannels() == 1) {
+                juce::FloatVectorOperations::addWithMultiply(
+                    outputData[dirCh], scratchBuffers[i].getReadPointer(0),
+                    fohBase, numSamples);
+              }
+            }
+          }
+        }
       }
     }
 
@@ -2231,6 +2267,12 @@ public:
     songSlot.strip.irEnabled = stripData.irEnabled;
     songSlot.strip.irMix = stripData.irMix;
     songSlot.strip.irPath = stripData.getIRReverb().getLoadedPath();
+    songSlot.strip.musetteEnabled = stripData.musetteEnabled.load();
+    songSlot.strip.musetteCents = stripData.musetteCents.load();
+    songSlot.strip.musette3Reed = stripData.musette3Reed.load();
+    songSlot.strip.musetteMode = stripData.musetteMode.load();
+    songSlot.strip.musetteMix = stripData.musetteMix.load();
+    songSlot.strip.channelMode = stripData.channelMode.load();
 
     auto& arpData = s->getArpeggiator();
     songSlot.arpeggiator.enabled = arpData.enabled.load();
@@ -2371,6 +2413,12 @@ public:
     stripData.irMix = songSlot.strip.irMix;
     if (songSlot.strip.irPath.isNotEmpty())
       stripData.getIRReverb().loadIR(juce::File(songSlot.strip.irPath));
+    stripData.musetteEnabled.store(songSlot.strip.musetteEnabled);
+    stripData.musetteCents.store(songSlot.strip.musetteCents);
+    stripData.musette3Reed.store(songSlot.strip.musette3Reed);
+    stripData.musetteMode.store(songSlot.strip.musetteMode);
+    stripData.musetteMix.store(songSlot.strip.musetteMix);
+    stripData.channelMode.store(songSlot.strip.channelMode);
     stripData.prepare(currentSampleRate);
 
     auto& arpLive = s->getArpeggiator();

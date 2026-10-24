@@ -35,6 +35,7 @@ standalone `Fanfare.exe`.
 2. Set configuration to **Release**, platform **x64**.
 3. Build Solution (`Ctrl+Shift+B`).
 4. Output: `Builds\VisualStudio2026\x64\Release\App\Fanfare.exe`.
+5. Automatic Cloud Distribution: Post-build automatically copies the newest `Fanfare.exe` and `Fanfare.pdb` to `E:\My Drive\Fanfare - Latest versions` (Google Drive).
 
 Command line equivalent:
 

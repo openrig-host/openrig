@@ -543,6 +543,25 @@ public:
   void setOutputTarget(int target) { outputTarget.store(target); }
   int getOutputTarget() const { return outputTarget.load(); }
 
+  bool isDirectHardwareOut() const {
+    int t = outputTarget.load(std::memory_order_relaxed);
+    return t >= 100;
+  }
+  bool isDirectHardwareOutStereo() const {
+    int t = outputTarget.load(std::memory_order_relaxed);
+    return t >= 200;
+  }
+  int getDirectHardwareOutChannel() const {
+    int t = outputTarget.load(std::memory_order_relaxed);
+    if (t >= 200) return t - 200;
+    if (t >= 100) return t - 100;
+    return -1;
+  }
+  bool isSubgroupTarget() const {
+    int t = outputTarget.load(std::memory_order_relaxed);
+    return t >= 0 && t < 100;
+  }
+
   // --- Mix Controls ---
   void setChannelLevel(float newLevel) {
     // Legacy: sets both FOH and IEM to same level

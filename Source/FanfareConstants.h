@@ -27,7 +27,7 @@ namespace FanfareConstants {
 // (AvSetMmThreadCharacteristics returns 1552 = "already joined"). If MMCSS
 // is ever revisited: render thread only, AvRevert on teardown, workers stay
 // at normal priority — or better, don't: a host needs none of it.
-// Shipped defaults (v1.1.2): full hardening MINUS MMCSS — see the verdict
+// Shipped defaults (v1.1.3): full hardening MINUS MMCSS — see the verdict
 // note above. These values ARE the release configuration; source builds
 // match the published binary.
 #ifndef FANFARE_PRIORITY_ELEVATION

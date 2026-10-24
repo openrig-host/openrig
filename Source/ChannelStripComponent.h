@@ -91,6 +91,16 @@ public:
         onCloseRequest();
     };
 
+    // Stereo / Mono Mode Button (cycles STEREO -> MONO (L+R) -> MONO (Left) -> MONO (Right))
+    addAndMakeVisible(stereoMonoBtn);
+    updateStereoMonoButton();
+    stereoMonoBtn.setTooltip("Input Channel Mode: Click to cycle STEREO -> MONO (L+R) -> MONO (Left) -> MONO (Right)");
+    stereoMonoBtn.onClick = [this] {
+      int next = (slot.getStrip().channelMode.load() + 1) % 4;
+      slot.getStrip().channelMode.store(next);
+      updateStereoMonoButton();
+    };
+
     // --- GATE ---
     addAndMakeVisible(gateGroup);
     gateGroup.setText("NOISE GATE");
@@ -392,7 +402,97 @@ public:
       slot.setAux2Send((float)aux2Knob.getValue());
     };
 
+    // --- MUSETTE DETUNER ---
+    addAndMakeVisible(musetteGroup);
+    musetteGroup.setText("MUSETTE DETUNER");
+    musetteGroup.setColour(juce::GroupComponent::outlineColourId, ThemeManager::get(Theme::Role::catAccordion));
+
+    addAndMakeVisible(musetteToggle);
+    musetteToggle.setButtonText("ENABLE");
+    musetteToggle.setClickingTogglesState(true);
+    musetteToggle.setColour(juce::TextButton::buttonOnColourId, ThemeManager::get(Theme::Role::ok));
+    musetteToggle.getProperties().set("useToggleSwitch", true);
+    musetteToggle.getProperties().set("isOrangeToggle", false);
+    musetteToggle.setToggleState(slot.getStrip().musetteEnabled.load(), juce::dontSendNotification);
+    musetteToggle.setTooltip("Enable authentic MM/MMM wet musette detuning with bit-accurate dry path");
+    musetteToggle.onClick = [this] {
+      slot.getStrip().musetteEnabled.store(musetteToggle.getToggleState());
+    };
+
+    addAndMakeVisible(musetteModeToggle);
+    updateMusetteModeButton();
+    musetteModeToggle.onClick = [this] {
+      int next = (slot.getStrip().musetteMode.load() + 1) % 3;
+      slot.getStrip().musetteMode.store(next);
+      slot.getStrip().musette3Reed.store(next == 1);
+      updateMusetteModeButton();
+    };
+
+    addAndMakeVisible(musetteCentsKnob);
+    musetteCentsKnob.setRange(3.0, 12.0, 0.5);
+    musetteCentsKnob.setValue(slot.getStrip().musetteCents.load(), juce::dontSendNotification);
+    musetteCentsKnob.setDoubleClickReturnValue(true, 6.0);
+    musetteCentsKnob.setTooltip("Detune offset: Default +6 cents (range +3 to +12 cents)");
+    musetteCentsKnob.onValueChange = [this] {
+      slot.getStrip().musetteCents.store((float)musetteCentsKnob.getValue());
+    };
+
+    addAndMakeVisible(musetteMixKnob);
+    musetteMixKnob.setRange(0.0, 1.0, 0.01);
+    musetteMixKnob.setValue(slot.getStrip().musetteMix.load(), juce::dontSendNotification);
+    musetteMixKnob.setDoubleClickReturnValue(true, 0.25);
+    musetteMixKnob.setTooltip("Wet Mix Blend (Baseline: 25% Wet / 75% Dry)");
+    musetteMixKnob.onValueChange = [this] {
+      slot.getStrip().musetteMix.store((float)musetteMixKnob.getValue());
+    };
+
     setSize(980, 520);
+  }
+
+  void updateMusetteModeButton() {
+    int mode = slot.getStrip().musetteMode.load();
+    switch (mode) {
+      case 1:
+        musetteModeToggle.setButtonText("3-REED MMM");
+        musetteModeToggle.setColour(juce::TextButton::buttonColourId, ThemeManager::get(Theme::Role::accent));
+        musetteModeToggle.setColour(juce::TextButton::textColourOffId, ThemeManager::get(Theme::Role::text));
+        musetteModeToggle.setTooltip("Musette Mode: 3-Reed MMM (+cents sharp & -4ct flat terzetti)");
+        break;
+      case 2:
+        musetteModeToggle.setButtonText("TEMU MUSETTE");
+        musetteModeToggle.setColour(juce::TextButton::buttonColourId, juce::Colour(0xFFFF5722)); // Temu orange
+        musetteModeToggle.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+        musetteModeToggle.setTooltip("Musette Mode: TEMU Musette (wild bargain-bin extreme detuning for comedic wobble)");
+        break;
+      default:
+        musetteModeToggle.setButtonText("2-REED MM");
+        musetteModeToggle.setColour(juce::TextButton::buttonColourId, ThemeManager::get(Theme::Role::raised));
+        musetteModeToggle.setColour(juce::TextButton::textColourOffId, ThemeManager::get(Theme::Role::text));
+        musetteModeToggle.setTooltip("Musette Mode: 2-Reed MM (+cents sharp only)");
+        break;
+    }
+  }
+
+  void updateStereoMonoButton() {
+    int mode = slot.getStrip().channelMode.load();
+    switch (mode) {
+      case 1:
+        stereoMonoBtn.setButtonText("MONO (L+R)");
+        stereoMonoBtn.setColour(juce::TextButton::buttonColourId, ThemeManager::get(Theme::Role::accent));
+        break;
+      case 2:
+        stereoMonoBtn.setButtonText("MONO (LEFT)");
+        stereoMonoBtn.setColour(juce::TextButton::buttonColourId, ThemeManager::get(Theme::Role::accent));
+        break;
+      case 3:
+        stereoMonoBtn.setButtonText("MONO (RIGHT)");
+        stereoMonoBtn.setColour(juce::TextButton::buttonColourId, ThemeManager::get(Theme::Role::accent));
+        break;
+      default:
+        stereoMonoBtn.setButtonText("STEREO");
+        stereoMonoBtn.setColour(juce::TextButton::buttonColourId, ThemeManager::get(Theme::Role::raised));
+        break;
+    }
   }
 
   void showColorPicker() {
@@ -441,6 +541,7 @@ public:
 
   void resized() override {
     closeBtn.setBounds(getWidth() - 40, 10, 30, 30);
+    stereoMonoBtn.setBounds(getWidth() - 190, 12, 140, 26);
     int sectionY = 60;
     int sectionH = 200;
 
@@ -511,15 +612,23 @@ public:
     irNameLabel.setBounds(290, irY, getWidth() - 300, 24);
 
     int custY = sectionY + sectionH + 20;
-    nameLabel.setBounds(20, custY, 100, 24);
-    nameEditor.setBounds(130, custY, 200, 24);
-    colorLabel.setBounds(20, custY + 40, 100, 24);
-    colorPreview.setBounds(130, custY + 40, 40, 24);
-    colorButton.setBounds(180, custY + 40, 100, 24);
+    nameLabel.setBounds(20, custY, 95, 24);
+    nameEditor.setBounds(120, custY, 155, 24);
+    colorLabel.setBounds(20, custY + 36, 95, 24);
+    colorPreview.setBounds(120, custY + 36, 40, 24);
+    colorButton.setBounds(165, custY + 36, 110, 24);
 
-    auxGroup.setBounds(getWidth() - 350, custY - 10, 330, 90);
-    aux1Knob.setBounds(getWidth() - 330, custY + 10, 120, 70);
-    aux2Knob.setBounds(getWidth() - 180, custY + 10, 120, 70);
+    int musetteX = 290;
+    int musetteW = 330;
+    musetteGroup.setBounds(musetteX, custY - 10, musetteW, 90);
+    musetteToggle.setBounds(musetteX + 10, custY + 12, 100, 24);
+    musetteModeToggle.setBounds(musetteX + 10, custY + 44, 100, 24);
+    musetteCentsKnob.setBounds(musetteX + 115, custY + 6, 95, 70);
+    musetteMixKnob.setBounds(musetteX + 220, custY + 6, 95, 70);
+
+    auxGroup.setBounds(getWidth() - 340, custY - 10, 320, 90);
+    aux1Knob.setBounds(getWidth() - 325, custY + 10, 135, 70);
+    aux2Knob.setBounds(getWidth() - 175, custY + 10, 135, 70);
   }
 
 private:
@@ -582,6 +691,16 @@ private:
   juce::GroupComponent auxGroup;
   BigKnob aux1Knob{" Aux1"};
   BigKnob aux2Knob{" Aux2"};
+
+  // Musette Detuner UI
+  juce::GroupComponent musetteGroup;
+  juce::TextButton musetteToggle;
+  juce::TextButton musetteModeToggle;
+  BigKnob musetteCentsKnob{" ct"};
+  BigKnob musetteMixKnob{" Mix"};
+
+  // Input Channel Mode (Stereo / Mono)
+  juce::TextButton stereoMonoBtn;
 
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ChannelStripComponent)
 };

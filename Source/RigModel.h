@@ -60,6 +60,12 @@ struct ChannelStripSettings {
     bool irEnabled = false;
     float irMix = 0.3f;
     juce::String irPath;
+    bool musetteEnabled = false;
+    float musetteCents = 6.0f;
+    bool musette3Reed = false;
+    int musetteMode = 0; // 0 = 2-Reed MM, 1 = 3-Reed MMM, 2 = TEMU Musette
+    float musetteMix = 0.25f;
+    int channelMode = 0; // 0 = Stereo, 1 = Mono (L+R), 2 = Mono (Left), 3 = Mono (Right)
 };
 
 struct SamplerSlotSettings {

@@ -153,6 +153,12 @@ bool RigSerializer::varToSong(const juce::var& rig, Song& out) {
                 slot.strip.irEnabled = so->hasProperty("irEnabled") ? (bool)so->getProperty("irEnabled") : false;
                 slot.strip.irMix = so->hasProperty("irMix") ? (float)so->getProperty("irMix") : 0.3f;
                 slot.strip.irPath = so->hasProperty("irPath") ? so->getProperty("irPath").toString() : juce::String();
+                slot.strip.musetteEnabled = so->hasProperty("musetteEnabled") ? (bool)so->getProperty("musetteEnabled") : false;
+                slot.strip.musetteCents = so->hasProperty("musetteCents") ? (float)so->getProperty("musetteCents") : 6.0f;
+                slot.strip.musette3Reed = so->hasProperty("musette3Reed") ? (bool)so->getProperty("musette3Reed") : false;
+                slot.strip.musetteMode = so->hasProperty("musetteMode") ? (int)so->getProperty("musetteMode") : (slot.strip.musette3Reed ? 1 : 0);
+                slot.strip.musetteMix = so->hasProperty("musetteMix") ? (float)so->getProperty("musetteMix") : 0.25f;
+                slot.strip.channelMode = so->hasProperty("channelMode") ? (int)so->getProperty("channelMode") : 0;
         }
 
             if (auto* maps = cv.getProperty("ccMappings", juce::var()).getArray()) {
@@ -332,6 +338,12 @@ juce::var RigSerializer::songToVar(const Song& song) {
         stripObj->setProperty("irEnabled", (bool)s.strip.irEnabled);
         stripObj->setProperty("irMix", (double)s.strip.irMix);
         stripObj->setProperty("irPath", s.strip.irPath);
+        stripObj->setProperty("musetteEnabled", (bool)s.strip.musetteEnabled);
+        stripObj->setProperty("musetteCents", (double)s.strip.musetteCents);
+        stripObj->setProperty("musette3Reed", (bool)(s.strip.musetteMode == 1));
+        stripObj->setProperty("musetteMode", s.strip.musetteMode);
+        stripObj->setProperty("musetteMix", (double)s.strip.musetteMix);
+        stripObj->setProperty("channelMode", s.strip.channelMode);
         st->setProperty("strip", stripObj);
         auto* arpObj = new juce::DynamicObject();
         arpObj->setProperty("enabled", s.arpeggiator.enabled);
@@ -520,6 +532,12 @@ juce::String RigSerializer::serializeStrip(const SongSlot& slot) {
     stripObj->setProperty("irEnabled", (bool)slot.strip.irEnabled);
     stripObj->setProperty("irMix", (double)slot.strip.irMix);
     stripObj->setProperty("irPath", slot.strip.irPath);
+    stripObj->setProperty("musetteEnabled", (bool)slot.strip.musetteEnabled);
+    stripObj->setProperty("musetteCents", (double)slot.strip.musetteCents);
+    stripObj->setProperty("musette3Reed", (bool)(slot.strip.musetteMode == 1));
+    stripObj->setProperty("musetteMode", slot.strip.musetteMode);
+    stripObj->setProperty("musetteMix", (double)slot.strip.musetteMix);
+    stripObj->setProperty("channelMode", slot.strip.channelMode);
     st->setProperty("strip", stripObj);
         auto* arpObj = new juce::DynamicObject();
         arpObj->setProperty("enabled", slot.arpeggiator.enabled);
@@ -669,6 +687,12 @@ bool RigSerializer::readStripFromFile(const juce::File& file, SongSlot& outSlot)
         outSlot.strip.irEnabled = so->hasProperty("irEnabled") ? (bool)so->getProperty("irEnabled") : false;
         outSlot.strip.irMix = so->hasProperty("irMix") ? (float)so->getProperty("irMix") : 0.3f;
         outSlot.strip.irPath = so->hasProperty("irPath") ? so->getProperty("irPath").toString() : juce::String();
+        outSlot.strip.musetteEnabled = so->hasProperty("musetteEnabled") ? (bool)so->getProperty("musetteEnabled") : false;
+        outSlot.strip.musetteCents = so->hasProperty("musetteCents") ? (float)so->getProperty("musetteCents") : 6.0f;
+        outSlot.strip.musette3Reed = so->hasProperty("musette3Reed") ? (bool)so->getProperty("musette3Reed") : false;
+        outSlot.strip.musetteMode = so->hasProperty("musetteMode") ? (int)so->getProperty("musetteMode") : (outSlot.strip.musette3Reed ? 1 : 0);
+        outSlot.strip.musetteMix = so->hasProperty("musetteMix") ? (float)so->getProperty("musetteMix") : 0.25f;
+        outSlot.strip.channelMode = so->hasProperty("channelMode") ? (int)so->getProperty("channelMode") : 0;
     }
 
     if (auto* av = cv.getProperty("arpeggiator", juce::var()).getDynamicObject()) {

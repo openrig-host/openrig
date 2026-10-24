@@ -314,7 +314,7 @@ RackSlotComponent::RackSlotComponent(RackSlot &s, int index, juce::LookAndFeel &
   };
 
   addAndMakeVisible(outputSelector);
-  outputSelector.setTooltip("Select output target (Main FOH/IEM or Subgroup)");
+  outputSelector.setTooltip("Select output target (Main FOH/IEM, Direct Hardware Out, or Subgroup)");
   outputSelector.onChange = [this]() {
     int selId = outputSelector.getSelectedId();
     int target = selId - 2;
@@ -1483,9 +1483,31 @@ void RackSlotComponent::updateOutputSelector() {
   outputSelector.clear(juce::dontSendNotification);
   outputSelector.addItem("Main FOH/IEM", 1);
 
+  // Direct Hardware Outputs
+  outputSelector.addSeparator();
+  if (auto *rootMenu = outputSelector.getRootMenu())
+    rootMenu->addSectionHeader("Direct Hardware Outs");
+  outputSelector.addItem("Direct: Out 5 (Mono)", 104 + 2);
+  outputSelector.addItem("Direct: Out 6 (Mono)", 105 + 2);
+  outputSelector.addItem("Direct: Out 7 (Mono)", 106 + 2);
+  outputSelector.addItem("Direct: Out 8 (Mono)", 107 + 2);
+  outputSelector.addItem("Direct: Out 1 (Mono)", 100 + 2);
+  outputSelector.addItem("Direct: Out 2 (Mono)", 101 + 2);
+  outputSelector.addItem("Direct: Out 3 (Mono)", 102 + 2);
+  outputSelector.addItem("Direct: Out 4 (Mono)", 103 + 2);
+  outputSelector.addItem("Direct: Out 5+6 (Stereo)", 204 + 2);
+  outputSelector.addItem("Direct: Out 7+8 (Stereo)", 206 + 2);
+
   int numSlots = FanfareConstants::kNumSlots;
   if (slotIndex >= 0 && slotIndex < numSlots) {
+    bool headerAdded = false;
     for (int i = slotIndex + 1; i < numSlots; ++i) {
+      if (!headerAdded) {
+        outputSelector.addSeparator();
+        if (auto *rootMenu = outputSelector.getRootMenu())
+          rootMenu->addSectionHeader("Subgroup to Slot");
+        headerAdded = true;
+      }
       juce::String name = "Slot " + juce::String(i + 1);
       if (getSlotName) {
         juce::String customName = getSlotName(i);

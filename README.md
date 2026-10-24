@@ -78,7 +78,8 @@ This is not a DAW. It is a stage instrument.
 
 ### The Rack
 - **Fixed 24-slot layout** — one instrument per slot, always in a known order.
-- **Dual-bus mixing** — independent FOH and IEM levels, mutes, and enables on every slot.
+- **Dual-bus mixing & Direct Outs** — independent FOH (1-2) and IEM (3-4) levels, mutes, and enables on every slot, plus dedicated discrete Direct Hardware Outputs (Outputs 5, 6, 7, 8) for isolated feeds like vocal mics or dry sends.
+- **Input Channel Mode Switch** — instantly cycle slots between Stereo, Mono (L+R sum), Mono (Left), and Mono (Right).
 - **Per-slot MIDI routing** — global default plus per-slot override.
 - **Per-instrument stacking** — multiple instances of the same plugin in a slot, each with its own level, note range, and enable state.
 - **Polished dark UI** — skeuomorphic controls, glassy panels, and no virtual-cable clutter.
@@ -105,6 +106,8 @@ This is not a DAW. It is a stage instrument.
 ![Channel Strip DSP](docs/channel_strip_dsp.png)
 
 - **Per-slot channel strip** — noise gate, EQ, compressor, chorus, and convolution IR reverb.
+- **Musette Detuner & Accordion Physics** — authentic MM (2-Reed) and MMM (3-Reed) detuning with dry-transient preservation and wet-path pre-filtering, plus the raucous **"TEMU Musette"** setting for extreme, unhinged bargain-bin comedic wobble.
+- **Discrete Direct Hardware Outs** — route individual slots directly to interface outputs (e.g. UMC1820 Out 5) while maintaining independent control over FOH and IEM sends.
 - **Sampler with waveform splice editor** — load a WAV and trim it with sample-accurate handles.
 - **Arpeggiator** — Up, Down, Up-Down, and Random patterns with BPM-locked timing.
 - **Octave harmonizer** — generate sub and upper octaves with mode shaping.
