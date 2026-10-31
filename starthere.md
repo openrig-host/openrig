@@ -17,7 +17,7 @@
 | **Primary Solution** | `C:\davecore\Builds\VisualStudio2026\Fanfare.sln` |
 | **Primary Project** | `C:\davecore\Builds\VisualStudio2026\Fanfare_App.vcxproj` |
 | **Output Executable** | `C:\davecore\Builds\VisualStudio2026\x64\Release\App\Fanfare.exe` |
-| **Active Git Branch** | `cc-fix` (`origin https://github.com/openrig-host/openrig.git`) |
+| **Active Git Branch** | `trunk` (`origin https://github.com/openrig-host/openrig.git`) |
 
 ---
 
@@ -159,7 +159,8 @@ When reading a `Fanfare_*.txt` report:
 | :--- | :--- |
 | [`Source/Main.cpp`](file:///C:/davecore/Source/Main.cpp) | Application entry point, crash handler hookup, window lifecycle. |
 | [`Source/MainComponent.cpp`](file:///C:/davecore/Source/MainComponent.cpp) | Master UI container, top toolbar, master VU meters, tab management. |
-| [`Source/FanfareEngine.h`](file:///C:/davecore/Source/FanfareEngine.h) | Central audio processing engine, master audio graph, slot routing. |
+| [`Source/FanfareEngine.h`](file:///C:/davecore/Source/FanfareEngine.h) | Central audio processing engine, lock-free parallel work-sharing DSP pool, master audio graph, slot routing. |
+| [`Source/EngineTuningModal.h`](file:///C:/davecore/Source/EngineTuningModal.h) | In-app Engine & CPU Optimization modal (Hybrid P-Core/E-Core affinity, Core 0 DPC shielding, EcoQoS, Parallel/Sequential toggle, AC power stage advisory). |
 | [`Source/RackSlotComponent.cpp`](file:///C:/davecore/Source/RackSlotComponent.cpp) | Individual rack slot UI, volume/pan faders, bypass, plugin editor launcher. |
 | [`Source/RackSlot.h`](file:///C:/davecore/Source/RackSlot.h) | Slot data structure, plugin instance hosting, inline DSP chain. |
 | [`Source/RigSerializer.cpp`](file:///C:/davecore/Source/RigSerializer.cpp) | JSON serialization/deserialization for rigs, strips, and scenes. |
@@ -186,3 +187,21 @@ When reading a `Fanfare_*.txt` report:
      ```powershell
      robocopy "C:\davecore\Source" "Z:\davecore\Source" /E
      ```
+
+
+---
+
+## 8. Real-Time Audio & Hybrid CPU Invariants (v1.2+)
+
+Never break these invariants when modifying `FanfareEngine.h`, `MainComponent.cpp`, or `RackSlot.h`:
+
+1. **NEVER enroll DSP worker threads in MMCSS (`FanfareConstants::kMmcssEnabled` MUST stay `false`)**:
+   - Enrolling worker threads in `"Pro Audio"` MMCSS triggers Windows' 80% MMCSS CPU quota throttle across shared cores, dropping real-time threads to low priority and causing 200+ underrun storms.
+2. **Preserve 3-Tier Priority Separation (`ABOVE_NORMAL_PRIORITY_CLASS` = 10, DSP Helpers = 15, ASIO = 24)**:
+   - Keep the process in `ABOVE_NORMAL_PRIORITY_CLASS` (with restoration guards in `audioDeviceAboutToStart` and `timerCallback`, since ASIO drivers like `ysusb_asio64.dll` call `SetPriorityClass(HIGH_PRIORITY_CLASS)` on open). In `HIGH_PRIORITY_CLASS` (Base 13), dynamic +2 wake boosts push internal Kontakt/Roland threads to Priority 15, tying and preempting DSP helpers.
+3. **Preserve Split Hybrid Core Affinity (`queryCpuTopology` + `applyEngineTuningSettings`)**:
+   - **Process mask** (`SetProcessAffinityMask`): shelters only `CPU 0` (`0xFFE`), keeping Efficiency cores open for OS/driver/plugin background threads.
+   - **Real-time ASIO + DSP helper mask** (`SetThreadAffinityMask`): locks exclusively to sheltered P-cores (`0x00E`), with active helpers capped at `physicalPCores - 1` (`1` helper + ASIO thread = 1 worker per physical P-core).
+   - **UI + `SetlistPreloaderThread` + `RigBuilder` mask**: steered to E-cores (`0xFF0`) so background VST3 builds never contend with live ASIO.
+4. **Preserve Exact `numSamples` Logical Sizing on `RackSlot::scratchBuffer`**:
+   - Pre-allocating `scratchBuffer` capacity (`32 x 8192`) in `RackSlot::prepare()` must immediately resize logical length back to `maxBlockSize` (`avoidReallocating = true`), and `RackSlot::processBlock()` must check `!= numSamp` so VST3 `processBlock()` never receives `numSamples > maxSamplesPerBlock`.

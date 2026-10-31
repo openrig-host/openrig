@@ -93,13 +93,13 @@ public:
     initializeDefaultScenes();
     performLegacyMigration();
     loadPluginList();
+    startDspWorkers();
   }
 
   ~FanfareEngine() {
     if (engineAlive) engineAlive->store(false);
-    // 1. Stop any pending jobs and wait for worker threads to finish FIRST
-    threadPool.removeAllJobs(true, 5000); // 5s timeout to guarantee worker threads finish
-    preallocatedJobs.clear();             // Delete all job objects safely
+    // 1. Stop persistent real-time DSP helper threads FIRST
+    stopDspWorkers();
 
     // 2. Now safe to release plugins
     releaseAllPlugins();
@@ -149,6 +149,52 @@ public:
     juce::SpinLock::ScopedLockType mol(midiOutputLock);
     midiOutputs.clear();
     midiOutputIndexById.clear();
+  }
+
+  bool isRigTransitioning() const noexcept { return isApplyingRig.load(std::memory_order_relaxed); }
+  juce::int64 getLastRigApplyEndTicks() const noexcept { return lastRigApplyEndTicks.load(std::memory_order_acquire); }
+  bool isParallelProcessingEnabled() const noexcept { return parallelProcessingEnabled.load(std::memory_order_relaxed); }
+  void setParallelProcessingEnabled(bool enabled) noexcept { parallelProcessingEnabled.store(enabled, std::memory_order_release); }
+
+  DWORD_PTR getShelteredAffinityMask() const noexcept { return shelteredAffinityMask.load(std::memory_order_relaxed); }
+  void setShelteredAffinityMask(DWORD_PTR mask) noexcept {
+    shelteredAffinityMask.store(mask, std::memory_order_release);
+    dspTuningGen.fetch_add(1, std::memory_order_acq_rel);
+  }
+
+  DWORD_PTR getBackgroundAffinityMask() const noexcept { return backgroundAffinityMask.load(std::memory_order_relaxed); }
+  void setBackgroundAffinityMask(DWORD_PTR mask) noexcept { backgroundAffinityMask.store(mask, std::memory_order_release); }
+
+  void setActiveDspHelperLimit(int count) noexcept {
+    activeDspHelperLimit.store(juce::jlimit(0, kMaxDspHelpers, count), std::memory_order_release);
+  }
+  int getActiveDspHelperLimit() const noexcept { return activeDspHelperLimit.load(std::memory_order_relaxed); }
+  bool isPreventPowerThrottlingEnabled() const noexcept { return preventPowerThrottlingEnabled.load(std::memory_order_relaxed); }
+
+  void setPreventPowerThrottling(bool prevent) noexcept {
+    preventPowerThrottlingEnabled.store(prevent, std::memory_order_release);
+    dspTuningGen.fetch_add(1, std::memory_order_acq_rel);
+  }
+
+  static void applyThreadHighQoS(bool disableEcoQoS) noexcept {
+#ifdef _WIN32
+    THREAD_POWER_THROTTLING_STATE state{};
+    state.Version = THREAD_POWER_THROTTLING_CURRENT_VERSION;
+    state.ControlMask = THREAD_POWER_THROTTLING_EXECUTION_SPEED;
+    state.StateMask = disableEcoQoS ? 0UL : THREAD_POWER_THROTTLING_EXECUTION_SPEED;
+    SetThreadInformation(GetCurrentThread(), ThreadPowerThrottling, &state, sizeof(state));
+#else
+    juce::ignoreUnused(disableEcoQoS);
+#endif
+  }
+
+  void applyBackgroundThreadTuning() const noexcept {
+#ifdef _WIN32
+    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
+    const DWORD_PTR bgMask = backgroundAffinityMask.load(std::memory_order_acquire);
+    if (bgMask != 0)
+      SetThreadAffinityMask(GetCurrentThread(), bgMask);
+#endif
   }
 
   int getNumSlots() const { return (int)slots.size(); }
@@ -410,108 +456,37 @@ public:
     }
   }
 
-  struct SlotProcessJob : public juce::ThreadPoolJob {
-    FanfareEngine &engine;
-    int slotIdx;
+  // Lock-free, zero-allocation slot DSP execution used by both Sequential and
+  // Parallel Work-Sharing paths (eliminates juce::ThreadPool job->pool reuse races).
+  void executeSlotDsp(int slotIdx, const float *const *rawInput,
+                      int numInputChannels, bool seedOnly) noexcept {
+    juce::ScopedNoDenormals noDenormals;
+    if (slotIdx >= 0 && slotIdx < (int)slots.size()) {
+      auto &slot = slots[slotIdx];
+      auto &scratch = scratchBuffers[slotIdx];
+      auto &midi = slotMidiBuffers[slotIdx];
+      int numSamples = scratch.getNumSamples();
 
-    SlotProcessJob(FanfareEngine &e, int idx)
-        : ThreadPoolJob("SlotProcess"), engine(e), slotIdx(idx) {}
+      int inputIdx = slot->getInputChannelIndex();
+      if (inputIdx >= 0 && rawInput != nullptr && inputIdx < numInputChannels) {
+        if (const float *l = rawInput[inputIdx])
+          scratch.addFrom(0, 0, l, numSamples);
 
-    // Fork-join completion tokens (lock-free). setup() bumps setupToken to mark
-    // "the audio thread expects THIS run to complete". runJob captures the token
-    // at its start and stores it in completedToken when finished. The audio
-    // thread waits for completedToken == setupToken. A stale/late worker that
-    // finishes a PREVIOUS block's work carries an OLD token, so it can never
-    // falsely satisfy a later block's wait -> reused jobs can't cause a
-    // corrupted sumToBuses (the fork-join reuse hazard), with no pool locking.
-    std::atomic<uint32_t> setupToken{0};
-    std::atomic<uint32_t> completedToken{0};
-    std::atomic<uint32_t> activeToken{0};
-
-    void setup(const float *const *input, int numCh, std::atomic<int> &c) {
-      rawInput = input;
-      numInputChannels = numCh;
-      counter = &c;
-      activeToken.store(setupToken.fetch_add(1, std::memory_order_acq_rel) + 1, std::memory_order_release);
-    }
-
-    JobStatus runJob() override {
-      const uint32_t myToken = activeToken.load(std::memory_order_acquire);
-      juce::ScopedNoDenormals noDenormals;
-
-#ifdef _WIN32
-      // Boost worker thread to Pro Audio priority (flag-gated for the
-      // Gen 3 bisect — MinHost runs no MMCSS on its workers and is clean).
-      if constexpr (FanfareConstants::kMmcssEnabled) {
-        thread_local bool mmcssApplied = false;
-        if (!mmcssApplied) {
-          bool boosted = false;
-          if (engine.avSetMmThread != nullptr) {
-            DWORD taskIndex = 0;
-            if (engine.avSetMmThread(L"Pro Audio", &taskIndex))
-              boosted = true;
-          }
-          if (!boosted)
-            SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_HIGHEST);
-          mmcssApplied = true;
-        }
-      }
-#endif
-
-      if (slotIdx < (int)engine.slots.size()) {
-        auto &slot = engine.slots[slotIdx];
-        auto &scratch = engine.scratchBuffers[slotIdx];
-        auto &midi = engine.slotMidiBuffers[slotIdx];
-        int numSamples = scratch.getNumSamples();
-
-        int inputIdx = slot->getInputChannelIndex();
-
-        // Bounds check inputIdx against available channels
-        if (inputIdx >= 0 && rawInput != nullptr &&
-            inputIdx < numInputChannels) {
-          // Hardware input routing: add from raw pointers to preserve any subgroup audio
+        if (slotIdx == 0) {
           if (const float *l = rawInput[inputIdx])
-            scratch.addFrom(0, 0, l, numSamples);
-
-          // Special case: Monitor In (slot 0) always duplicates mono to stereo
-          // This allows stereo effects (reverb, delay) to create spatial imaging
-          if (slotIdx == 0) {
-            if (const float *l = rawInput[inputIdx])
-              scratch.addFrom(1, 0, l, numSamples);
-          }
-          // For other slots: support stereo hardware pairs if they exist
-          else if (inputIdx + 1 < numInputChannels) {
-            if (const float *r = rawInput[inputIdx + 1])
-              scratch.addFrom(1, 0, r, numSamples);
-          } else if (const float *l = rawInput[inputIdx]) {
-            // Fallback for last channel: duplicate mono to right
             scratch.addFrom(1, 0, l, numSamples);
-          }
+        } else if (inputIdx + 1 < numInputChannels) {
+          if (const float *r = rawInput[inputIdx + 1])
+            scratch.addFrom(1, 0, r, numSamples);
+        } else if (const float *l = rawInput[inputIdx]) {
+          scratch.addFrom(1, 0, l, numSamples);
         }
-        // Subgroup target slots are seeded here (hardware input only); their full
-        // DSP chain runs once AFTER subgroup accumulation in the parallel path so it
-        // processes the summed subgroup audio. Non-targets always process here.
-        if (!seedOnly)
-          slot->processBlock(scratch, midi);
       }
 
-      completedToken.store(myToken, std::memory_order_release); // publishes scratch writes
-      if (counter)
-        (*counter)++;
-      return jobHasFinished;
+      if (!seedOnly)
+        slot->processBlock(scratch, midi);
     }
-
-  private:
-    const float *const *rawInput = nullptr;
-    int numInputChannels = 0;
-    std::atomic<int> *counter = nullptr;
-
-   public:
-    // When true, runJob() only seeds hardware input and skips processBlock(). Used by
-    // the parallel path for subgroup target slots so their DSP chain runs exactly once,
-    // on the accumulated subgroup audio, instead of twice.
-    bool seedOnly = false;
-  };
+  }
 
   void prepareToPlay(int samplesPerBlockExpected, double sampleRate) {
     currentSampleRate = sampleRate;
@@ -520,14 +495,12 @@ public:
     fohBus.setSize(32, samplesPerBlockExpected);
     iemBus.setSize(32, samplesPerBlockExpected);
 
-    // Initialize per-slot scratch buffers and pre-allocated jobs
+    // Initialize per-slot scratch buffers
     scratchBuffers.resize(slots.size() + auxReturns.size());
-    preallocatedJobs.clear();
 
     for (int i = 0; i < (int)slots.size(); ++i) {
       slots[i]->prepare(sampleRate, samplesPerBlockExpected);
       scratchBuffers[i].setSize(32, samplesPerBlockExpected);
-      preallocatedJobs.add(new SlotProcessJob(*this, i));
     }
 
     // Scratch buffers for Aux Returns
@@ -716,7 +689,13 @@ public:
                     float *const *outputData, int numOutputs, int numSamples,
                     juce::MidiBuffer &midi) {
     juce::ScopedNoDenormals noDenormals;
-    FanfareLog::g_audioThreadId.store((uint32_t)::GetCurrentThreadId());
+    FanfareLog::t_isRealtimeAudioThread = true;
+    FanfareLog::g_audioThreadId.store((uint32_t)::GetCurrentThreadId(), std::memory_order_relaxed);
+    isInProcessAudio.store(true, std::memory_order_seq_cst);
+    struct ProcessAudioScope {
+      std::atomic<bool> &flag;
+      ~ProcessAudioScope() { flag.store(false, std::memory_order_release); }
+    } activeAudioScope{isInProcessAudio};
     // Inject stress test MIDI if active
     if (stressTestActive.load()) {
         double sr = currentSampleRate;
@@ -745,8 +724,8 @@ public:
     }
 
     // Real-time audio rendering runs completely lock-free during playback.
-    // When isApplyingRig is true, we keep the audio pump cycling with clean silence so VST3
-    // state synchronization handshakes (Kontakt, Roland Zenology) complete in <1ms without deadlocking.
+    // When isApplyingRig is true, we output clean silence and return immediately.
+    // This keeps the audio pump cycling while avoiding worker contention during plugin state swaps.
     const bool isSwitching = isApplyingRig.load(std::memory_order_acquire);
 
     // CRITICAL: Clear all output buffers first to prevent feedback
@@ -756,6 +735,11 @@ public:
 
     fohBus.clear();
     iemBus.clear();
+    aux1Bus.clear();
+    aux2Bus.clear();
+
+    if (isSwitching)
+      return; // Output clean silence while rig transition is applying
 
     if (slotMidiBuffers.size() != slots.size()) {
       // Pre-allocated in prepareToPlay(). A mismatch means prepareToPlay()
@@ -872,157 +856,156 @@ public:
       scratchBuffers[i].clear();
     }
 
-    // PARALLEL PROCESSING DECISION: If we have <= 1 active slot with VSTs loaded,
-    // process sequentially inline directly on the audio thread to eliminate thread-pool
-    // scheduling overhead and context-switch jitter (crucial for tight buffers like 128 samples).
-    int numActiveSlots = (int)slots.size();
-    int slotsWithPlugins = 0;
+    // Precompute subgroup target flags in O(N) on stack
+    const int numActiveSlots = juce::jmin((int)slots.size(), FanfareConstants::kNumSlots);
+    bool isSubgroupTgt[FanfareConstants::kNumSlots] = {};
     for (int i = 0; i < numActiveSlots; ++i) {
-      if (slots[i]->hasActivePlugins() && !slots[i]->isBypassed()) {
-        slotsWithPlugins++;
+      if (slots[i]->isSubgroupTarget()) {
+        int tgt = slots[i]->getOutputTarget();
+        if (tgt >= 0 && tgt < numActiveSlots && tgt > i)
+          isSubgroupTgt[tgt] = true;
       }
     }
 
-    bool hasSubgroups = false;
+    int numDspCandidates = 0;
     for (int i = 0; i < numActiveSlots; ++i) {
-      if (slots[i]->isSubgroupTarget() && slots[i]->getOutputTarget() < numActiveSlots) {
-        hasSubgroups = true;
-        break;
-      }
+      if (!isSubgroupTgt[i] && slots[i]->hasActivePlugins() && !slots[i]->isBypassed())
+        ++numDspCandidates;
     }
 
-    // Process sequentially inline directly on the audio thread for all rigs.
-    // Eliminates thread-pool mutex contention, thread scheduling jitter, and 14ms spin-wait timeouts.
-    if (true /* Always process sequentially inline on the audio thread */) {
+#ifdef _WIN32
+    const int maxHelpers = activeDspHelperLimit.load(std::memory_order_relaxed);
+#else
+    const int maxHelpers = 0;
+#endif
+
+    // Process sequentially inline directly on the audio thread if parallel is disabled,
+    // no helper cores are assigned, or <= 1 non-target slot has active plugins.
+    if (!parallelProcessingEnabled.load(std::memory_order_relaxed) ||
+        maxHelpers <= 0 || numDspCandidates <= 1) {
       aux1Bus.clear();
       aux2Bus.clear();
       for (int i = 0; i < numActiveSlots; ++i) {
-        preallocatedJobs[i]->seedOnly = false; // targets process inline here, in order
-        preallocatedJobs[i]->setup(inputData, numInputs, slotsFinishedCount);
-        preallocatedJobs[i]->runJob();
+        executeSlotDsp(i, inputData, numInputs, false);
 
         int target = slots[i]->getOutputTarget();
         if (slots[i]->isSubgroupTarget() && target < numActiveSlots && target > i) {
           slots[i]->sumToSubgroup(scratchBuffers[i], scratchBuffers[target], aux1Bus, aux2Bus);
           slots[i]->sumToIemBus(scratchBuffers[i], iemBus);
+        } else if (isSubgroupTgt[i]) {
+          slots[i]->sumToFohBusOnly(scratchBuffers[i], fohBus, aux1Bus, aux2Bus);
         } else {
-          bool isSubgroupTarget = false;
-          for (int k = 0; k < numActiveSlots; ++k) {
-            if (slots[k]->isSubgroupTarget() && slots[k]->getOutputTarget() == i) { isSubgroupTarget = true; break; }
-          }
-          if (isSubgroupTarget) {
-            slots[i]->sumToFohBusOnly(scratchBuffers[i], fohBus, aux1Bus, aux2Bus);
-          } else {
-            slots[i]->sumToBuses(scratchBuffers[i], fohBus, iemBus, aux1Bus, aux2Bus);
-          }
+          slots[i]->sumToBuses(scratchBuffers[i], fohBus, iemBus, aux1Bus, aux2Bus);
         }
       }
     } else {
-      // Parallel Processing: Process simultaneously via thread pool (for complex multi-VST rigs)
-      if (engineWedged.load()) {
-        bool allFinished = true;
-        for (int i = 0; i < numActiveSlots; ++i) {
-          if (preallocatedJobs[i]->completedToken.load(std::memory_order_acquire) !=
-              preallocatedJobs[i]->setupToken.load(std::memory_order_acquire)) {
-            allFinished = false;
-            break;
-          }
-        }
-        if (!allFinished) {
-          audioUnderrunFlag.store(true);
+      // Lock-Free Work-Sharing Parallel Engine:
+      // Persistent Priority-15 DSP helpers + the Priority-24 ASIO Audio Thread
+      // pull active plugin slots together via atomic fetch_add(1). Zero locks,
+      // zero allocations, zero juce::ThreadPool job->pool reuse races, and if a
+      // helper wake is ever delayed by Windows, the Priority-24 ASIO thread
+      // renders the remaining slots itself without stalling!
+      if (engineWedged.load(std::memory_order_acquire)) {
+        if (dspInFlightWorkers.load(std::memory_order_acquire) != 0) {
+          audioUnderrunFlag.store(true, std::memory_order_relaxed);
           aux1Bus.clear();
           aux2Bus.clear();
           return;
         }
-        engineWedged.store(false);
+        engineWedged.store(false, std::memory_order_release);
       }
 
-      for (int i = 0; i < numActiveSlots; ++i)
-        preallocatedJobs[i]->setup(inputData, numInputs, slotsFinishedCount);
-      slotsFinishedCount.store(0); // diagnostic only; the wait uses completion tokens
-
-      // Subgroup targets are seeded-only here (hardware input, no processBlock); their
-      // DSP chain runs once in Step 2 on the accumulated subgroup audio. This makes the
-      // parallel path produce identical results to the sequential path (no double process).
+      int numDspJobs = 0;
       for (int i = 0; i < numActiveSlots; ++i) {
-        bool isTgt = false;
-        for (int k = 0; k < numActiveSlots; ++k) {
-          if (slots[k]->isSubgroupTarget() && slots[k]->getOutputTarget() == i) { isTgt = true; break; }
+        const bool isTgt = isSubgroupTgt[i];
+        const bool hasDsp = slots[i]->hasActivePlugins() && !slots[i]->isBypassed();
+        if (hasDsp && !isTgt) {
+          dspSlotQueue[numDspJobs++] = i;
+        } else {
+          // Seed subgroup targets (hardware input only) and process idle/input-only slots inline
+          executeSlotDsp(i, inputData, numInputs, isTgt);
         }
-        preallocatedJobs[i]->seedOnly = isTgt;
-        threadPool.addJob(preallocatedJobs[i], false);
       }
 
-      // Spin-wait barrier (BOUNDED). Generous 300k spin budget for safety.
+      // Publish work queue (`dspJobCount` transitions 0 -> numDspJobs as the seq_cst gate)
+      dspRawInput = inputData;
+      dspNumInputs = numInputs;
+      dspNextJobIdx.store(0, std::memory_order_release);
+      dspJobCount.store(numDspJobs, std::memory_order_seq_cst);
+
+#ifdef _WIN32
+      const int helpersToWake = juce::jmin(maxHelpers, juce::jmin(kMaxDspHelpers, numDspJobs - 1));
+      for (int h = 0; h < helpersToWake; ++h) {
+        if (dspWorkerWakeEvents[h] != nullptr)
+          SetEvent(dspWorkerWakeEvents[h]);
+      }
+#endif
+
+      // Audio Thread acts as Worker #0 at MMCSS Pro Audio Priority 24
+      for (;;) {
+        const int qIdx = dspNextJobIdx.fetch_add(1, std::memory_order_acq_rel);
+        if (qIdx >= numDspJobs)
+          break;
+        executeSlotDsp(dspSlotQueue[qIdx], inputData, numInputs, false);
+      }
+
+      // Close queue gate before checking in-flight helper count (Dekker seq_cst pair)
+      dspJobCount.store(0, std::memory_order_seq_cst);
+
       bool timedOut = false;
-      {
-        constexpr long long kMaxSpins = 300000LL; 
+      if (dspInFlightWorkers.load(std::memory_order_seq_cst) != 0) {
+        constexpr long long kMaxSpins = 400000LL;
         long long spinCount = 0;
-        for (;;) {
-          bool allDone = true;
-          for (int i = 0; i < numActiveSlots; ++i) {
-            const uint32_t expected =
-                preallocatedJobs[i]->setupToken.load(std::memory_order_acquire);
-            if (preallocatedJobs[i]->completedToken.load(std::memory_order_acquire) != expected) {
-              allDone = false;
-              break;
-            }
-          }
-          if (allDone) break;
+        while (dspInFlightWorkers.load(std::memory_order_acquire) != 0) {
           if (++spinCount >= kMaxSpins) {
             timedOut = true;
             break;
           }
 #if defined(_MSC_VER) || defined(__INTEL_COMPILER)
-          _mm_pause(); // Intel/AMD: hint to reduce power and avoid pipeline stalls
+          _mm_pause();
 #elif defined(__arm__) || defined(__aarch64__)
-          __yield(); // ARM equivalent
+          __yield();
 #endif
+          if ((spinCount & 0x3F) == 0) {
+#ifdef _WIN32
+            SwitchToThread();
+#else
+            std::this_thread::yield();
+#endif
+          }
         }
       }
 
       if (timedOut) {
-        engineWedged.store(true);
-        audioUnderrunFlag.store(true);
+        engineWedged.store(true, std::memory_order_release);
+        audioUnderrunFlag.store(true, std::memory_order_relaxed);
         aux1Bus.clear();
         aux2Bus.clear();
       } else {
         // Step 1: Accumulate subgroup sends and IEM mixes
         aux1Bus.clear();
         aux2Bus.clear();
-        for (int i = 0; i < (int)slots.size(); ++i) {
+        for (int i = 0; i < numActiveSlots; ++i) {
           int target = slots[i]->getOutputTarget();
-          if (slots[i]->isSubgroupTarget() && target < (int)slots.size() && target > i) {
+          if (slots[i]->isSubgroupTarget() && target < numActiveSlots && target > i) {
             slots[i]->sumToSubgroup(scratchBuffers[i], scratchBuffers[target], aux1Bus, aux2Bus);
             slots[i]->sumToIemBus(scratchBuffers[i], iemBus);
           }
         }
 
         // Step 2: Process DSP chain for subgroup target slots on accumulated subgroup audio
-        for (int i = 0; i < (int)slots.size(); ++i) {
-          bool isSubgroupTarget = false;
-          for (int k = 0; k < (int)slots.size(); ++k) {
-            if (slots[k]->isSubgroupTarget() && slots[k]->getOutputTarget() == i) { isSubgroupTarget = true; break; }
-          }
-          if (isSubgroupTarget) {
-            // Use the slot's own MIDI buffer for parity with the sequential path
-            // (runJob skipped processBlock for this seed-only target).
+        for (int i = 0; i < numActiveSlots; ++i) {
+          if (isSubgroupTgt[i]) {
             slots[i]->processBlock(scratchBuffers[i], slotMidiBuffers[i]);
           }
         }
 
         // Step 3: Sum to buses (subgroup targets sum to FOH only to avoid IEM double-feeding)
-        for (int i = 0; i < (int)slots.size(); ++i) {
+        for (int i = 0; i < numActiveSlots; ++i) {
           int target = slots[i]->getOutputTarget();
-          if (slots[i]->isSubgroupTarget() && target < (int)slots.size() && target > i) {
-            // Upstream slots already summed to subgroup & IEM above
+          if (slots[i]->isSubgroupTarget() && target < numActiveSlots && target > i)
             continue;
-          }
-          bool isSubgroupTarget = false;
-          for (int k = 0; k < (int)slots.size(); ++k) {
-            if (slots[k]->isSubgroupTarget() && slots[k]->getOutputTarget() == i) { isSubgroupTarget = true; break; }
-          }
-          if (isSubgroupTarget) {
+          if (isSubgroupTgt[i]) {
             slots[i]->sumToFohBusOnly(scratchBuffers[i], fohBus, aux1Bus, aux2Bus);
           } else {
             slots[i]->sumToBuses(scratchBuffers[i], fohBus, iemBus, aux1Bus, aux2Bus);
@@ -1089,14 +1072,14 @@ public:
           if (plugin) {
             FanfareLog::safeExecutePluginCall([&]() {
               plugin->processBlock(fohBus, emptyMidiBuf);
-            }, "fohBus processBlock (" + plugin->getName() + ")");
+            }, "fohBus processBlock");
           }
         }
         for (auto &plugin : iemPluginChain) {
           if (plugin) {
             FanfareLog::safeExecutePluginCall([&]() {
               plugin->processBlock(iemBus, emptyMidiBuf);
-            }, "iemBus processBlock (" + plugin->getName() + ")");
+            }, "iemBus processBlock");
           }
         }
       }
@@ -1552,11 +1535,25 @@ public:
     if (!rig.isObject())
       return;
 
-    isApplyingRig.store(true, std::memory_order_release);
+    isApplyingRig.store(true, std::memory_order_seq_cst);
     struct AutoReset {
       std::atomic<bool> &flag;
-      ~AutoReset() { flag.store(false, std::memory_order_release); }
-    } resetFlag{isApplyingRig};
+      std::atomic<juce::int64> &endTicks;
+      ~AutoReset() {
+        endTicks.store(juce::Time::getHighResolutionTicks(), std::memory_order_release);
+        flag.store(false, std::memory_order_release);
+      }
+    } resetFlag{isApplyingRig, lastRigApplyEndTicks};
+
+    // Wait briefly (up to 50ms) for any in-flight real-time audio block + DSP helpers
+    // to finish cleanly before mutating plugin chains or states.
+    for (int waitIter = 0;
+         (isInProcessAudio.load(std::memory_order_acquire) ||
+          dspInFlightWorkers.load(std::memory_order_acquire) != 0) &&
+         waitIter < 50;
+         ++waitIter) {
+      juce::Thread::sleep(1);
+    }
 
     // Note: isApplyingRig pauses audio processing cleanly without spinning or priority inversions.
     // We avoid holding the global audio lock across all plugin setStateInformation calls to prevent
@@ -2905,6 +2902,27 @@ public:
   }
 
   void clearAllRacks() {
+    const bool alreadyApplying = isApplyingRig.exchange(true, std::memory_order_seq_cst);
+    struct ClearGuard {
+      std::atomic<bool> &flag;
+      std::atomic<juce::int64> &endTicks;
+      bool restoreFalse;
+      ~ClearGuard() {
+        if (restoreFalse) {
+          endTicks.store(juce::Time::getHighResolutionTicks(), std::memory_order_release);
+          flag.store(false, std::memory_order_release);
+        }
+      }
+    } guard{isApplyingRig, lastRigApplyEndTicks, !alreadyApplying};
+
+    for (int waitIter = 0;
+         (isInProcessAudio.load(std::memory_order_acquire) ||
+          dspInFlightWorkers.load(std::memory_order_acquire) != 0) &&
+         waitIter < 50;
+         ++waitIter) {
+      juce::Thread::sleep(1);
+    }
+
     juce::ScopedLock sl(lock);
     for (auto &slot : slots) {
       if (slot)
@@ -3090,18 +3108,113 @@ private:
   std::atomic<bool> engineWedged{false};      // set when worker timeout occurs
   std::shared_ptr<std::atomic<bool>> engineAlive = std::make_shared<std::atomic<bool>>(true);
 
-  // Parallel Processing Support
-  juce::OwnedArray<SlotProcessJob> preallocatedJobs;
-  std::atomic<int> slotsFinishedCount{0};
+  // Lock-Free Parallel DSP Work-Sharing Pool
+  static constexpr int kMaxDspHelpers = 4;
   std::vector<juce::AudioBuffer<float>> scratchBuffers;
-  juce::ThreadPool threadPool; // Declared last to be destroyed first
+  std::atomic<bool> parallelProcessingEnabled{true};
+  std::atomic<DWORD_PTR> shelteredAffinityMask{0};
+  std::atomic<DWORD_PTR> backgroundAffinityMask{0};
+  std::atomic<int> activeDspHelperLimit{1};
+  std::atomic<bool> preventPowerThrottlingEnabled{true};
+  std::atomic<uint32_t> dspTuningGen{1};
+
+  int dspSlotQueue[FanfareConstants::kNumSlots] = {};
+  const float *const *dspRawInput = nullptr;
+  int dspNumInputs = 0;
+  std::atomic<int> dspNextJobIdx{FanfareConstants::kNumSlots};
+  std::atomic<int> dspJobCount{0};
+  std::atomic<int> dspInFlightWorkers{0};
+  std::atomic<bool> dspShutdown{false};
+  std::atomic<bool> isInProcessAudio{false};
+#ifdef _WIN32
+  HANDLE dspWorkerWakeEvents[kMaxDspHelpers] = {};
+  std::thread dspWorkers[kMaxDspHelpers];
+#endif
+
+  void startDspWorkers() {
+#ifdef _WIN32
+    dspShutdown.store(false, std::memory_order_release);
+    dspJobCount.store(0, std::memory_order_release);
+    dspNextJobIdx.store(FanfareConstants::kNumSlots, std::memory_order_release);
+    dspInFlightWorkers.store(0, std::memory_order_release);
+    for (int h = 0; h < kMaxDspHelpers; ++h) {
+      dspWorkerWakeEvents[h] = CreateEventW(nullptr, FALSE, FALSE, nullptr);
+      dspWorkers[h] = std::thread([this, h]() { runDspWorkerLoop(h); });
+    }
+#endif
+  }
+
+  void stopDspWorkers() {
+#ifdef _WIN32
+    dspShutdown.store(true, std::memory_order_seq_cst);
+    dspJobCount.store(0, std::memory_order_seq_cst);
+    for (int h = 0; h < kMaxDspHelpers; ++h) {
+      if (dspWorkerWakeEvents[h] != nullptr)
+        SetEvent(dspWorkerWakeEvents[h]);
+    }
+    for (int h = 0; h < kMaxDspHelpers; ++h) {
+      if (dspWorkers[h].joinable())
+        dspWorkers[h].join();
+      if (dspWorkerWakeEvents[h] != nullptr) {
+        CloseHandle(dspWorkerWakeEvents[h]);
+        dspWorkerWakeEvents[h] = nullptr;
+      }
+    }
+#endif
+  }
+
+  void runDspWorkerLoop(int workerIdx) {
+#ifdef _WIN32
+    FanfareLog::t_isRealtimeAudioThread = true;
+    // Kernel Priority 15 without MMCSS (never subject to MMCSS 80% throttling,
+    // yet 3-5 full priority levels above Kontakt/Roland/UI threads in ABOVE_NORMAL_PRIORITY_CLASS).
+    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
+
+    uint32_t appliedGen = 0;
+    while (!dspShutdown.load(std::memory_order_acquire)) {
+      WaitForSingleObject(dspWorkerWakeEvents[workerIdx], INFINITE);
+      if (dspShutdown.load(std::memory_order_acquire))
+        break;
+
+      const uint32_t curGen = dspTuningGen.load(std::memory_order_acquire);
+      if (curGen != appliedGen) {
+        appliedGen = curGen;
+        const DWORD_PTR mask = shelteredAffinityMask.load(std::memory_order_acquire);
+        if (mask != 0)
+          SetThreadAffinityMask(GetCurrentThread(), mask);
+        applyThreadHighQoS(preventPowerThrottlingEnabled.load(std::memory_order_acquire));
+      }
+
+      juce::ScopedNoDenormals noDenormals;
+      for (;;) {
+        dspInFlightWorkers.fetch_add(1, std::memory_order_seq_cst);
+        const int count = dspJobCount.load(std::memory_order_seq_cst);
+        if (count <= 0) {
+          dspInFlightWorkers.fetch_sub(1, std::memory_order_seq_cst);
+          break;
+        }
+        const int qIdx = dspNextJobIdx.fetch_add(1, std::memory_order_acq_rel);
+        if (qIdx >= count) {
+          dspInFlightWorkers.fetch_sub(1, std::memory_order_seq_cst);
+          break;
+        }
+        const int slotIdx = dspSlotQueue[qIdx];
+        executeSlotDsp(slotIdx, dspRawInput, dspNumInputs, false);
+        dspInFlightWorkers.fetch_sub(1, std::memory_order_seq_cst);
+      }
+    }
+#else
+    juce::ignoreUnused(workerIdx);
+#endif
+  }
 
   // Post-load fade-in to prevent transient bursts when a rig is applied
   std::atomic<int> postLoadFadeRemaining{0};
   std::atomic<int> postLoadFadeTotal{0};
 
-  // Rig transition atomic guard
+  // Rig transition atomic guard + completion timestamp
   std::atomic<bool> isApplyingRig{false};
+  std::atomic<juce::int64> lastRigApplyEndTicks{0};
 
   // Master FX chains
   juce::SpinLock masterFxLock;
@@ -3233,6 +3346,7 @@ public:
     ctx->desc = desc;
 
     std::thread t([ctx]() {
+      ctx->engine->applyBackgroundThreadTuning();
 #ifdef _WIN32
       ::CoInitializeEx(nullptr, COINIT_MULTITHREADED);
 #endif

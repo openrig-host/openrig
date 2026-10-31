@@ -4,6 +4,7 @@
 #include "BoutiqueLookAndFeel.h"
 #include "ChannelStripComponent.h"
 #include "ConfigModalOverlay.h"
+#include "EngineTuningModal.h"
 #include "MidiEffectsComponent.h"
 #include "SamplerComponent.h"
 #include "Mp3PlayerComponent.h"
@@ -115,6 +116,15 @@ private:
   std::unique_ptr<LoadingOverlay> loadingOverlay;
   std::unique_ptr<MissingPluginsToast> missingPluginsToast;
   std::unique_ptr<ConfigModalOverlay> configOverlay;
+  std::unique_ptr<EngineTuningModal> engineTuningModal;
+  std::atomic<juce::int64> suppressGlitchUntilTicks{0};
+  EngineTuningModal::Settings engineTuningSettings;
+
+  void suppressGlitchDetectionForMs(int durationMs) noexcept;
+  void showEngineTuningModal();
+  void applyEngineTuningSettings();
+  void loadEngineTuningSettings();
+  void saveEngineTuningSettings();
   std::unique_ptr<LibraryPanel> libraryPanel;
   std::unique_ptr<SetupBuilderOverlay> setupBuilderOverlay;
   std::unique_ptr<ResourceInspectorModal> resourceInspectorOverlay;
@@ -221,14 +231,14 @@ private:
   std::atomic<double> pendingGlitchExpectedMs{0.0};
   // Duration of the previous audio callback (entry -> processAudio returned).
   // On a glitch this splits "the driver called us late" (small duration) from
-  // "our own callback blocked" (duration ˜ the gap).
+  // "our own callback blocked" (duration ~ the gap).
   std::atomic<double> lastCallbackDurationMs{0.0};
   std::atomic<double> pendingGlitchDurationMs{0.0};
   std::atomic<bool> hasPendingGlitchLog{false};
   void logAudioGlitch(double actualMs, double expectedMs, double cbDurationMs);
   void logAudioNanSpike(int channel, int sampleIndex, float badVal);
   // Glitch log batching: entries accumulate in memory and flush to disk at
-  // most once per second — storm bursts no longer open the file per entry.
+  // most once per second â€” storm bursts no longer open the file per entry.
   juce::String pendingGlitchLogText;
   juce::CriticalSection glitchLogLock;
   void flushGlitchLog();
@@ -257,13 +267,14 @@ private:
   juce::MidiMessageCollector midiCollector;
 
   // Windows MMCSS audio thread priority: attempted once per audio thread
-  // (device restarts create new threads — MMCSS may succeed on a retry even
+  // (device restarts create new threads â€” MMCSS may succeed on a retry even
   // if it failed for an earlier thread). Tracks the thread id, not a bool.
   DWORD mmcssThreadId = 0;
   // CPU-0 shelter mask (constructor excludes the interrupt-dump core). Some
   // ASIO drivers re-expand the process affinity during init, so every new
-  // audio thread re-applies it — see the audio callback.
-  DWORD_PTR shelteredAffinityMask = 0;
+  // audio thread re-applies it â€” see the audio callback.
+  std::atomic<DWORD_PTR> processShelterMask{0};
+  std::atomic<DWORD_PTR> dspThreadAffinityMask{0};
 #ifdef _WIN32
   HMODULE avrtModule = nullptr;
   typedef HANDLE(WINAPI * PAvSetMmThreadCharacteristicsA)(LPCSTR, LPDWORD);

@@ -7,6 +7,7 @@ class ConfigModalOverlay : public juce::Component {
 public:
   struct Actions {
     std::function<void()> onAudioSettings;
+    std::function<void()> onEngineTuning;
     std::function<void()> onScanPlugins;
     std::function<void()> onBusRouting;
     std::function<void()> onResetAudio;
@@ -32,7 +33,7 @@ private:
   juce::Label infoLabel;
   juce::Label themeLabel{"themeLabel", "THEME"};
   juce::ComboBox themeCombo;
-  juce::TextButton audioSettingsBtn, scanPluginsBtn, busRoutingBtn,
+  juce::TextButton audioSettingsBtn, engineTuningBtn, scanPluginsBtn, busRoutingBtn,
       resetAudioBtn, aboutBtn, stressTestBtn;
   juce::TextButton closeBtn{"X"};
 

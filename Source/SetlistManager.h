@@ -57,6 +57,8 @@ public:
     }
 
     void run() override {
+        if (engine != nullptr)
+            engine->applyBackgroundThreadTuning();
         while (!threadShouldExit()) {
             juce::File target;
             {

@@ -272,6 +272,7 @@ public:
             Result *res = results[idx].get();
             workers.emplace_back([&engine, &snap, e, res, isPreload,
                                   onProgress]() {
+                engine.applyBackgroundThreadTuning();
                 if (onProgress)
                     onProgress("Loading " + e.name + "...");
                 if (e.slotIdx >= 0)
@@ -420,6 +421,7 @@ private:
             juce::String gatePath = newPath;
 
             std::thread t([bctx, gatePath]() {
+                bctx->engine->applyBackgroundThreadTuning();
 #ifdef _WIN32
                 ::CoInitializeEx(nullptr, COINIT_MULTITHREADED);
 #endif
@@ -600,6 +602,7 @@ private:
             juce::String gatePath = newPath;
 
             std::thread t([bctx, gatePath]() {
+                bctx->engine->applyBackgroundThreadTuning();
 #ifdef _WIN32
                 ::CoInitializeEx(nullptr, COINIT_MULTITHREADED);
 #endif

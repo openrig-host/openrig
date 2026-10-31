@@ -105,8 +105,8 @@ public:
         formatManager.registerFormat(new juce::FlacAudioFormat(), true);
         formatManager.registerFormat(new juce::OggVorbisAudioFormat(), true);
         
-        bufferingThreadA.startThread(juce::Thread::Priority::high);
-        bufferingThreadB.startThread(juce::Thread::Priority::high);
+        bufferingThreadA.startThread(juce::Thread::Priority::normal);
+        bufferingThreadB.startThread(juce::Thread::Priority::normal);
 
         loadBpmCache();
         initializeDefaultBanks();

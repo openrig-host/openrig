@@ -15,6 +15,7 @@
 #endif
 
 inline std::atomic<uint32_t> g_audioThreadId{0};
+inline thread_local bool t_isRealtimeAudioThread = false;
 
 namespace FanfareLog {
 
@@ -107,7 +108,7 @@ inline void log(Level level, const juce::String &msg) {
   juce::String fullMsg =
       juce::Time::getCurrentTime().toString(true, true) + " " + prefix + msg;
 
-  if (level >= Level::Warning && g_audioThreadId.load() != (uint32_t)::GetCurrentThreadId()) {
+  if (level >= Level::Warning && !t_isRealtimeAudioThread && g_audioThreadId.load() != (uint32_t)::GetCurrentThreadId()) {
     // Write warnings and errors synchronously to disk ONLY if on a non-audio thread
     writeDirectlyToFile(fullMsg);
   } else {
@@ -123,7 +124,7 @@ inline void log(Level level, const juce::String &msg) {
 inline void logToFile(const juce::String &msg) {
   juce::String fullMsg =
       juce::Time::getCurrentTime().toString(true, true) + " - " + msg;
-  if (g_audioThreadId.load() != (uint32_t)::GetCurrentThreadId()) {
+  if (!t_isRealtimeAudioThread && g_audioThreadId.load() != (uint32_t)::GetCurrentThreadId()) {
     writeDirectlyToFile(fullMsg);
   } else {
     // Audio thread: never touch disk — queue for the message-thread flush.
@@ -275,6 +276,21 @@ inline __declspec(noinline) bool executeRawSehCall(void (*fn)(void*), void* data
 #pragma warning(pop)
 
 template <typename Func>
+inline bool safeExecutePluginCall(Func&& action, const char* actionName) {
+  struct LambdaRunner {
+    static void run(void* ctx) {
+      auto* f = static_cast<std::remove_reference_t<Func>*>(ctx);
+      (*f)();
+    }
+  };
+  bool ok = executeRawSehCall(&LambdaRunner::run, &action);
+  if (!ok) {
+    LOG_ERROR(juce::String("SEH Access Violation / Fault caught during plugin action: ") + (actionName ? actionName : "unknown"));
+  }
+  return ok;
+}
+
+template <typename Func>
 inline bool safeExecutePluginCall(Func&& action, const juce::String& actionName) {
   struct LambdaRunner {
     static void run(void* ctx) {
@@ -344,7 +360,7 @@ inline void crashHandler(void *exceptionInfo) {
 
   char threadRole[64] = "Worker/Other Thread";
   if (currentTid == mainTid) strcpy(threadRole, "Message/UI Thread");
-  else if (currentTid == audioTid) strcpy(threadRole, "Audio Callback Thread");
+  else if (currentTid == audioTid || t_isRealtimeAudioThread) strcpy(threadRole, "Real-Time Audio/DSP Thread");
 
   char line[512];
   wsprintfA(line, "Crash Time: %04d-%02d-%02d %02d:%02d:%02d\n", st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
@@ -442,7 +458,7 @@ inline LONG WINAPI fanfareUnhandledExceptionFilter(PEXCEPTION_POINTERS ep) {
       // (such as Kontakt 8 WINHTTP telemetry/license worker thread, MixBox worker, or HALion worker).
       // If so, terminate ONLY the faulting thread so the live audio and UI keep running!
       bool isMain = (mainTid != 0 && currentTid == mainTid);
-      bool isAudio = (audioTid != 0 && currentTid == audioTid);
+      bool isAudio = t_isRealtimeAudioThread || (audioTid != 0 && currentTid == audioTid);
       if (!isMain && !isAudio) {
         wchar_t appData[MAX_PATH] = {0};
         GetEnvironmentVariableW(L"APPDATA", appData, MAX_PATH);
@@ -522,6 +538,7 @@ inline void setupCrashHandlers() {
 
 namespace FanfareLog {
   using ::g_audioThreadId;
+  using ::t_isRealtimeAudioThread;
   using ::amplitudeToLogScale;
   using ::safeExecutePluginCall;
   using ::crashHandler;

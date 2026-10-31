@@ -112,6 +112,14 @@ It's not a DAW. It's an instrument.
 - **Per-plugin isolation.** One plugin failing doesn't stop the audio.
 - **Rig migration.** Older rig files upgrade automatically. Files from newer versions are refused instead of half-loaded.
 
+### Engine and CPU Optimization (New in v1.2)
+- **Lock-free Parallel Work-Sharing DSP.** Persistent real-time DSP helper threads share active instrument slots with the ASIO audio thread itself using lock-free atomics. There are no mutexes, no heap allocations on the audio thread, and no `ThreadPool` dropped-job stalls. Active worker count scales automatically to one worker per physical Performance core.
+- **Hybrid CPU Core Split (P-Cores for Audio, E-Cores for Everything Else).** On Intel 12th Gen and newer hybrid laptops, real-time ASIO and DSP threads are pinned exclusively to fast Performance cores while the UI, graphics rendering, plugin disk streaming, and background setlist preloading run on Efficiency cores. Preloading the next song never steals cycles from live audio.
+- **CPU Core 0 Interrupt Shielding.** Keeps real-time audio off Core 0, where Windows and laptop firmware dump Wi-Fi, USB hub, ACPI, and battery-polling driver interrupts (DPCs).
+- **Clean Priority Tiering Without MMCSS Storms.** Runs the host in `Above Normal` priority class (and automatically restores it if an ASIO driver elevates the process) so internal plugin background threads stay safely below Priority-15 DSP helpers and Priority-24 ASIO without triggering Windows MMCSS 80% CPU throttling.
+- **In-App Engine & CPU Tuning Panel.** Open `Settings` and click `ENGINE & CPU TUNING` for plain-English controls covering Hybrid P-Core pinning, Core 0 shielding, Windows 11 EcoQoS blocking, Parallel vs. Sequential processing, and an AC power stage advisory so players on Intel Hybrid, AMD Ryzen, or older CPUs can dial in their machine.
+- **One-Click XRUNS Telemetry.** False-positive counter spikes during audio driver startup and active song swaps are suppressed. Click `XRUNS:` in the top bar anytime to zero the counter and inspect `audio_underrun_log.txt`.
+
 ### Where your data lives
 Everything is under `%APPDATA%/Fanfare/`:
 
@@ -198,7 +206,7 @@ Fanfare handles the quirks of the big plugin makers for you: Native Instruments 
 Used on stage with:
 
 - **MIDI controllers:** Yamaha CK88, Roland RD-88, Nektar LX61+, Arturia KeyLab 88 Essential. Any class-compliant USB MIDI keyboard works.
-- **Audio interfaces (ASIO):** Behringer UMC1820, Behringer UMC204HD, AKAI EIE Pro. Any interface with an ASIO driver works.
+- **Audio interfaces (ASIO):** Yamaha Steinberg USB ASIO (CK88), Behringer UMC1820, Behringer UMC204HD, AKAI EIE Pro. Any interface with an ASIO driver works.
 
 ---
 

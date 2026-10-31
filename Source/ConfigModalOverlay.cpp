@@ -1,5 +1,6 @@
 #include "ConfigModalOverlay.h"
 #include "ThemeManager.h"
+#include "Version.h"
 
 ConfigModalOverlay::ConfigModalOverlay(Actions a) : actions(std::move(a)) {
   titleLabel.setText("CONFIGURATION", juce::dontSendNotification);
@@ -34,6 +35,10 @@ ConfigModalOverlay::ConfigModalOverlay(Actions a) : actions(std::move(a)) {
   audioSettingsBtn.setTooltip("Low-latency audio driver configuration, buffer size & sample rates.");
   audioSettingsBtn.onClick = [this] { clicked(actions.onAudioSettings); };
 
+  addSettingButton(engineTuningBtn, "ENGINE & CPU TUNING");
+  engineTuningBtn.setTooltip("CPU core affinity, CPU 0 sheltering, Windows power throttling & parallel DSP processing.");
+  engineTuningBtn.onClick = [this] { clicked(actions.onEngineTuning); };
+
   addSettingButton(scanPluginsBtn, "SCAN FOR PLUGINS");
   scanPluginsBtn.setTooltip("Scans system VST3 directories to register installed instruments & effects.");
   scanPluginsBtn.onClick = [this] { clicked(actions.onScanPlugins); };
@@ -52,8 +57,8 @@ ConfigModalOverlay::ConfigModalOverlay(Actions a) : actions(std::move(a)) {
     clicked(actions.onStressTestToggle);
     updateStressTestButtonState();
   };
-  addSettingButton(aboutBtn, "ABOUT OPENRIG");
-  aboutBtn.setTooltip("OpenRig Sovereign Engine philosophy, version & stage credits.");
+  addSettingButton(aboutBtn, "ABOUT FANFARE (v" OPENRIG_VERSION_STRING ")");
+  aboutBtn.setTooltip("Fanfare Stage Engine philosophy, version & stage credits.");
   aboutBtn.onClick = [this] { clicked(actions.onAbout); };
 
   closeBtn.setButtonText("X");
@@ -66,7 +71,7 @@ ConfigModalOverlay::ConfigModalOverlay(Actions a) : actions(std::move(a)) {
 
   refreshInfo();
   updateStressTestButtonState();
-  setSize(360, 450);
+  setSize(360, 490);
 }
 
 void ConfigModalOverlay::updateStressTestButtonState() {
@@ -105,6 +110,7 @@ void ConfigModalOverlay::resized() {
 
   int rowH = 36;
   audioSettingsBtn.setBounds(area.removeFromTop(rowH).reduced(2));
+  engineTuningBtn.setBounds(area.removeFromTop(rowH).reduced(2));
   scanPluginsBtn.setBounds(area.removeFromTop(rowH).reduced(2));
   busRoutingBtn.setBounds(area.removeFromTop(rowH).reduced(2));
   resetAudioBtn.setBounds(area.removeFromTop(rowH).reduced(2));

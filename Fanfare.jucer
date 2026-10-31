@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
 <JUCERPROJECT id="y15uHa" name="Fanfare" projectType="guiapp" useAppConfig="1"
-              version="1.1.3"
+              version="1.2.0"
               addUsingNamespaceToJuceHeader="0" jucerFormatVersion="1" bundleIdentifier="com.fanfare.app"
               iconBig="Source/Resources/Fanfare_Icon.png" iconSmall="Source/Resources/Fanfare_Icon.png">
   <MAINGROUP id="kDqy99" name="Fanfare">
@@ -37,6 +37,7 @@
             file="Source/ConfigModalOverlay.h"/>
       <FILE id="cfgOverlayCpp" name="ConfigModalOverlay.cpp" compile="1"
             resource="0" file="Source/ConfigModalOverlay.cpp"/>
+      <FILE id="engineTuningModalH" name="EngineTuningModal.h" compile="0" resource="0" file="Source/EngineTuningModal.h"/>
       <FILE id="libPanelCpp" name="LibraryPanel.cpp" compile="1" resource="0"
             file="Source/LibraryPanel.cpp"/>
       <FILE id="queueBtnH" name="QueueButtonComponent.h" compile="0" resource="0"

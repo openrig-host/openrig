@@ -45,7 +45,7 @@ public:
     FanfareLog::setupCrashHandlers();
 #endif
 
-    mainWindow.reset(new MainWindow(getApplicationName()));
+    mainWindow.reset(new MainWindow(getApplicationName() + " v" + getApplicationVersion()));
   }
 
   void shutdown() override {

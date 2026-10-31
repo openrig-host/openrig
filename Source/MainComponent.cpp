@@ -10,7 +10,7 @@
 #include "RackSlotComponent.h"
 #include "ThemeManager.h"
 #include "FanfareLogoData.h"
-// Optional personal gig art. The file is deliberately gitignored — public
+// Optional personal gig art. The file is deliberately gitignored ï¿½ public
 // checkouts build without it and fall back to the committed OpenRig logo.
 #if __has_include("LastWaltzLogoData.h")
   #include "LastWaltzLogoData.h"
@@ -97,9 +97,69 @@ public:
 
 //==============================================================================
 //==============================================================================
+#ifdef _WIN32
+struct CpuTopologyMasks {
+  DWORD_PTR sysMask = 0;
+  DWORD_PTR pCoreMask = 0;
+  DWORD_PTR eCoreMask = 0;
+  std::vector<DWORD_PTR> physicalCoreMasks;
+};
+
+static int countBitsInMask(DWORD_PTR m) noexcept {
+  int c = 0;
+  while (m != 0) {
+    m &= (m - 1);
+    ++c;
+  }
+  return c;
+}
+
+static CpuTopologyMasks queryCpuTopology() {
+  CpuTopologyMasks topo;
+  DWORD_PTR procMask = 0, sysMask = 0;
+  if (GetProcessAffinityMask(GetCurrentProcess(), &procMask, &sysMask))
+    topo.sysMask = sysMask;
+
+  DWORD length = 0;
+  GetLogicalProcessorInformationEx(RelationProcessorCore, nullptr, &length);
+  if (length == 0)
+    return topo;
+  std::vector<char> buffer(length);
+  auto* info = reinterpret_cast<PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX>(buffer.data());
+  if (!GetLogicalProcessorInformationEx(RelationProcessorCore, info, &length))
+    return topo;
+
+  BYTE maxEfficiency = 0;
+  DWORD offset = 0;
+  while (offset < length) {
+    auto* cur = reinterpret_cast<PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX>(buffer.data() + offset);
+    if (cur->Relationship == RelationProcessorCore) {
+      if (cur->Processor.EfficiencyClass > maxEfficiency)
+        maxEfficiency = cur->Processor.EfficiencyClass;
+    }
+    offset += cur->Size;
+  }
+
+  offset = 0;
+  while (offset < length) {
+    auto* cur = reinterpret_cast<PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX>(buffer.data() + offset);
+    if (cur->Relationship == RelationProcessorCore && cur->Processor.GroupCount > 0) {
+      const DWORD_PTR coreMask = (DWORD_PTR)cur->Processor.GroupMask[0].Mask;
+      topo.physicalCoreMasks.push_back(coreMask);
+      if (maxEfficiency == 0 || cur->Processor.EfficiencyClass == maxEfficiency)
+        topo.pCoreMask |= coreMask;
+      else
+        topo.eCoreMask |= coreMask;
+    }
+    offset += cur->Size;
+  }
+  return topo;
+}
+#endif
+
 MainComponent::MainComponent() {
 #ifdef _WIN32
-  // Per-mechanism bisect flags — see FanfareConstants.h. Each test build
+  // Per-mechanism bisect flags ï¿½ see FanfareConstants.h. Each test build
   // turns exactly one back on; the startup log line records the combo.
   avrtModule = LoadLibraryA("avrt.dll");
   if constexpr (FanfareConstants::kPowerSchemeMgmtEnabled)
@@ -108,41 +168,29 @@ MainComponent::MainComponent() {
     avSetMmThreadFn = (PAvSetMmThreadCharacteristicsA)GetProcAddress(avrtModule, "AvSetMmThreadCharacteristicsA");
   }
 
-  if constexpr (FanfareConstants::kCpuShelterEnabled) {
-  // Shelter the process from CPU 0: ACPI/EC interrupts target core 0 by design
-  // (LatencyMon Oct 10: 145k DPCs on CPU0, single DPC up to 1.66ms), and when
-  // the ASIO callback thread lands there during a burst, that one core is
-  // buried while the other cores idle — 10-24ms audio gaps at ~5% global CPU.
-  // Excluding CPU0 from the process affinity costs nothing and keeps the audio
-  // thread (and every other thread) off the interrupt-dump core.
-  {
-    DWORD_PTR procMask = 0, sysMask = 0;
-    if (GetProcessAffinityMask(GetCurrentProcess(), &procMask, &sysMask) &&
-        procMask) {
-      DWORD_PTR sheltered = procMask & ~(DWORD_PTR)1;
-      if (sheltered &&
-          SetProcessAffinityMask(GetCurrentProcess(), sheltered)) {
-        shelteredAffinityMask = sheltered;
-        LOG_INFO("Process affinity sheltered from CPU 0 (interrupt-dump core)");
-      }
-    }
+  suppressGlitchDetectionForMs(3000);
+
+  if constexpr (FanfareConstants::kPriorityElevationEnabled) {
+  // Elevate process to ABOVE_NORMAL_PRIORITY_CLASS (Base Priority 10) rather than
+  // HIGH_PRIORITY_CLASS (Base 13). In HIGH_PRIORITY_CLASS, internal background threads
+  // spawned inside heavy VST3s (Kontakt 8, Roland ZENOLOGY/XV-5080) get boosted to
+  // Kernel Priority 15, tying and preempting DSP worker threads! In ABOVE_NORMAL,
+  // Fanfare still beats normal Windows apps (8), plugin background threads cap at 12,
+  // DSP helpers run undisturbed at THREAD_PRIORITY_TIME_CRITICAL (15), and ASIO runs at 24.
+  if (!SetPriorityClass(GetCurrentProcess(), ABOVE_NORMAL_PRIORITY_CLASS)) {
+    LOG_WARN("Failed to set ABOVE_NORMAL_PRIORITY_CLASS for process");
+  } else {
+    LOG_INFO("Process set to ABOVE_NORMAL_PRIORITY_CLASS (clean 10 vs 15 vs 24 priority tiering)");
   }
   }
 
-  if constexpr (FanfareConstants::kPriorityElevationEnabled) {
-  // Elevate process priority so Windows scheduler doesn't preempt audio
-  // processing when other programs launch or perform heavy I/O
-  if (!SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS)) {
-    LOG_WARN("Failed to set HIGH_PRIORITY_CLASS for process");
-  } else {
-    LOG_INFO("Process elevated to HIGH_PRIORITY_CLASS");
-  }
-  }
+  loadEngineTuningSettings();
+  applyEngineTuningSettings();
 
   if constexpr (FanfareConstants::kWorkingSetLockEnabled) {
   // Lock a generous working set minimum so Windows cannot page out VST sample
   // libraries when other applications demand RAM. The 2 GB max we used before
-  // Oct 2026 starved massive rigs (many Kontakt multis) during state restore —
+  // Oct 2026 starved massive rigs (many Kontakt multis) during state restore ï¿½
   // Windows kept trimming sample data, making loads take minutes. 8 GB covers
   // the biggest setups; the OS still trims beyond it if RAM is truly short.
   SIZE_T wsMin = 512ULL * 1024 * 1024;
@@ -1112,7 +1160,7 @@ void MainComponent::setupHeaderButtons() {
   if (logoImage.isValid()) {
     logoComponent.setImage(logoImage, juce::RectanglePlacement::onlyReduceInSize | juce::RectanglePlacement::xLeft | juce::RectanglePlacement::yMid);
     logoComponent.setMouseCursor(juce::MouseCursor::PointingHandCursor);
-    logoComponent.setTooltip("About Fanfare");
+    logoComponent.setTooltip("About Fanfare (v" OPENRIG_VERSION_STRING ")");
     logoComponent.addMouseListener(this, false);
     addAndMakeVisible(logoComponent);
   }
@@ -1445,7 +1493,7 @@ void MainComponent::logAudioGlitch(double actualMs, double expectedMs,
 
   // Batched: appends collect in memory and flush to disk at most once per
   // second (glitchMonitorTimer). During a storm this replaces ~13 file
-  // opens/second with a single append — the message thread stays responsive.
+  // opens/second with a single append ï¿½ the message thread stays responsive.
   pendingGlitchLogText += entry;
 }
 
@@ -1486,32 +1534,55 @@ void MainComponent::audioDeviceIOCallbackWithContext(
     double elapsedMs = juce::Time::highResolutionTicksToSeconds(nowTicks - prevTicks) * 1000.0;
     double expectedMs = (double)numSamples / (engine.getCurrentSampleRate() > 0.0 ? engine.getCurrentSampleRate() : 44100.0) * 1000.0;
     if (expectedMs > 0.0 && elapsedMs > expectedMs * 2.2) {
-      audioUnderrunCount++;
-      lastGlitchStallMs.store(elapsedMs);
-      pendingGlitchActualMs.store(elapsedMs);
-      pendingGlitchExpectedMs.store(expectedMs);
-      pendingGlitchDurationMs.store(lastCallbackDurationMs.load());
-      hasPendingGlitchLog.store(true);
+      const juce::int64 suppressUntil = suppressGlitchUntilTicks.load(std::memory_order_relaxed);
+      const juce::int64 applyEndTicks = engine.getLastRigApplyEndTicks();
+      const bool postApplySettle =
+          (applyEndTicks > 0) &&
+          (juce::Time::highResolutionTicksToSeconds(nowTicks - applyEndTicks) < 0.5);
+
+      if (nowTicks < suppressUntil || engine.isRigTransitioning() || postApplySettle) {
+        // Suppressed during brief device-open settle or active rig state swap
+      } else {
+        audioUnderrunCount++;
+        lastGlitchStallMs.store(elapsedMs);
+        pendingGlitchActualMs.store(elapsedMs);
+        pendingGlitchExpectedMs.store(expectedMs);
+        pendingGlitchDurationMs.store(lastCallbackDurationMs.load());
+        hasPendingGlitchLog.store(true);
+      }
     }
   }
 
-  // Per-thread hardening, flag-gated per mechanism (bisect — MinHost runs
+  // Per-thread hardening, flag-gated per mechanism (bisect ï¿½ MinHost runs
   // no MMCSS and no shelter, and is clean where Fanfare storms).
 #ifdef _WIN32
   if constexpr (FanfareConstants::kCpuShelterEnabled) {
-    // Re-assert the CPU-0 shelter: ASIO driver init has been observed
-    // re-expanding the process affinity to all cores after our constructor
-    // set it (Oct 10: threads measured at 0xFFFFFFFF post-init). Re-apply
-    // once per audio thread and log what it had become.
-    if (shelteredAffinityMask != 0) {
+    const DWORD_PTR wantedProcMask = processShelterMask.load(std::memory_order_relaxed);
+    if (wantedProcMask != 0) {
       DWORD_PTR procMask = 0, sysMask = 0;
       if (GetProcessAffinityMask(GetCurrentProcess(), &procMask, &sysMask) &&
-          procMask != shelteredAffinityMask) {
-        LOG_WARN("Process affinity was re-expanded to 0x" +
+          procMask != wantedProcMask) {
+        LOG_WARN("Process affinity was modified to 0x" +
                  juce::String::toHexString((juce::int64)procMask) +
-                 " — re-sheltering from CPU 0");
-        SetProcessAffinityMask(GetCurrentProcess(), shelteredAffinityMask);
+                 " - re-applying process shelter mask 0x" +
+                 juce::String::toHexString((juce::int64)wantedProcMask));
+        SetProcessAffinityMask(GetCurrentProcess(), wantedProcMask);
       }
+    }
+
+    const DWORD_PTR wantedDspMask = dspThreadAffinityMask.load(std::memory_order_relaxed);
+    thread_local DWORD lastConfiguredTid = 0;
+    thread_local DWORD_PTR lastThreadMask = 0;
+    thread_local bool lastPreventEco = false;
+    const DWORD curTid = ::GetCurrentThreadId();
+    const bool wantPreventEco = engine.isPreventPowerThrottlingEnabled();
+    if (curTid != lastConfiguredTid || lastThreadMask != wantedDspMask || lastPreventEco != wantPreventEco) {
+      lastConfiguredTid = curTid;
+      lastThreadMask = wantedDspMask;
+      lastPreventEco = wantPreventEco;
+      if (wantedDspMask != 0)
+        SetThreadAffinityMask(GetCurrentThread(), wantedDspMask);
+      FanfareEngine::applyThreadHighQoS(wantPreventEco);
     }
   }
   if constexpr (FanfareConstants::kMmcssEnabled) {
@@ -1522,27 +1593,27 @@ void MainComponent::audioDeviceIOCallbackWithContext(
         mmcssThreadId = ::GetCurrentThreadId();
         LOG_INFO("Audio thread registered with MMCSS Pro Audio characteristics");
       } else {
-        // Log the reason — MMCSS refusals were previously invisible.
+        // Log the reason ï¿½ MMCSS refusals were previously invisible.
         DWORD err = ::GetLastError();
         if (err == 1552 /* ERROR_INVALID_THREAD_ID: "already joining a task" */) {
           // Not a failure: ASIO drivers like Yamaha Steinberg USB join their
           // callback thread to the MMCSS Pro Audio task before we run, so the
           // thread already has Pro Audio priority. Don't touch it.
           mmcssThreadId = ::GetCurrentThreadId();
-          LOG_INFO("Audio thread already MMCSS-registered by the audio driver — Pro Audio priority active");
+          LOG_INFO("Audio thread already MMCSS-registered by the audio driver ï¿½ Pro Audio priority active");
         } else {
-          // Fallback HIGHEST, not TIME_CRITICAL — TIME_CRITICAL can starve
+          // Fallback HIGHEST, not TIME_CRITICAL ï¿½ TIME_CRITICAL can starve
           // the OS when combined with the audio spin-wait barrier.
           SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_HIGHEST);
           mmcssThreadId = ::GetCurrentThreadId();
           LOG_WARN("MMCSS unavailable (error " + juce::String((int)err) +
-                   ") — audio thread set to THREAD_PRIORITY_HIGHEST");
+                   ") ï¿½ audio thread set to THREAD_PRIORITY_HIGHEST");
         }
       }
     } else {
       SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_HIGHEST);
       mmcssThreadId = ::GetCurrentThreadId();
-      LOG_WARN("avrt.dll not loaded — audio thread set to THREAD_PRIORITY_HIGHEST");
+      LOG_WARN("avrt.dll not loaded ï¿½ audio thread set to THREAD_PRIORITY_HIGHEST");
     }
   }
   } // end kMmcssEnabled (bisect)
@@ -1682,14 +1753,191 @@ void MainComponent::loadAuxLogoPreference() {
 }
 
 void MainComponent::saveAuxLogoPreference() const {
-  auto *o = new juce::DynamicObject();
-  o->setProperty("auxLogoPath", auxLogoUserPath);
   auto f = FanfareConstants::getAppDirectory().getChildFile("ui_settings.json");
+  juce::var v;
+  if (f.existsAsFile()) {
+    v = juce::JSON::parse(f.loadFileAsString());
+  }
+  if (!v.isObject()) {
+    v = juce::var(new juce::DynamicObject());
+  }
+  if (auto* obj = v.getDynamicObject()) {
+    obj->setProperty("auxLogoPath", auxLogoUserPath);
+  }
   f.getParentDirectory().createDirectory();
-  f.replaceWithText(juce::JSON::toString(juce::var(o)));
+  f.replaceWithText(juce::JSON::toString(v));
+}
+
+void MainComponent::loadEngineTuningSettings() {
+  auto f = FanfareConstants::getAppDirectory().getChildFile("ui_settings.json");
+  if (!f.existsAsFile())
+    return;
+  auto v = juce::JSON::parse(f.loadFileAsString());
+  if (v.hasProperty("pCoresOnly"))
+    engineTuningSettings.pCoresOnly = (bool)v["pCoresOnly"];
+  if (v.hasProperty("shelterCpu0"))
+    engineTuningSettings.shelterCpu0 = (bool)v["shelterCpu0"];
+  if (v.hasProperty("preventPowerThrottling"))
+    engineTuningSettings.preventPowerThrottling = (bool)v["preventPowerThrottling"];
+  if (v.hasProperty("parallelProcessing"))
+    engineTuningSettings.parallelProcessing = (bool)v["parallelProcessing"];
+}
+
+void MainComponent::saveEngineTuningSettings() {
+  auto f = FanfareConstants::getAppDirectory().getChildFile("ui_settings.json");
+  juce::var v;
+  if (f.existsAsFile()) {
+    v = juce::JSON::parse(f.loadFileAsString());
+  }
+  if (!v.isObject()) {
+    v = juce::var(new juce::DynamicObject());
+  }
+  if (auto* obj = v.getDynamicObject()) {
+    obj->setProperty("pCoresOnly", engineTuningSettings.pCoresOnly);
+    obj->setProperty("shelterCpu0", engineTuningSettings.shelterCpu0);
+    obj->setProperty("preventPowerThrottling", engineTuningSettings.preventPowerThrottling);
+    obj->setProperty("parallelProcessing", engineTuningSettings.parallelProcessing);
+  }
+  f.getParentDirectory().createDirectory();
+  f.replaceWithText(juce::JSON::toString(v));
+}
+
+void MainComponent::suppressGlitchDetectionForMs(int durationMs) noexcept {
+  const juce::int64 now = juce::Time::getHighResolutionTicks();
+  const juce::int64 delta = juce::Time::secondsToHighResolutionTicks(durationMs * 0.001);
+  const juce::int64 target = now + delta;
+  juce::int64 prev = suppressGlitchUntilTicks.load(std::memory_order_relaxed);
+  while (prev < target &&
+         !suppressGlitchUntilTicks.compare_exchange_weak(prev, target, std::memory_order_release, std::memory_order_relaxed)) {
+  }
+}
+
+void MainComponent::applyEngineTuningSettings() {
+#ifdef _WIN32
+  const CpuTopologyMasks topo = queryCpuTopology();
+  const DWORD_PTR fullSysMask = (topo.sysMask != 0) ? topo.sysMask : ~(DWORD_PTR)0;
+
+  // 1. PROCESS AFFINITY: Shelter ONLY CPU 0 (if enabled) while keeping ALL Efficiency
+  //    cores open so Windows + Intel Thread Director steer Kontakt disk threads,
+  //    Roland background threads, Direct2D GUI, and USB ASIO helper threads off the P-cores!
+  DWORD_PTR procMaskToApply = topo.sysMask;
+  if (engineTuningSettings.shelterCpu0 && countBitsInMask(procMaskToApply & ~(DWORD_PTR)1) >= 1) {
+    procMaskToApply &= ~(DWORD_PTR)1;
+  }
+  if (procMaskToApply != 0) {
+    if (SetProcessAffinityMask(GetCurrentProcess(), procMaskToApply)) {
+      processShelterMask.store(procMaskToApply, std::memory_order_release);
+    }
+  }
+
+  // 2. REAL-TIME AUDIO & DSP WORKER THREAD AFFINITY: Lock exclusively to fast P-cores
+  //    (excluding CPU 0 when sheltered).
+  DWORD_PTR rtDspMask = (engineTuningSettings.pCoresOnly && topo.pCoreMask != 0)
+                            ? topo.pCoreMask
+                            : fullSysMask;
+  if (engineTuningSettings.shelterCpu0 && countBitsInMask(rtDspMask & ~(DWORD_PTR)1) >= 1) {
+    rtDspMask &= ~(DWORD_PTR)1;
+  }
+  rtDspMask &= procMaskToApply;
+  if (rtDspMask == 0)
+    rtDspMask = procMaskToApply;
+
+  // Count distinct physical cores represented in rtDspMask so we assign at most
+  // (physicalCores - 1) parallel DSP helpers (+ Audio Thread = 1 worker per physical core!).
+  int dspPhysicalCores = 0;
+  for (DWORD_PTR coreMask : topo.physicalCoreMasks) {
+    if ((coreMask & rtDspMask) != 0)
+      ++dspPhysicalCores;
+  }
+  if (dspPhysicalCores <= 0)
+    dspPhysicalCores = juce::jmax(1, countBitsInMask(rtDspMask) / 2);
+
+  const int logicalInDspMask = countBitsInMask(rtDspMask);
+  const int helperLimit = (logicalInDspMask >= 2 && dspPhysicalCores >= 2)
+                              ? juce::jlimit(1, 4, dspPhysicalCores - 1)
+                              : 0;
+
+  dspThreadAffinityMask.store(rtDspMask, std::memory_order_release);
+  engine.setActiveDspHelperLimit(helperLimit);
+  engine.setPreventPowerThrottling(engineTuningSettings.preventPowerThrottling);
+  engine.setShelteredAffinityMask(rtDspMask);
+
+  // 3. BACKGROUND / UI / PRELOADER THREAD AFFINITY & PRIORITY:
+  //    On hybrid CPUs with P-Cores Only enabled, steer the UI thread and background
+  //    RigBuilder / SetlistPreloader threads onto Efficiency cores so background song
+  //    preloads and UI repaints never touch the real-time P-cores!
+  DWORD_PTR bgMask = procMaskToApply;
+  if (engineTuningSettings.pCoresOnly && topo.eCoreMask != 0) {
+    const DWORD_PTR candidateECores = topo.eCoreMask & procMaskToApply;
+    if (countBitsInMask(candidateECores) >= 2)
+      bgMask = candidateECores;
+  }
+  engine.setBackgroundAffinityMask(bgMask);
+
+  if (juce::MessageManager::getInstanceWithoutCreating() != nullptr &&
+      juce::MessageManager::getInstance()->isThisTheMessageThread()) {
+    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_NORMAL);
+    if (bgMask != 0)
+      SetThreadAffinityMask(GetCurrentThread(), bgMask);
+  }
+
+  LOG_INFO("Hybrid Affinity Applied -> Process: 0x" +
+           juce::String::toHexString((juce::int64)procMaskToApply) +
+           " | Real-Time Audio/DSP: 0x" +
+           juce::String::toHexString((juce::int64)rtDspMask) +
+           " (" + juce::String(dspPhysicalCores) + " phys cores, " +
+           juce::String(helperLimit) + " helper + audio thread)" +
+           " | UI/Background: 0x" +
+           juce::String::toHexString((juce::int64)bgMask));
+
+  // 4. Windows 11 Process EcoQoS (Power Throttling)
+  PROCESS_POWER_THROTTLING_STATE powerThrottling{};
+  powerThrottling.Version = PROCESS_POWER_THROTTLING_CURRENT_VERSION;
+  powerThrottling.ControlMask = PROCESS_POWER_THROTTLING_EXECUTION_SPEED;
+  powerThrottling.StateMask =
+      engineTuningSettings.preventPowerThrottling ? 0UL : PROCESS_POWER_THROTTLING_EXECUTION_SPEED;
+  if (SetProcessInformation(GetCurrentProcess(), ProcessPowerThrottling,
+                            &powerThrottling, sizeof(powerThrottling))) {
+    LOG_INFO("Windows 11 EcoQoS Power Throttling set to: " +
+             juce::String(engineTuningSettings.preventPowerThrottling ? "Disabled (HighQoS)" : "Default"));
+  }
+#endif
+
+  engine.setParallelProcessingEnabled(engineTuningSettings.parallelProcessing);
+  LOG_INFO("DSP Processing pipeline set to: " +
+           juce::String(engineTuningSettings.parallelProcessing ? "Parallel Work-Sharing" : "Sequential Inline"));
+}
+
+void MainComponent::showEngineTuningModal() {
+  if (configOverlay) {
+    configOverlay.reset();
+  }
+  engineTuningModal = std::make_unique<EngineTuningModal>(
+    engineTuningSettings,
+    [this](const EngineTuningModal::Settings& s) {
+      engineTuningSettings = s;
+      saveEngineTuningSettings();
+      applyEngineTuningSettings();
+    },
+    [this] {
+      engineTuningModal.reset();
+      resized();
+    });
+  addAndMakeVisible(engineTuningModal.get());
+  engineTuningModal->centreWithSize(juce::jmin(getWidth() - 32, 640),
+                                    juce::jmin(getHeight() - 32, 560));
 }
 
 void MainComponent::resetAudioDevice() {
+  suppressGlitchDetectionForMs(2500);
+#ifdef _WIN32
+  if constexpr (FanfareConstants::kPriorityElevationEnabled) {
+    if (GetPriorityClass(GetCurrentProcess()) != ABOVE_NORMAL_PRIORITY_CLASS) {
+      SetPriorityClass(GetCurrentProcess(), ABOVE_NORMAL_PRIORITY_CLASS);
+      LOG_INFO("Restored ABOVE_NORMAL_PRIORITY_CLASS after audio driver init");
+    }
+  }
+#endif
   auto *device = deviceManager.getCurrentAudioDevice();
   if (!device)
     return;
@@ -1710,7 +1958,7 @@ void MainComponent::showAboutDialog() {
   public:
     AboutCustomComponent() {
       infoLabel.setText(
-          "Fanfare Live Performance Host  |  v1.0.0\n"
+          "Fanfare Live Performance Host  |  v" OPENRIG_VERSION_STRING "\n"
           "The Sovereign Stage Engine for Keyboardists\n\n"
           "Built for one job: getting you through a live set without a single dropout, stuck note, or fumbled song switch.",
           juce::dontSendNotification);
@@ -1848,6 +2096,7 @@ void MainComponent::showConfigOverlay() {
 
   ConfigModalOverlay::Actions a;
   a.onAudioSettings = [this, invoke] { invoke(audioSettingsBtn); };
+  a.onEngineTuning = [this] { showEngineTuningModal(); };
   a.onScanPlugins = [this, invoke] { invoke(scanButton); };
   a.onBusRouting = [this, invoke] { invoke(busRoutingBtn); };
   a.onResetAudio = [this, invoke] { invoke(resetAudioBtn); };
@@ -1864,7 +2113,7 @@ void MainComponent::showConfigOverlay() {
   };
   a.getInfo = [this] {
     juce::String s;
-    s << "Scanned plugins: " << engine.getNumAvailablePlugins() << "\n";
+    s << "Fanfare v" << OPENRIG_VERSION_STRING << "   |   Plugins: " << engine.getNumAvailablePlugins() << "\n";
     int ch = engine.getDefaultMidiChannel();
     s << "Global MIDI: "
       << (ch == 0 ? juce::String("Omni") : juce::String(ch)) << "\n";
@@ -1958,6 +2207,15 @@ void MainComponent::updatePreloadStatus() {
 }
 
 void MainComponent::audioDeviceAboutToStart(juce::AudioIODevice *device) {
+  suppressGlitchDetectionForMs(2500);
+#ifdef _WIN32
+  if constexpr (FanfareConstants::kPriorityElevationEnabled) {
+    if (GetPriorityClass(GetCurrentProcess()) != ABOVE_NORMAL_PRIORITY_CLASS) {
+      SetPriorityClass(GetCurrentProcess(), ABOVE_NORMAL_PRIORITY_CLASS);
+      LOG_INFO("Restored ABOVE_NORMAL_PRIORITY_CLASS after audio driver init");
+    }
+  }
+#endif
   midiCollector.reset(device->getCurrentSampleRate());
   engine.prepareToPlay(device->getCurrentBufferSizeSamples(),
                        device->getCurrentSampleRate());
@@ -2197,7 +2455,7 @@ void MainComponent::resized() {
       rackSlotComponents[0]->setBounds(r.removeFromLeft(juce::jmin(w, r.getWidth())).reduced(2));
     }
 
-    // Draw aux returns last — half height; the freed lower half of their
+    // Draw aux returns last ï¿½ half height; the freed lower half of their
     // columns hosts the gig logo (The Last Waltz)
     juce::Rectangle<int> lwLogoArea;
     for (auto *c : auxReturnComponents) {
@@ -2224,6 +2482,8 @@ void MainComponent::resized() {
     setupBuilderOverlay->centreWithSize(400, 480);
   if (resourceInspectorOverlay)
     resourceInspectorOverlay->centreWithSize(740, 520);
+  if (engineTuningModal)
+    engineTuningModal->centreWithSize(juce::jmin(getWidth() - 32, 640), juce::jmin(getHeight() - 32, 560));
   if (stageRemoteOverlay)
     stageRemoteOverlay->setBounds(getLocalBounds());
   if (missingPluginsToast)
@@ -2312,6 +2572,9 @@ void MainComponent::loadRigAsync(const juce::File &file, int buttonIndexForHighl
                 hideLoadingOverlay();
                 closeOrphanedPluginWindows();
                 if (ok) {
+                    suppressGlitchDetectionForMs(500);
+                    audioUnderrunCount.store(0);
+                    engineStallCount.store(0);
                     currentRigFile = file;
                     setupNameLabel.setText(fileName, juce::dontSendNotification);
                     freshBuildToggle.setToggleState(engine.isCurrentRigFreshBuild(), juce::dontSendNotification);
@@ -2434,6 +2697,16 @@ void MainComponent::timerCallback() {
   static int memUpdateTicks = 19;
   if (++memUpdateTicks >= 20) {
     memUpdateTicks = 0;
+#ifdef _WIN32
+    if constexpr (FanfareConstants::kPriorityElevationEnabled) {
+      const DWORD curPri = GetPriorityClass(GetCurrentProcess());
+      if (curPri != 0 && curPri != ABOVE_NORMAL_PRIORITY_CLASS) {
+        SetPriorityClass(GetCurrentProcess(), ABOVE_NORMAL_PRIORITY_CLASS);
+        LOG_INFO("Driver/plugin altered PriorityClass (0x" + juce::String::toHexString((int)curPri) + ") - restored ABOVE_NORMAL_PRIORITY_CLASS");
+      }
+    }
+#endif
+    FanfareLog::flushLog();
     auto memStats = FanfareLog::getMemoryStats();
     juce::String appRamStr = ResourceInspectorModal::formatBytes(memStats.workingSetBytes);
     ramLabel.setText("RAM: " + appRamStr + " (" + juce::String(memStats.systemRamLoadPercent) + "%)", juce::dontSendNotification);
@@ -2476,7 +2749,7 @@ void MainComponent::timerCallback() {
 
   if (engine.consumeAudioUnderrun()) {
     // Engine-side stall (worker didn't finish, rack mid-transition): the block
-    // was genuinely silent — count it in XRUNS so the meter matches the ears,
+    // was genuinely silent ï¿½ count it in XRUNS so the meter matches the ears,
     // but tally it separately from callback-gap underruns.
     engineStallCount++;
     FanfareLog::log(FanfareLog::Level::Warning,
@@ -2823,6 +3096,8 @@ void MainComponent::mouseDown(const juce::MouseEvent &e) {
     return;
   }
   if (e.originalComponent == &xrunsLabel) {
+    audioUnderrunCount.store(0);
+    engineStallCount.store(0);
     auto appData = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory).getChildFile("Fanfare");
     auto logFile = appData.getChildFile("audio_underrun_log.txt");
     if (!logFile.existsAsFile()) logFile.replaceWithText("No audio underruns detected yet.\n");
